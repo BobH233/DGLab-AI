@@ -1,39 +1,13 @@
 <template>
   <section class="timeline">
     <article
-      v-if="activePause"
-      class="timeline-item timeline-item--live"
-      data-kind="pause"
-    >
-      <div class="timeline-rail">
-        <span class="timeline-dot timeline-dot--pause" />
-      </div>
-      <div class="event-card event-card--pause">
-        <header class="event-header">
-          <div class="event-title-block">
-            <span class="event-kicker">节奏控制</span>
-            <strong>{{ activePause.title }}</strong>
-          </div>
-          <span>{{ activePause.countdownLabel }}</span>
-        </header>
-        <div class="event-body">
-          <p class="event-main">{{ activePause.main }}</p>
-          <p v-if="activePause.meta" class="event-meta">{{ activePause.meta }}</p>
-        </div>
-        <div class="pause-indicator" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-      </div>
-    </article>
-    <article
       v-for="item in presentationItems"
       :key="item.id"
       class="timeline-item"
       :data-kind="item.kind"
       :data-compact="item.compact ? 'true' : undefined"
       :data-optional-tool="item.optionalTool ? 'true' : undefined"
+      :data-live="item.live ? 'true' : undefined"
     >
       <div class="timeline-rail">
         <span class="timeline-dot" />
@@ -43,6 +17,12 @@
         <strong class="timeline-compact__title">{{ item.title }}</strong>
         <span v-if="item.main" class="timeline-compact__main">{{ item.main }}</span>
         <span v-if="item.meta" class="timeline-compact__meta">{{ item.meta }}</span>
+        <span v-if="item.liveLabel" class="timeline-compact__status">{{ item.liveLabel }}</span>
+        <span v-if="item.live" class="timeline-compact__dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
         <span class="timeline-compact__time">{{ formatDate(item.createdAt) }}</span>
       </div>
       <div v-else :class="cardClass(item)">
@@ -84,7 +64,7 @@ type PresentationDetail = {
 type PresentationItem = {
   id: string;
   seq: number;
-  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error";
+  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error" | "pause";
   kicker: string;
   title: string;
   main: string;
@@ -94,12 +74,12 @@ type PresentationItem = {
   createdAt: string;
   optionalTool?: boolean;
   compact?: boolean;
+  live?: boolean;
+  liveLabel?: string;
 };
 
 type ActivePauseState = {
-  title: string;
-  main: string;
-  meta?: string;
+  id: string;
   countdownLabel: string;
 };
 
@@ -270,6 +250,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         });
         return items;
       case "system.wait_scheduled":
+        items.push(buildPauseItem(event, itemId, props.activePause));
         return items;
       case "system.story_ended":
         items.push({
@@ -453,6 +434,28 @@ function buildDeviceControlMeta(payload: Record<string, unknown>): string | unde
     entries.push(`执行状态：${textOf(payload.status)}`);
   }
   return entries.length > 0 ? entries.join("；") : undefined;
+}
+
+function buildPauseItem(event: SessionEvent, itemId: string, activePause?: ActivePauseState | null): PresentationItem {
+  const pauseId = typeof event.payload.uiPauseId === "string" && event.payload.uiPauseId.trim()
+    ? event.payload.uiPauseId
+    : `pause:${event.seq}:${event.createdAt}`;
+  const reason = textOf(event.payload.reason);
+  const explicitMeta = textOf(event.payload.meta);
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "pause",
+    kicker: "节奏控制",
+    title: textOf(event.payload.title) || `${textOf(event.payload.speaker, "对方")} 停了一下`,
+    main: "",
+    meta: explicitMeta || (reason ? `原因：${reason}` : undefined),
+    tags: [],
+    createdAt: event.createdAt,
+    compact: true,
+    live: activePause?.id === pauseId,
+    liveLabel: activePause?.id === pauseId ? activePause.countdownLabel : undefined
+  };
 }
 
 function formatDate(value: string): string {

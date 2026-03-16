@@ -30,7 +30,7 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("测试消息");
   });
 
-  it("renders live pause state instead of a persisted wait card", () => {
+  it("renders live pause state as a compact timeline note", () => {
     const wrapper = mount(EventTimeline, {
       props: {
         events: [
@@ -45,24 +45,27 @@ describe("EventTimeline", () => {
               speaker: "主导者",
               reason: "停顿一秒后再继续说话。",
               delayMs: 1000,
-              mode: "in_turn_pause"
+              mode: "in_turn_pause",
+              title: "主导者 正在注视你",
+              uiPauseId: "pause-1"
             }
           }
         ],
         activePause: {
-          title: "主导者 正在注视你",
-          main: "主导者 暂时没有继续开口，像是在观察你的反应……",
-          meta: "节奏说明：停顿一秒后再继续说话。",
+          id: "pause-1",
           countdownLabel: "约 1.0 秒后继续"
         }
       }
     });
 
+    const pauseItem = wrapper.find('.timeline-item[data-kind="pause"][data-compact="true"] .timeline-compact');
+
+    expect(pauseItem.exists()).toBe(true);
     expect(wrapper.text()).toContain("节奏控制");
     expect(wrapper.text()).toContain("主导者 正在注视你");
-    expect(wrapper.text()).toContain("像是在观察你的反应");
+    expect(wrapper.text()).toContain("原因：停顿一秒后再继续说话。");
     expect(wrapper.text()).toContain("约 1.0 秒后继续");
-    expect(wrapper.text()).not.toContain("主导者 短暂停顿");
+    expect(wrapper.find('.timeline-item[data-kind="pause"] .event-card').exists()).toBe(false);
   });
 
   it("renders character dialogue with a dedicated bubble style", () => {
@@ -214,6 +217,62 @@ describe("EventTimeline", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]?.text()).toContain("最新消息");
     expect(cards[1]?.text()).toContain("第一条消息");
+  });
+
+  it("keeps a wait note inside the timeline so later fragments appear above it", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 11,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date("2026-03-16T10:00:00.000Z").toISOString(),
+            payload: {
+              speaker: "八重神子",
+              message: "第一段。"
+            }
+          },
+          {
+            sessionId: "session_1",
+            seq: 11,
+            type: "system.wait_scheduled",
+            source: "system",
+            agentId: "director",
+            createdAt: new Date("2026-03-16T10:00:01.000Z").toISOString(),
+            payload: {
+              title: "动作停在半空",
+              meta: "舞台节奏停顿",
+              delayMs: 800,
+              mode: "inline_pause",
+              uiPauseId: "pause-inline-1"
+            }
+          },
+          {
+            sessionId: "session_1",
+            seq: 11,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date("2026-03-16T10:00:02.000Z").toISOString(),
+            payload: {
+              speaker: "八重神子",
+              message: "第二段。"
+            }
+          }
+        ]
+      }
+    });
+
+    const items = wrapper.findAll(".timeline-item");
+
+    expect(items).toHaveLength(3);
+    expect(items[0]?.text()).toContain("第二段。");
+    expect(items[1]?.attributes("data-kind")).toBe("pause");
+    expect(items[1]?.text()).toContain("动作停在半空");
+    expect(items[2]?.text()).toContain("第一段。");
   });
 
   it("renders tick and usage events as compact timeline notes", () => {

@@ -150,9 +150,7 @@ import EventTimeline from "../components/EventTimeline.vue";
 import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
 
 type ActivePauseState = {
-  title: string;
-  main: string;
-  meta?: string;
+  id: string;
   countdownLabel: string;
 };
 
@@ -164,7 +162,7 @@ type PlaybackStep =
   | {
     type: "pause";
     delayMs: number;
-    pause: Omit<ActivePauseState, "countdownLabel">;
+    event: SessionEvent;
   };
 
 const route = useRoute();
@@ -183,6 +181,7 @@ let countdownTimer: number | null = null;
 let queueRunning = false;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
+let localPauseId = 0;
 const liveQueue: SessionEvent[] = [];
 
 const agentCards = computed(() => {
@@ -195,7 +194,7 @@ const agentCards = computed(() => {
   }));
 });
 
-const displayedEventCount = computed(() => events.value.length + (activePause.value ? 1 : 0));
+const displayedEventCount = computed(() => events.value.length);
 const latestTickFailure = computed(() => {
   for (let index = events.value.length - 1; index >= 0; index -= 1) {
     const event = events.value[index];
@@ -223,7 +222,7 @@ async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
   syncSession(await api.getSession(id));
-  events.value = (await api.getEvents(id)).filter((event) => event.type !== "system.wait_scheduled");
+  events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
   connectStream(id);
 }
 
@@ -244,10 +243,14 @@ function connectStream(sessionId: string) {
 }
 
 function enqueueLiveEvent(event: SessionEvent) {
-  if (events.value.some((item) => item.seq === event.seq) || liveQueue.some((item) => item.seq === event.seq)) {
+  const normalized = normalizeTimelineEvent(event);
+  if (
+    events.value.some((item) => isSameTimelineEvent(item, normalized)) ||
+    liveQueue.some((item) => isSameTimelineEvent(item, normalized))
+  ) {
     return;
   }
-  liveQueue.push(event);
+  liveQueue.push(normalized);
   void flushLiveQueue();
 }
 
@@ -267,7 +270,8 @@ async function flushLiveQueue() {
         continue;
       }
       if (next.type === "system.wait_scheduled") {
-        await runPause(createLegacyPauseState(next), Number(next.payload.delayMs ?? 0), generation);
+        events.value = [...events.value, next];
+        await runPause(next, Number(next.payload.delayMs ?? 0), generation);
         continue;
       }
       for (const step of expandPlaybackSteps(next)) {
@@ -275,7 +279,8 @@ async function flushLiveQueue() {
           return;
         }
         if (step.type === "pause") {
-          await runPause(step.pause, step.delayMs, generation);
+          events.value = [...events.value, step.event];
+          await runPause(step.event, step.delayMs, generation);
           continue;
         }
         events.value = [...events.value, step.event];
@@ -289,8 +294,8 @@ async function flushLiveQueue() {
   }
 }
 
-async function runPause(pause: Omit<ActivePauseState, "countdownLabel">, delayMs: number, generation: number) {
-  activatePause(pause, delayMs);
+async function runPause(event: SessionEvent, delayMs: number, generation: number) {
+  activatePause(event, delayMs);
   if (delayMs > 0) {
     await sleep(delayMs);
     if (generation !== playbackGeneration) {
@@ -311,10 +316,10 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-function activatePause(pause: Omit<ActivePauseState, "countdownLabel">, delayMs: number) {
+function activatePause(event: SessionEvent, delayMs: number) {
   const startedAt = Date.now();
   activePause.value = {
-    ...pause,
+    id: pauseEventId(event),
     countdownLabel: `约 ${formatPauseMs(delayMs)} 后继续`
   };
   if (countdownTimer !== null) {
@@ -397,7 +402,7 @@ function expandPlaybackSteps(event: SessionEvent): PlaybackStep[] {
       steps.push({
         type: "pause",
         delayMs: part.delayMs,
-        pause: createInlinePauseState(event)
+        event: createInlinePauseEvent(event, part.delayMs)
       });
       continue;
     }
@@ -450,16 +455,29 @@ function playbackFieldForEvent(event: SessionEvent): string | null {
   }
 }
 
-function createLegacyPauseState(event: SessionEvent): Omit<ActivePauseState, "countdownLabel"> {
-  const speaker = textOf(event.payload.speaker) || "对方";
-  return {
-    title: `${speaker} 正在注视你`,
-    main: `${speaker} 暂时没有继续开口，像是在观察你的反应……`,
-    meta: event.payload.reason ? `节奏说明：${textOf(event.payload.reason)}` : undefined
-  };
+function createInlinePauseEvent(event: SessionEvent, delayMs: number): SessionEvent {
+  const pauseState = createInlinePauseState(event);
+  return normalizeTimelineEvent({
+    sessionId: event.sessionId,
+    seq: event.seq,
+    type: "system.wait_scheduled",
+    source: "system",
+    agentId: event.agentId,
+    createdAt: new Date().toISOString(),
+    payload: {
+      speaker: event.payload.speaker,
+      reason: pauseState.meta,
+      delayMs,
+      mode: "inline_pause",
+      title: pauseState.title,
+      main: pauseState.main,
+      meta: pauseState.meta,
+      uiPauseId: `local-pause:${localPauseId += 1}`
+    }
+  });
 }
 
-function createInlinePauseState(event: SessionEvent): Omit<ActivePauseState, "countdownLabel"> {
+function createInlinePauseState(event: SessionEvent): { title: string; main: string; meta?: string } {
   const speaker = textOf(event.payload.speaker) || "对方";
   switch (event.type) {
     case "agent.speak_player":
@@ -499,6 +517,30 @@ function createInlinePauseState(event: SessionEvent): Omit<ActivePauseState, "co
         meta: "文本内节奏停顿"
       };
   }
+}
+
+function normalizeTimelineEvent(event: SessionEvent): SessionEvent {
+  if (event.type !== "system.wait_scheduled") {
+    return event;
+  }
+  const existingPauseId = typeof event.payload.uiPauseId === "string" ? event.payload.uiPauseId.trim() : "";
+  return {
+    ...event,
+    payload: {
+      ...event.payload,
+      uiPauseId: existingPauseId || `pause:${event.seq}:${event.createdAt}`
+    }
+  };
+}
+
+function isSameTimelineEvent(left: SessionEvent, right: SessionEvent): boolean {
+  return left.seq === right.seq && left.type === right.type && left.createdAt === right.createdAt;
+}
+
+function pauseEventId(event: SessionEvent): string {
+  return typeof event.payload.uiPauseId === "string" && event.payload.uiPauseId.trim()
+    ? event.payload.uiPauseId
+    : `pause:${event.seq}:${event.createdAt}`;
 }
 
 async function sendMessage() {
