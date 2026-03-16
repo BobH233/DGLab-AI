@@ -156,4 +156,39 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("Provider returned non-JSON content");
     expect(wrapper.text()).toContain("可重试");
   });
+
+  it("shows the newest events at the top of the timeline", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 1,
+            type: "player.message",
+            source: "player",
+            createdAt: new Date("2026-03-16T10:00:00.000Z").toISOString(),
+            payload: {
+              text: "第一条消息"
+            }
+          },
+          {
+            sessionId: "session_1",
+            seq: 2,
+            type: "player.message",
+            source: "player",
+            createdAt: new Date("2026-03-16T10:01:00.000Z").toISOString(),
+            payload: {
+              text: "最新消息"
+            }
+          }
+        ]
+      }
+    });
+
+    const cards = wrapper.findAll('.timeline-item[data-kind="player"] .event-main');
+
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.text()).toContain("最新消息");
+    expect(cards[1]?.text()).toContain("第一条消息");
+  });
 });

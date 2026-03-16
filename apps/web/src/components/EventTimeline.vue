@@ -1,33 +1,6 @@
 <template>
   <section class="timeline">
     <article
-      v-for="item in presentationItems"
-      :key="`${item.seq}-${item.kind}`"
-      class="timeline-item"
-      :data-kind="item.kind"
-      :data-optional-tool="item.optionalTool ? 'true' : undefined"
-    >
-      <div class="timeline-rail">
-        <span class="timeline-dot" />
-      </div>
-      <div :class="cardClass(item)">
-        <header class="event-header">
-          <div class="event-title-block">
-            <span class="event-kicker">{{ item.kicker }}</span>
-            <strong>{{ item.title }}</strong>
-          </div>
-          <span>#{{ item.seq }} · {{ formatDate(item.createdAt) }}</span>
-        </header>
-        <div class="event-body">
-          <p class="event-main">{{ item.main }}</p>
-          <p v-if="item.meta" class="event-meta">{{ item.meta }}</p>
-        </div>
-        <div v-if="item.tags.length" class="event-tags">
-          <span v-for="tag in item.tags" :key="tag" class="event-tag">{{ tag }}</span>
-        </div>
-      </div>
-    </article>
-    <article
       v-if="activePause"
       class="timeline-item timeline-item--live"
       data-kind="pause"
@@ -51,6 +24,33 @@
           <span />
           <span />
           <span />
+        </div>
+      </div>
+    </article>
+    <article
+      v-for="item in presentationItems"
+      :key="`${item.seq}-${item.kind}`"
+      class="timeline-item"
+      :data-kind="item.kind"
+      :data-optional-tool="item.optionalTool ? 'true' : undefined"
+    >
+      <div class="timeline-rail">
+        <span class="timeline-dot" />
+      </div>
+      <div :class="cardClass(item)">
+        <header class="event-header">
+          <div class="event-title-block">
+            <span class="event-kicker">{{ item.kicker }}</span>
+            <strong>{{ item.title }}</strong>
+          </div>
+          <span>#{{ item.seq }} · {{ formatDate(item.createdAt) }}</span>
+        </header>
+        <div class="event-body">
+          <p class="event-main">{{ item.main }}</p>
+          <p v-if="item.meta" class="event-meta">{{ item.meta }}</p>
+        </div>
+        <div v-if="item.tags.length" class="event-tags">
+          <span v-for="tag in item.tags" :key="tag" class="event-tag">{{ tag }}</span>
         </div>
       </div>
     </article>
@@ -86,7 +86,7 @@ const props = defineProps<{
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
-  return props.events.reduce<PresentationItem[]>((items, event) => {
+  const items = props.events.reduce<PresentationItem[]>((items, event) => {
     switch (event.type) {
       case "player.message":
         items.push({
@@ -313,6 +313,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
     }
   }, []);
+
+  return items.reverse();
 });
 
 function textOf(value: unknown, fallback = ""): string {
