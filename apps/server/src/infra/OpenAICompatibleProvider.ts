@@ -68,11 +68,17 @@ function parseCompletionPayload(responseText: string): CompletionPayload {
   } catch (error) {
     if (!/^\s*data:/m.test(responseText)) {
       const parseError = error instanceof Error ? error.message : String(error);
+      debugLog("raw_http_response", responseText);
       throw new Error(
         `Provider returned non-JSON response body: ${parseError}`
       );
     }
-    return parseSseCompletionPayload(responseText);
+    try {
+      return parseSseCompletionPayload(responseText);
+    } catch (sseError) {
+      debugLog("raw_http_response", responseText);
+      throw sseError;
+    }
   }
 }
 
@@ -258,7 +264,6 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }
 
       const responseText = await response.text();
-      debugLog("raw_http_response", responseText);
       const payload = parseCompletionPayload(responseText);
       const rawText = normalizeContent(payload.choices?.[0]?.message?.content);
       debugLog("raw_response", payload);
