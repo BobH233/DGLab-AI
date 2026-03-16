@@ -4,6 +4,10 @@ import type { ToolDefinition, ToolRegistry } from "../types/contracts.js";
 import { HttpError } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 
+function clampTension(value: number): number {
+  return Math.max(0, Math.min(10, value));
+}
+
 class DefaultToolRegistry implements ToolRegistry {
   constructor(private readonly tools: ToolDefinition[]) {}
 
@@ -282,7 +286,12 @@ export function createDefaultToolRegistry(): ToolRegistry {
       inputSchema: z.object({
         location: z.string().optional(),
         phase: z.string().optional(),
-        tension: z.number().min(0).max(10).optional(),
+        tension: z.preprocess((value) => {
+          if (typeof value !== "number") {
+            return value;
+          }
+          return clampTension(value);
+        }, z.number().min(0).max(10)).optional(),
         summary: z.string().optional(),
         activeObjectives: z.array(z.string()).optional()
       }).strict(),

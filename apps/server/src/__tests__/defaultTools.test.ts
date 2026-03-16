@@ -220,6 +220,31 @@ describe("createDefaultToolRegistry", () => {
     })).rejects.toThrow();
   });
 
+  it("clamps update_scene_state tension into the supported range", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<Record<string, unknown>> = [];
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event as Record<string, unknown>);
+      }
+    }, "update_scene_state", {
+      tension: 11
+    });
+
+    expect(session.storyState.tension).toBe(10);
+    expect(events[0]).toMatchObject({
+      type: "scene.updated",
+      payload: {
+        tension: 10
+      }
+    });
+  });
+
   it("treats wait as an in-turn pause event instead of scheduling a future tick", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();
