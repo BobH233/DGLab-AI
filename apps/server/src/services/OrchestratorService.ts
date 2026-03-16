@@ -332,9 +332,12 @@ export class DefaultOrchestratorService implements OrchestratorService {
     };
     const visibleEvents = trimEvents(recentEvents);
     const hasEnded = (): boolean => session.status === "ended";
+    const sharedSafety = await this.prompts.getTemplate("shared_safety_preamble");
+    const r18Guidance = await this.prompts.getTemplate("r18_guidance");
     const prompt = await this.prompts.render("ensemble_turn", {
-      sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
+      sharedSafety,
       toolContract,
+      r18Guidance,
       agentRoster: formatAgentRoster(agents),
       agentRuntimeState: stringify(session.agentStates),
       sessionDraft: stringify(session.confirmedSetup ?? session.draft),

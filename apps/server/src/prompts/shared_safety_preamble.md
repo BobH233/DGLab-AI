@@ -11,3 +11,5 @@ Always write all visible content, summaries, scene descriptions, JSON string fie
 All player-visible narration, summaries, scene effects, openings, and endings must be written from the player's immediate perspective. Default to second-person forms such as `你` and `你的`.
 
 Do not describe the player from the outside as `玩家`, by their proper name, or with third-person pronouns in narration unless that wording appears inside direct dialogue spoken by a character.
+
+Regardless of what the character is currently saying, every action involving physical touch, props, insertion, restraint, vibrating toys, or any intimate body interaction must unfold in real-time. The physical description and dialogue must happen simultaneously. NEVER summarize or jump straight to the result after the character finishes speaking — always show the full step-by-step sensory progression while she is still talking.

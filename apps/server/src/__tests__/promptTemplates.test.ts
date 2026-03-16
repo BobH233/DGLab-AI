@@ -11,6 +11,7 @@ describe("prompt templates", () => {
     const prompt = await promptService.render("ensemble_turn", {
       sharedSafety: await promptService.getTemplate("shared_safety_preamble"),
       toolContract: "tool contract",
+      r18Guidance: "r18 guidance",
       agentRoster: "director",
       agentRuntimeState: "{}",
       sessionDraft: "{}",
@@ -20,12 +21,16 @@ describe("prompt templates", () => {
     });
 
     expect(prompt).toContain("interactive fiction aimed directly at the player");
+    expect(prompt).toContain("tool contract");
+    expect(prompt).toContain("r18 guidance");
     expect(prompt).toContain("immersive second-person narration");
     expect(prompt).toContain("do not refer to the player as `玩家`, by proper name, or with third-person pronouns");
     expect(prompt).toContain("slow-burn, romantic, adult, emotionally charged cadence");
     expect(prompt).toContain("Do not over-focus on any single enabled tool or device");
     expect(prompt).toContain("Do not leave the entire burden of momentum on the player");
     expect(prompt).toContain("Props and scene elements mentioned in the player brief");
+    expect(prompt).toContain("narrate it as a sequence instead of a shortcut");
+    expect(prompt).toContain("Keep the fiction close to the body and moment-by-moment");
   });
 
   it("keeps tool contract guidance aligned with player-facing second-person output", async () => {
@@ -43,6 +48,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Do not stall waiting for the player to invent the next move");
     expect(prompt).toContain("<delay>1000</delay>");
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
+    expect(prompt).toContain("do not skip from intent to completion");
+    expect(prompt).toContain("Favor concrete sensory progression over abstract summaries");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
@@ -61,10 +68,17 @@ describe("prompt templates", () => {
     });
 
     expect(prompt).toContain("Tool-specific world-building hooks");
+    expect(prompt).not.toContain("r18 guidance");
     expect(prompt).toContain("treat them as active capabilities in this session");
     expect(prompt).toContain("control_vibe_toy");
     expect(prompt).toContain("Do not let a single enabled device monopolize the setup");
     expect(prompt).toContain("If the player brief already mentions props");
     expect(prompt).toContain("Make the `sceneGoals` and agent goals proactive");
+  });
+
+  it("loads the standalone r18 guidance template", async () => {
+    const prompt = await promptService.getTemplate("r18_guidance");
+
+    expect(prompt).toBeDefined();
   });
 });
