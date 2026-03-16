@@ -8,7 +8,6 @@ import {
   type Session,
   type SessionDraft,
   type SessionEvent,
-  type SessionSnapshot,
   type UpdateDraftRequest
 } from "@dglab-ai/shared";
 import { HttpError } from "../lib/errors.js";
@@ -25,6 +24,16 @@ type SchedulerLike = {
   syncSession(session: Session): void;
   requestTick(sessionId: string, reason: string): void;
 };
+
+function formatRuntimeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "模型调用失败，请稍后重试。";
+}
 
 export class SessionService {
   private readonly locks = new LockManager();
@@ -93,8 +102,7 @@ export class SessionService {
       usageTotals: createEmptyUsageStats(),
       createdAt: now,
       updatedAt: now,
-      lastSeq: 0,
-      lastSnapshotSeq: 0
+      lastSeq: 0
     };
     await this.store.createSession(session);
     const events = await this.store.appendEvents(session.id, session.lastSeq, [
@@ -162,13 +170,12 @@ export class SessionService {
       session.llmConfigSnapshot = config;
       session.promptVersions = {
         ...defaultPromptVersions(),
-        sharedSafety: versions.shared_safety_preamble ?? "1.1.0",
+        sharedSafety: versions.shared_safety_preamble ?? "1.2.0",
         toolContract: versions.tool_contract ?? "2.2.0",
-        worldBuilder: versions.world_builder ?? "1.1.0",
-        directorAgent: versions.director_agent ?? "1.1.0",
-        supportAgent: versions.support_agent ?? "1.1.0",
-        ensembleTurn: versions.ensemble_turn ?? "1.1.0",
-        sceneSummarizer: versions.scene_summarizer ?? "1.1.0"
+        worldBuilder: versions.world_builder ?? "1.2.0",
+        directorAgent: versions.director_agent ?? "1.2.0",
+        supportAgent: versions.support_agent ?? "1.2.0",
+        ensembleTurn: versions.ensemble_turn ?? "1.2.0"
       };
       session.storyState = {
         ...session.storyState,
@@ -267,6 +274,19 @@ export class SessionService {
     });
   }
 
+  async retrySession(sessionId: string): Promise<Session> {
+    const session = await this.getSession(sessionId);
+    if (session.status !== "active") {
+      throw new HttpError(400, "Session is not active");
+    }
+    if (this.scheduler) {
+      this.scheduler.requestTick(sessionId, "manual_retry");
+      return session;
+    }
+    await this.processTick(sessionId, "manual_retry");
+    return this.getSession(sessionId);
+  }
+
   async processTick(sessionId: string, reason: string): Promise<void> {
     await this.locks.runExclusive(sessionId, async () => {
       const session = await this.getSession(sessionId);
@@ -291,58 +311,61 @@ export class SessionService {
           reason
         }
       };
-      const currentEvents = await this.store.getEvents(sessionId, Math.max(0, session.lastSeq - 30), 40);
-      const result = await this.orchestrator.runTick(session, reason, currentEvents, config);
-      session.timerState.queuedReasons = [];
-      session.timerState.queuedPlayerMessages = [];
-      const tickCompletedAt = new Date().toISOString();
-      const tickEndEvent = {
-        type: "system.tick_completed" as const,
-        source: "system" as const,
-        createdAt: tickCompletedAt,
-        payload: {
-          reason,
-          status: session.status as Session["status"]
-        }
-      };
-      session.updatedAt = tickCompletedAt;
-      const events = await this.store.appendEvents(sessionId, session.lastSeq, [
-        tickStartEvent,
-        ...result.events,
-        tickEndEvent
-      ]);
-      session.lastSeq += events.length;
-      await this.store.replaceSession(session);
-      this.publishSession(session, events);
-      if (result.usageCalls.length > 0) {
-        this.channel.publish({
-          type: "usage.updated",
-          sessionId,
+      try {
+        const currentEvents = await this.store.getEvents(sessionId, Math.max(0, session.lastSeq - 30), 40);
+        const result = await this.orchestrator.runTick(session, reason, currentEvents, config);
+        session.timerState.queuedReasons = [];
+        session.timerState.queuedPlayerMessages = [];
+        const tickCompletedAt = new Date().toISOString();
+        const tickEndEvent = {
+          type: "system.tick_completed" as const,
+          source: "system" as const,
+          createdAt: tickCompletedAt,
           payload: {
-            usageTotals: session.usageTotals,
-            recentCalls: result.usageCalls
+            reason,
+            status: session.status as Session["status"]
           }
-        });
-      }
-      const storyEnded = result.events.some((event) => event.type === "system.story_ended")
-        || (session.status as string) === "ended";
-      if (session.lastSeq - session.lastSnapshotSeq >= 12 || storyEnded) {
-        const summary = await this.orchestrator.summarizeScene(session, config);
-        const snapshot: SessionSnapshot = {
-          sessionId,
-          seq: session.lastSeq,
-          storyState: session.storyState,
-          agentStates: session.agentStates,
-          recentSummary: summary.recentSummary,
-          timerState: session.timerState,
-          usageTotals: session.usageTotals,
-          promptVersions: session.promptVersions,
-          llmConfigSnapshot: session.llmConfigSnapshot,
-          createdAt: new Date().toISOString()
         };
-        await this.store.createSnapshot(snapshot);
-        session.lastSnapshotSeq = session.lastSeq;
+        session.updatedAt = tickCompletedAt;
+        const events = await this.store.appendEvents(sessionId, session.lastSeq, [
+          tickStartEvent,
+          ...result.events,
+          tickEndEvent
+        ]);
+        session.lastSeq += events.length;
         await this.store.replaceSession(session);
+        this.publishSession(session, events);
+        if (result.usageCalls.length > 0) {
+          this.channel.publish({
+            type: "usage.updated",
+            sessionId,
+            payload: {
+              usageTotals: session.usageTotals,
+              recentCalls: result.usageCalls
+            }
+          });
+        }
+      } catch (error) {
+        const failedAt = new Date().toISOString();
+        const message = formatRuntimeError(error);
+        console.error(`Tick failed for session ${sessionId}`, error);
+        session.updatedAt = failedAt;
+        const events = await this.store.appendEvents(sessionId, session.lastSeq, [
+          tickStartEvent,
+          {
+            type: "system.tick_failed",
+            source: "system",
+            createdAt: failedAt,
+            payload: {
+              reason,
+              message,
+              retryable: true
+            }
+          }
+        ]);
+        session.lastSeq += events.length;
+        await this.store.replaceSession(session);
+        this.publishSession(session, events);
       }
       this.scheduler?.syncSession(session);
     });

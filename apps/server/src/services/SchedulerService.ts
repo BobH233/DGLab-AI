@@ -60,7 +60,11 @@ export class SchedulerService {
       while ((this.pendingReasons.get(sessionId)?.size ?? 0) > 0) {
         const reasons = [...(this.pendingReasons.get(sessionId) ?? new Set<string>())];
         this.pendingReasons.set(sessionId, new Set<string>());
-        await this.processor.processTick(sessionId, reasons.join("; "));
+        try {
+          await this.processor.processTick(sessionId, reasons.join("; "));
+        } catch (error) {
+          console.error(`Failed to process tick for session ${sessionId}`, error);
+        }
       }
     } finally {
       this.inFlight.delete(sessionId);

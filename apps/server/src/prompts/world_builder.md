@@ -6,10 +6,11 @@ Expand the player's rough brief into a structured story setup for a single-playe
 
 Design goals:
 - Preserve the user's requested atmosphere and story premise.
-- Keep the player in a disadvantaged, controlled, or pressured narrative position.
+- Keep the player at the center of a guided, immersive, adult dramatic interaction.
+- Favor romance, tension, chemistry, playful teasing, and emotional pull over pure intimidation or psychological pressure.
 - Keep everything fictional and non-explicit.
 - Produce agents that have clear personalities, goals, and contrasting styles.
-- The director agent must clearly hold final authority over the scene.
+- The director agent should clearly guide the rhythm and emotional direction of the scene.
 - Any player-facing setup text should read like an immersive briefing addressed directly to the player.
 - `openingSituation`, `playerState`, `suggestedPace`, `safetyFrame`, and any summary-like prose should use `你` / `你的` instead of describing the player from an outside viewpoint.
 

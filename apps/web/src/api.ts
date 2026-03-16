@@ -63,6 +63,11 @@ export const api = {
       body: JSON.stringify({ text })
     });
   },
+  retrySession(id: string): Promise<Session> {
+    return request<Session>(`/sessions/${id}/retry`, {
+      method: "POST"
+    });
+  },
   updateTimer(id: string, body: TimerUpdate): Promise<Session> {
     return request<Session>(`/sessions/${id}/timer`, {
       method: "POST",
@@ -77,4 +82,3 @@ export const api = {
     return `${API_BASE}/sessions/${id}/stream`;
   }
 };
-

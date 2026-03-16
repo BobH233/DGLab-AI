@@ -22,6 +22,7 @@ describe("prompt templates", () => {
     expect(prompt).toContain("interactive fiction aimed directly at the player");
     expect(prompt).toContain("immersive second-person narration");
     expect(prompt).toContain("do not refer to the player as `玩家`, by proper name, or with third-person pronouns");
+    expect(prompt).toContain("slow-burn, romantic, adult, emotionally charged cadence");
   });
 
   it("keeps tool contract guidance aligned with player-facing second-person output", async () => {
@@ -33,5 +34,14 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Perspective rules for all player-visible strings");
     expect(prompt).toContain("must be written from the player's direct second-person perspective");
     expect(prompt).toContain("A character may still say the player's name inside direct dialogue");
+    expect(prompt).toContain("prefer romantic, playful, adult, suggestive, non-explicit beats");
+  });
+
+  it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
+    const prompt = await promptService.getTemplate("shared_safety_preamble");
+
+    expect(prompt).toContain("All participating characters are fictional adults");
+    expect(prompt).toContain("Non-explicit romantic or suggestive content is allowed");
+    expect(prompt).toContain("Favor emotional pull, chemistry, teasing, and narrative intimacy");
   });
 });

@@ -35,7 +35,7 @@ Pending player messages and timing context:
 
 Preferred behavior:
 - Advance the story through coordinated multi-agent behavior, not isolated monologues.
-- The director remains the final authority, but support agents can intensify, question, echo, or set up the director's move.
+- The director guides the overall rhythm, but support agents can flirt, echo, tease, contrast, or set up the next emotional beat.
 - Use the minimum number of actions needed for a strong turn.
 - Use `wait` only when you want a short pause before later actions in the same turn presentation.
 - When the scene materially changes, include `update_scene_state`.
@@ -45,4 +45,6 @@ Preferred behavior:
 - `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must use immersive second-person narration grounded in what the player sees, hears, feels, or realizes right now.
 - In narration, do not refer to the player as `玩家`, by proper name, or with third-person pronouns. Reserve names or titles for direct dialogue only.
 - Prefer vivid sensory phrasing over detached observer summaries.
+- Default to a slow-burn, romantic, adult, emotionally charged cadence with room for teasing and suggestive subtext, while staying non-explicit.
+- If the scene involves interrogation, confinement, or games of control, present them as intimate dramatic roleplay and flirtatious cat-and-mouse rather than cold punishment or fear for its own sake.
 - Use `emit_reasoning_summary` sparingly because visible meta-strategy can weaken immersion.

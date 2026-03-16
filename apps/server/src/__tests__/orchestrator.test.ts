@@ -122,13 +122,11 @@ function createSession(): Session {
       worldBuilder: "1",
       directorAgent: "1",
       supportAgent: "1",
-      ensembleTurn: "1",
-      sceneSummarizer: "1"
+      ensembleTurn: "1"
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    lastSeq: 0,
-    lastSnapshotSeq: 0
+    lastSeq: 0
   };
 }
 
@@ -177,7 +175,7 @@ describe("DefaultOrchestratorService", () => {
           actorAgentId: "support_1",
           tool: "perform_stage_direction",
           args: {
-            direction: "辅助者无声地合上了身后的门。"
+            direction: "你看见辅助者无声地把灯光调暗了一点，像是在替这一刻留出更柔软的余地。"
           },
           whyVisible: "",
           targetScope: "scene"
@@ -186,9 +184,9 @@ describe("DefaultOrchestratorService", () => {
           actorAgentId: "director",
           tool: "update_scene_state",
           args: {
-            phase: "pressure",
+            phase: "teasing",
             tension: 6,
-            summary: "The director closes in."
+            summary: "你已经被他不紧不慢的语气牵住心神，气氛正慢慢变得暧昧起来。"
           },
           whyVisible: "",
           targetScope: "scene"
@@ -197,7 +195,7 @@ describe("DefaultOrchestratorService", () => {
           actorAgentId: "director",
           tool: "speak_to_player",
           args: {
-            message: "回答我。"
+            message: "别急着移开视线，让我先听你把这句话说完。"
           },
           whyVisible: "",
           targetScope: "player"
@@ -217,7 +215,7 @@ describe("DefaultOrchestratorService", () => {
     const session = createSession();
     const result = await orchestrator.runTick(session, "player_message", [] as SessionEvent[], config);
 
-    expect(session.storyState.phase).toBe("pressure");
+    expect(session.storyState.phase).toBe("teasing");
     expect(session.storyState.tension).toBe(6);
     expect(result.events.some((event) => event.type === "scene.updated")).toBe(true);
     expect(result.events.some((event) => event.type === "agent.stage_direction")).toBe(true);

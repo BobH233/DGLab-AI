@@ -2,8 +2,7 @@ import { MongoClient, type Collection } from "mongodb";
 import type {
   LlmConfig,
   Session,
-  SessionEvent,
-  SessionSnapshot
+  SessionEvent
 } from "@dglab-ai/shared";
 import type { SessionStore } from "../types/contracts.js";
 
@@ -44,17 +43,12 @@ export class MongoSessionStore implements SessionStore {
     return this.client.db(this.dbName).collection("session_events");
   }
 
-  private get snapshots(): Collection<SessionSnapshot> {
-    return this.client.db(this.dbName).collection("session_snapshots");
-  }
-
   async init(): Promise<void> {
     await this.client.connect();
     await Promise.all([
       this.sessions.createIndex({ id: 1 }, { unique: true }),
       this.sessions.createIndex({ updatedAt: -1 }),
-      this.events.createIndex({ sessionId: 1, seq: 1 }, { unique: true }),
-      this.snapshots.createIndex({ sessionId: 1, seq: -1 })
+      this.events.createIndex({ sessionId: 1, seq: 1 }, { unique: true })
     ]);
   }
 
@@ -120,14 +114,6 @@ export class MongoSessionStore implements SessionStore {
       .sort({ seq: 1 })
       .limit(limit)
       .toArray();
-  }
-
-  async createSnapshot(snapshot: SessionSnapshot): Promise<void> {
-    await this.snapshots.insertOne(snapshot);
-  }
-
-  async getLatestSnapshot(sessionId: string): Promise<SessionSnapshot | null> {
-    return this.snapshots.findOne({ sessionId }, { projection: { _id: 0 }, sort: { seq: -1 } });
   }
 
   async listSchedulableSessions(): Promise<Session[]> {

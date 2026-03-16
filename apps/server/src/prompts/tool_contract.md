@@ -53,6 +53,7 @@ Perspective rules for all player-visible strings:
 - `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must be written from the player's direct second-person perspective.
 - Narration should describe what `you` see, hear, feel, or realize in the moment.
 - Do not refer to the player as `the player`, `玩家`, by their proper name, or with third-person pronouns in narration. A character may still say the player's name inside direct dialogue.
+- When the tone is not otherwise specified, prefer romantic, playful, adult, suggestive, non-explicit beats over punitive, fear-based, or purely coercive beats.
 
 Rules:
 - Every visible line, gesture, reasoning summary, pause, scene update, or ending must be expressed as a tool call.

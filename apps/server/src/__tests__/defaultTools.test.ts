@@ -56,8 +56,7 @@ function createSession(): Session {
     usageTotals: createEmptyUsageStats(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    lastSeq: 0,
-    lastSnapshotSeq: 0
+    lastSeq: 0
   };
 }
 

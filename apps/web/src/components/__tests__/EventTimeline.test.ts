@@ -60,4 +60,57 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("约 1.0 秒后继续");
     expect(wrapper.text()).not.toContain("主导者 短暂停顿");
   });
+
+  it("renders character dialogue with a dedicated bubble style", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 2,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date().toISOString(),
+            payload: {
+              speaker: "钟离",
+              message: "把目光留在我这里。"
+            }
+          }
+        ]
+      }
+    });
+
+    const dialogueCard = wrapper.find('.timeline-item[data-kind="dialogue"] .event-card');
+    expect(dialogueCard.exists()).toBe(true);
+    expect(dialogueCard.classes()).toContain("event-card--dialogue");
+    expect(wrapper.text()).toContain("钟离");
+    expect(wrapper.text()).toContain("把目光留在我这里");
+  });
+
+  it("renders tick failure events with retryable context", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 3,
+            type: "system.tick_failed",
+            source: "system",
+            createdAt: new Date().toISOString(),
+            payload: {
+              reason: "player_message",
+              message: "Provider returned non-JSON content",
+              retryable: true
+            }
+          }
+        ]
+      }
+    });
+
+    expect(wrapper.text()).toContain("系统异常");
+    expect(wrapper.text()).toContain("本轮推进失败");
+    expect(wrapper.text()).toContain("Provider returned non-JSON content");
+    expect(wrapper.text()).toContain("可重试");
+  });
 });

@@ -7,7 +7,6 @@ import type {
   Session,
   SessionDraft,
   SessionEvent,
-  SessionSnapshot,
   SseEvent,
   UsageEntry
 } from "@dglab-ai/shared";
@@ -93,8 +92,6 @@ export interface SessionStore {
     events: Array<Omit<SessionEvent, "seq" | "sessionId">>
   ): Promise<SessionEvent[]>;
   getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]>;
-  createSnapshot(snapshot: SessionSnapshot): Promise<void>;
-  getLatestSnapshot(sessionId: string): Promise<SessionSnapshot | null>;
   listSchedulableSessions(): Promise<Session[]>;
 }
 
@@ -102,10 +99,6 @@ export interface PromptTemplateService {
   getTemplate(name: string): Promise<string>;
   render(name: string, data: Record<string, unknown>): Promise<string>;
   versions(): Record<string, string>;
-}
-
-export interface SceneSummaryResult {
-  recentSummary: string;
 }
 
 export interface OrchestratorTurnResult {
@@ -123,7 +116,6 @@ export interface OrchestratorTurnResult {
 
 export interface OrchestratorService {
   generateDraft(playerBrief: string, config: LlmConfig): Promise<SessionDraft>;
-  summarizeScene(session: Session, config: LlmConfig): Promise<SceneSummaryResult>;
   runTick(
     session: Session,
     reason: string,

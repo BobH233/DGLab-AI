@@ -5,6 +5,16 @@
         <span class="eyebrow">Session Console</span>
         <h2>{{ session.title }}</h2>
         <p class="console-summary">{{ session.storyState.summary }}</p>
+        <div v-if="latestTickFailure" class="inline-alert inline-alert--error">
+          <strong>最近一次剧情推进失败</strong>
+          <p>{{ latestTickFailure.message }}</p>
+          <div class="actions actions--spread">
+            <span class="soft-note">当前上下文已保留，可以直接重试这一轮推进。</span>
+            <button class="button secondary" :disabled="retrying" @click="retryTick">
+              {{ retrying ? "重试中..." : "重试推进" }}
+            </button>
+          </div>
+        </div>
       </div>
       <div class="console-hero__stats">
         <div class="metric-card">
@@ -149,6 +159,7 @@ const activePause = ref<{
 } | null>(null);
 const message = ref("");
 const sending = ref(false);
+const retrying = ref(false);
 const error = ref("");
 const timerEnabled = ref(false);
 const intervalMs = ref(10000);
@@ -172,6 +183,22 @@ const agentCards = computed(() => {
 });
 
 const displayedEventCount = computed(() => events.value.length + (activePause.value ? 1 : 0));
+const latestTickFailure = computed(() => {
+  for (let index = events.value.length - 1; index >= 0; index -= 1) {
+    const event = events.value[index];
+    if (event.type === "system.tick_failed") {
+      return {
+        message: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
+        reason: textOf(event.payload.reason),
+        retryable: textOf(event.payload.retryable) !== "false"
+      };
+    }
+    if (event.type === "system.tick_completed" || event.type === "system.story_ended") {
+      return null;
+    }
+  }
+  return null;
+});
 
 function syncSession(next: Session) {
   session.value = next;
@@ -350,6 +377,21 @@ async function sendMessage() {
     error.value = caught instanceof Error ? caught.message : "发送失败";
   } finally {
     sending.value = false;
+  }
+}
+
+async function retryTick() {
+  if (!session.value) {
+    return;
+  }
+  retrying.value = true;
+  error.value = "";
+  try {
+    syncSession(await api.retrySession(session.value.id));
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "重试失败";
+  } finally {
+    retrying.value = false;
   }
 }
 

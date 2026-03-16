@@ -104,7 +104,7 @@ function normalizeAgent(rawAgent: unknown, index: number) {
     persona: persona || summary,
     goals: goals.length > 0
       ? goals
-      : [role === "director" ? "主导局势并持续推进剧情。" : "配合主导者施压并强化场景气氛。"],
+      : [role === "director" ? "引导剧情节奏并维持沉浸体验。" : "配合主导者烘托氛围并丰富互动层次。"],
     style,
     boundaries: toStringList(source.boundaries),
     sortOrder: typeof source.sortOrder === "number" ? source.sortOrder : index
@@ -123,9 +123,9 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
     title: toText(source.title, "未命名剧情"),
     playerBrief,
     worldSummary: toText(source.worldSummary, "系统已根据你的输入生成基础世界观。"),
-    openingSituation: toText(source.openingSituation, "故事从你被压制、难以抽身的开场处境开始。"),
-    playerState: toText(source.playerState, "你当前处于被动、受压制且难以反制的局面。"),
-    suggestedPace: toText(source.suggestedPace, "缓慢推进，让你在对话与局势变化里逐步感到压力累积。"),
+    openingSituation: toText(source.openingSituation, "故事从一场让你难以抽身的暧昧对峙里缓缓展开。"),
+    playerState: toText(source.playerState, "你正被卷入一场充满试探、吸引力与情绪拉扯的互动之中。"),
+    suggestedPace: toText(source.suggestedPace, "缓慢推进，让你在互动、试探与情绪升温里逐步沉浸其中。"),
     safetyFrame: toText(source.safetyFrame, "本次剧情为纯虚构推演，不映射现实伤害。"),
     agents,
     sceneGoals: toStringList(source.sceneGoals),
@@ -157,14 +157,14 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "perform_stage_direction",
           args: {
-            direction: "你看见他先是沉默地盯着你，然后把桌上的文件慢慢推到正中央。"
+            direction: "你看见他先是漫不经心地看了你一会儿，然后把酒杯轻轻推到你手边，像是在等你先接住这份暗示。"
           }
         },
         {
           actorAgentId: "director",
           tool: "speak_to_player",
           args: {
-            message: "从现在开始，你每一句话都要想清楚再说。"
+            message: "别急着躲开，让我先听听你真正想说的那一句。"
           }
         },
         {
@@ -172,7 +172,7 @@ function toolExamplesForPrompt(): string {
           tool: "speak_to_agent",
           args: {
             targetAgentId: "director",
-            message: "对方已经开始犹豫了。"
+            message: "气氛已经起来了，别让这一刻断掉。"
           }
         },
         {
@@ -180,7 +180,7 @@ function toolExamplesForPrompt(): string {
           tool: "wait",
           args: {
             delayMs: 1500,
-            reason: "停顿片刻，让刚才的警告沉下来。"
+            reason: "停顿片刻，让刚才那句话的余味慢慢发散。"
           }
         }
       ],
@@ -199,8 +199,8 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "support_1",
           tool: "apply_story_effect",
           args: {
-            label: "空气凝固",
-            description: "你感到房间里的压迫感在短暂沉默后明显升高，连呼吸都变得谨慎起来。",
+            label: "暧昧升温",
+            description: "你感觉空气里的温度在短暂沉默后悄悄抬高，连目光碰到一起都像多停了一拍。",
             intensity: 6
           }
         },
@@ -208,11 +208,11 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "update_scene_state",
           args: {
-            location: "审讯室",
-            phase: "pressure",
+            location: "会客室",
+            phase: "teasing",
             tension: 7,
-            summary: "你已经被他的沉默和质问压进角落，局面完全落进他的掌控里。",
-            activeObjectives: ["逼你给出明确回答", "阻止你转移话题"]
+            summary: "你已经被他若即若离的试探牵住心神，整场对话正慢慢滑进带着情趣的暧昧节奏里。",
+            activeObjectives: ["让你继续留在这场暧昧对话里", "引出你更坦率的回应"]
           }
         }
       ],
@@ -231,8 +231,8 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "end_story",
           args: {
-            summary: "你的反抗被彻底压回去，场景开始收束。",
-            resolution: "对方稳稳锁住了局势，你只能被迫迎向既定结局。"
+            summary: "你终于顺着这场暧昧的牵引，把最后一点迟疑也慢慢放了下来。",
+            resolution: "夜色和呼吸一起放缓，故事停在情绪仍未散尽的余韵里。"
           }
         }
       ],
@@ -299,43 +299,6 @@ export class DefaultOrchestratorService implements OrchestratorService {
       }
     });
     return normalizeWorldBuilderOutput(response.data, playerBrief);
-  }
-
-  async summarizeScene(session: Session, config: LlmConfig): Promise<{ recentSummary: string }> {
-    const prompt = await this.prompts.render("scene_summarizer", {
-      sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
-      title: session.title,
-      storyState: stringify(session.storyState),
-      recentEvents: stringify([])
-    });
-    try {
-      const response = await this.provider.completeJson<{ recentSummary: string }>({
-        modelConfig: config,
-        messages: [
-          {
-            role: "system",
-            content: prompt
-          },
-          {
-            role: "user",
-            content: "Return a concise scene summary."
-          }
-        ],
-        schema: z.object({
-          recentSummary: z.string().min(1)
-        }),
-        schemaName: "scene_summary_output",
-        usageContext: {
-          kind: "scene-summary",
-          sessionId: session.id
-        }
-      });
-      return response.data;
-    } catch {
-      return {
-        recentSummary: `${session.title}: ${session.storyState.summary || session.draft.openingSituation}`
-      };
-    }
   }
 
   async runTick(

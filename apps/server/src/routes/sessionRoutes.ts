@@ -62,6 +62,14 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
     }
   });
 
+  router.post("/:id/retry", async (request, response, next) => {
+    try {
+      response.json(await sessionService.retrySession(request.params.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/:id/timer", async (request, response, next) => {
     try {
       const body = timerUpdateSchema.parse(request.body);

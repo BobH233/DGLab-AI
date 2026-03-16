@@ -70,7 +70,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"targetAgentId\":\"...\",\"message\":\"...\"}",
-        example: "{\"tool\":\"speak_to_agent\",\"args\":{\"targetAgentId\":\"support_1\",\"message\":\"把门关上，不要给对方留退路。\"}}"
+        example: "{\"tool\":\"speak_to_agent\",\"args\":{\"targetAgentId\":\"support_1\",\"message\":\"把灯光调暗一点，别让这份气氛断掉。\"}}"
       },
       async execute(context, args: { targetAgentId: string; message: string }) {
         context.addEvent({
@@ -95,7 +95,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"summary\":\"...\"}",
-        example: "{\"tool\":\"emit_reasoning_summary\",\"args\":{\"summary\":\"我先维持沉默压迫，再在你试图辩解时收紧节奏。\"}}"
+        example: "{\"tool\":\"emit_reasoning_summary\",\"args\":{\"summary\":\"我先放缓语气，让暧昧感慢慢升起来，再在你想躲开时轻轻追近一步。\"}}"
       },
       async execute(context, args: { summary: string }) {
         context.session.agentStates[context.agent.id] = {
@@ -124,7 +124,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"direction\":\"...\"}",
-        example: "{\"tool\":\"perform_stage_direction\",\"args\":{\"direction\":\"你看见他缓慢把椅背拉近，金属腿在地面上拖出刺耳的摩擦声。\"}}"
+        example: "{\"tool\":\"perform_stage_direction\",\"args\":{\"direction\":\"你看见他慢条斯理地把酒杯推到你手边，指尖停在杯沿旁，迟迟没有收回。\"}}"
       },
       async execute(context, args: { direction: string }) {
         context.addEvent({
@@ -149,7 +149,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"delayMs\":1000,\"reason\":\"...\"}",
-        example: "{\"tool\":\"wait\",\"args\":{\"delayMs\":1200,\"reason\":\"停顿一秒，让刚才的话产生压迫感。\"}}"
+        example: "{\"tool\":\"wait\",\"args\":{\"delayMs\":1200,\"reason\":\"停顿一秒，让刚才那句暧昧的话慢慢发酵。\"}}"
       },
       async execute(context, args: { delayMs: number; reason: string }) {
         context.addEvent({
@@ -178,7 +178,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"label\":\"...\",\"description\":\"...\",\"intensity\":5}",
-        example: "{\"tool\":\"apply_story_effect\",\"args\":{\"label\":\"压迫感升级\",\"description\":\"你感到房间里的空气像被无形地收紧了一层，连呼吸都被迫放轻。\",\"intensity\":6}}"
+        example: "{\"tool\":\"apply_story_effect\",\"args\":{\"label\":\"暧昧升温\",\"description\":\"你感觉空气里的温度像被悄悄抬高了一点，连目光相接都开始带上余韵。\",\"intensity\":6}}"
       },
       async execute(context, args: { label: string; description: string; intensity: number }) {
         context.session.storyState.tension = Math.max(
@@ -212,7 +212,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"location\":\"...\",\"phase\":\"...\",\"tension\":4,\"summary\":\"...\",\"activeObjectives\":[\"...\"]}",
-        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"审讯室\",\"phase\":\"pressure\",\"tension\":7,\"summary\":\"你已经被他的沉默和质问逼进角落，谈话节奏完全落在他手里。\",\"activeObjectives\":[\"逼你给出解释\",\"阻断你转移话题\"]}}"
+        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"会客室\",\"phase\":\"teasing\",\"tension\":7,\"summary\":\"你已经被他不紧不慢的靠近和语气牵住心神，整场对话悄悄滑进暧昧的节奏里。\",\"activeObjectives\":[\"让你继续停留在这场对话里\",\"引出你更真实的回应\"]}}"
       },
       async execute(context, args: {
         location?: string;
@@ -248,7 +248,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"summary\":\"...\",\"resolution\":\"...\"}",
-        example: "{\"tool\":\"end_story\",\"args\":{\"summary\":\"你的反抗被彻底压回去，场景开始收束。\",\"resolution\":\"对方锁死了局面，你只能被迫迎向既定结局。\"}}"
+        example: "{\"tool\":\"end_story\",\"args\":{\"summary\":\"你终于顺着这场暧昧的牵引，把最后一点迟疑也慢慢放了下来。\",\"resolution\":\"夜色和呼吸一起放缓，故事停在情绪仍未散尽的余韵里。\"}}"
       },
       async execute(context, args: { summary: string; resolution: string }) {
         context.session.status = "ended";

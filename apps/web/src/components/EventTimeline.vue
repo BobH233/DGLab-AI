@@ -9,7 +9,7 @@
       <div class="timeline-rail">
         <span class="timeline-dot" />
       </div>
-      <div class="event-card">
+      <div :class="cardClass(item)">
         <header class="event-header">
           <div class="event-title-block">
             <span class="event-kicker">{{ item.kicker }}</span>
@@ -62,7 +62,7 @@ import type { SessionEvent } from "@dglab-ai/shared";
 
 type PresentationItem = {
   seq: number;
-  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect";
+  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error";
   kicker: string;
   title: string;
   main: string;
@@ -189,6 +189,18 @@ const presentationItems = computed<PresentationItem[]>(() => {
           createdAt: event.createdAt
         });
         return items;
+      case "system.tick_failed":
+        items.push({
+          seq: event.seq,
+          kind: "error",
+          kicker: "系统异常",
+          title: "本轮推进失败",
+          main: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
+          meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
+          tags: textOf(event.payload.retryable) === "true" ? ["可重试"] : ["异常"],
+          createdAt: event.createdAt
+        });
+        return items;
       case "system.timer_updated":
         items.push({
           seq: event.seq,
@@ -290,6 +302,13 @@ function textOf(value: unknown): string {
     return "";
   }
   return String(value);
+}
+
+function cardClass(item: PresentationItem): string[] {
+  return [
+    "event-card",
+    ...(item.kind === "dialogue" ? ["event-card--dialogue"] : [])
+  ];
 }
 
 function buildSceneUpdateText(payload: Record<string, unknown>): string {

@@ -253,6 +253,11 @@ a {
   box-shadow: 0 0 0 6px rgba(134, 177, 199, 0.18);
 }
 
+.timeline-item[data-kind="error"] .timeline-dot {
+  background: linear-gradient(135deg, #cf6b6b 0%, #a64545 100%);
+  box-shadow: 0 0 0 6px rgba(207, 107, 107, 0.18);
+}
+
 .timeline-item[data-kind="pause"] .timeline-dot,
 .timeline-dot--pause {
   background: linear-gradient(135deg, #c49a6c 0%, #9f7447 100%);
@@ -277,6 +282,50 @@ a {
     radial-gradient(circle at top right, rgba(196, 154, 108, 0.12), transparent 38%),
     linear-gradient(180deg, rgba(255, 249, 242, 0.96), rgba(255, 255, 255, 0.94));
   border-color: rgba(159, 116, 71, 0.18);
+}
+
+.event-card--dialogue {
+  position: relative;
+  background:
+    radial-gradient(circle at top right, rgba(114, 79, 57, 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(255, 251, 246, 0.98), rgba(255, 246, 238, 0.96));
+  border-color: rgba(139, 101, 74, 0.22);
+  box-shadow:
+    0 16px 34px rgba(121, 88, 66, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.event-card--dialogue::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 22px;
+  width: 18px;
+  height: 18px;
+  border-left: 1px solid rgba(139, 101, 74, 0.22);
+  border-bottom: 1px solid rgba(139, 101, 74, 0.22);
+  background: linear-gradient(135deg, rgba(255, 251, 246, 0.98), rgba(255, 246, 238, 0.96));
+  transform: rotate(45deg);
+  border-bottom-left-radius: 4px;
+}
+
+.timeline-item[data-kind="dialogue"] .event-kicker {
+  color: #8a5d3f;
+}
+
+.timeline-item[data-kind="dialogue"] .event-header strong {
+  color: #553829;
+}
+
+.timeline-item[data-kind="dialogue"] .event-main {
+  font-size: 1.04rem;
+  line-height: 1.8;
+  color: #402a1f;
+}
+
+.timeline-item[data-kind="dialogue"] .event-tag {
+  background: rgba(139, 101, 74, 0.1);
+  color: #7a5238;
 }
 
 .event-header {
@@ -306,6 +355,10 @@ a {
 .event-meta {
   margin: 0;
   line-height: 1.6;
+}
+
+.timeline-item[data-kind="dialogue"] .event-meta {
+  color: #7d5d4a;
 }
 
 .event-tags {
@@ -481,6 +534,28 @@ a {
   margin: 0;
   line-height: 1.6;
   color: var(--text-soft);
+}
+
+.inline-alert {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.inline-alert p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.inline-alert--error {
+  border-color: rgba(163, 29, 29, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(163, 29, 29, 0.08), transparent 36%),
+    rgba(255, 248, 248, 0.96);
 }
 
 .error-text {

@@ -65,7 +65,7 @@ describe("world builder normalization", () => {
             name: "塞西莉亚",
             role: "Director",
             personality: "冷酷主导者",
-            style: "慵懒，压迫"
+            style: "慵懒，暧昧"
           }
         ]
       }),
@@ -78,7 +78,7 @@ describe("world builder normalization", () => {
     expect(draft.contentNotes).toEqual(["备注一", "备注二"]);
     expect(draft.agents[0].role).toBe("director");
     expect(draft.agents[0].persona).toBe("冷酷主导者");
-    expect(draft.agents[0].style).toEqual(["慵懒", "压迫"]);
+    expect(draft.agents[0].style).toEqual(["慵懒", "暧昧"]);
     expect(draft.agents[0].goals.length).toBeGreaterThan(0);
     expect(draft.agents[0].id).toBe("agent_1");
   });
@@ -92,8 +92,8 @@ describe("world builder normalization", () => {
     const draft = await orchestrator.generateDraft("玩家简介", config);
 
     expect(draft.worldSummary).toContain("你的输入");
-    expect(draft.openingSituation).toContain("你被压制");
-    expect(draft.playerState).toContain("你当前处于被动");
-    expect(draft.suggestedPace).toContain("让你在对话与局势变化里逐步感到压力累积");
+    expect(draft.openingSituation).toContain("暧昧对峙");
+    expect(draft.playerState).toContain("你正被卷入一场充满试探");
+    expect(draft.suggestedPace).toContain("让你在互动、试探与情绪升温里逐步沉浸其中");
   });
 });

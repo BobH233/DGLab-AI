@@ -119,8 +119,7 @@ export const promptVersionsSchema = z.object({
   worldBuilder: z.string(),
   directorAgent: z.string().optional(),
   supportAgent: z.string().optional(),
-  ensembleTurn: z.string().optional(),
-  sceneSummarizer: z.string()
+  ensembleTurn: z.string().optional()
 });
 
 export type PromptVersions = z.infer<typeof promptVersionsSchema>;
@@ -143,8 +142,7 @@ export const sessionSchema = z.object({
   promptVersions: promptVersionsSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  lastSeq: z.number().int().nonnegative().default(0),
-  lastSnapshotSeq: z.number().int().nonnegative().default(0)
+  lastSeq: z.number().int().nonnegative().default(0)
 });
 
 export type Session = z.infer<typeof sessionSchema>;
@@ -162,6 +160,7 @@ export const eventTypeSchema = z.enum([
   "agent.story_effect",
   "scene.updated",
   "system.tick_started",
+  "system.tick_failed",
   "system.tick_completed",
   "system.timer_updated",
   "system.wait_scheduled",
@@ -182,21 +181,6 @@ export const sessionEventSchema = z.object({
 });
 
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
-
-export const sessionSnapshotSchema = z.object({
-  sessionId: z.string(),
-  seq: z.number().int().nonnegative(),
-  storyState: storyStateSchema,
-  agentStates: z.record(agentRuntimeStateSchema),
-  recentSummary: z.string(),
-  timerState: timerStateSchema,
-  usageTotals: usageStatsSchema,
-  promptVersions: promptVersionsSchema.optional(),
-  llmConfigSnapshot: llmConfigSchema.optional(),
-  createdAt: z.string().datetime()
-});
-
-export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 
 export const channelMessageSchema = z.object({
   source: z.enum(["player", "system"]),
@@ -320,12 +304,11 @@ export function mergeUsageEntry(base: UsageEntry, next: Partial<UsageEntry>): Us
 
 export function defaultPromptVersions(): PromptVersions {
   return {
-    sharedSafety: "1.1.0",
+    sharedSafety: "1.2.0",
     toolContract: "2.2.0",
-    worldBuilder: "1.1.0",
-    directorAgent: "1.1.0",
-    supportAgent: "1.1.0",
-    ensembleTurn: "1.1.0",
-    sceneSummarizer: "1.1.0"
+    worldBuilder: "1.2.0",
+    directorAgent: "1.2.0",
+    supportAgent: "1.2.0",
+    ensembleTurn: "1.2.0"
   };
 }
