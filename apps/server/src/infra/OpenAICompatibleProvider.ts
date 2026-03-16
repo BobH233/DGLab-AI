@@ -123,19 +123,75 @@ function parseSseCompletionPayload(responseText: string): CompletionPayload {
   };
 }
 
+function stripReasoningBlocks(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+function findFirstBalancedJsonObject(text: string): string | null {
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== "{") {
+      continue;
+    }
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+          continue;
+        }
+        if (char === "\\") {
+          escaping = true;
+          continue;
+        }
+        if (char === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = true;
+        continue;
+      }
+      if (char === "{") {
+        depth += 1;
+        continue;
+      }
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, index + 1);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractJsonObject(text: string): string {
-  const trimmed = text.trim();
+  const trimmed = stripReasoningBlocks(text);
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    return trimmed;
+    const balanced = findFirstBalancedJsonObject(trimmed);
+    if (balanced) {
+      return balanced;
+    }
   }
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) {
-    return fenced[1].trim();
+    const balanced = findFirstBalancedJsonObject(fenced[1].trim());
+    if (balanced) {
+      return balanced;
+    }
   }
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  if (first >= 0 && last > first) {
-    return trimmed.slice(first, last + 1);
+  const balanced = findFirstBalancedJsonObject(trimmed);
+  if (balanced) {
+    return balanced;
   }
   throw new Error("Provider returned non-JSON content");
 }

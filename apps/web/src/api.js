@@ -52,6 +52,11 @@ export const api = {
             body: JSON.stringify({ text })
         });
     },
+    retrySession(id) {
+        return request(`/sessions/${id}/retry`, {
+            method: "POST"
+        });
+    },
     updateTimer(id, body) {
         return request(`/sessions/${id}/timer`, {
             method: "POST",

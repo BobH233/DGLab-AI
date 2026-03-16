@@ -188,6 +188,65 @@ describe("OpenAICompatibleProvider", () => {
     expect(result.usage.totalTokens).toBe(5);
   });
 
+  it("extracts the first complete JSON object after think blocks", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: [
+                "<think>",
+                "code_execution {\"code\":\"print(\\\"debug\\\")\"}",
+                "</think>",
+                "{",
+                "\"actions\":[],",
+                "\"turnControl\":{\"continue\":true}",
+                "}"
+              ].join("\n")
+            }
+          }
+        ],
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 6,
+          total_tokens: 10
+        }
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    ));
+
+    const provider = new OpenAICompatibleProvider();
+    const result = await provider.completeJson({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return JSON"
+        }
+      ],
+      schema: z.object({
+        actions: z.array(z.unknown()),
+        turnControl: z.object({
+          continue: z.boolean()
+        })
+      }),
+      schemaName: "action_batch",
+      usageContext: {}
+    });
+
+    expect(result.data).toEqual({
+      actions: [],
+      turnControl: {
+        continue: true
+      }
+    });
+  });
+
   it("rejects action batches that use legacy tool key aliases", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
       JSON.stringify({
