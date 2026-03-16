@@ -35,16 +35,6 @@ export class SchedulerService {
       }, session.timerState.intervalMs);
       this.intervalHandles.set(session.id, handle);
     }
-    const pending = session.timerState.pendingWaits
-      .slice()
-      .sort((left, right) => Date.parse(left.runAt) - Date.parse(right.runAt))[0];
-    if (pending) {
-      const ms = Math.max(0, Date.parse(pending.runAt) - Date.now());
-      const handle = setTimeout(() => {
-        this.requestTick(session.id, `wait:${pending.id}`);
-      }, ms);
-      this.wakeHandles.set(session.id, handle);
-    }
   }
 
   requestTick(sessionId: string, reason: string): void {

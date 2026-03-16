@@ -277,8 +277,7 @@ export class SessionService {
       const now = new Date().toISOString();
       const queuedPlayerMessages = [...session.timerState.queuedPlayerMessages];
       const queuedReasons = [...session.timerState.queuedReasons];
-      const dueWaits = session.timerState.pendingWaits.filter((wait) => Date.parse(wait.runAt) <= Date.now());
-      session.timerState.pendingWaits = session.timerState.pendingWaits.filter((wait) => Date.parse(wait.runAt) > Date.now());
+      session.timerState.pendingWaits = [];
       session.timerState.queuedReasons = queuedReasons;
       session.timerState.queuedPlayerMessages = queuedPlayerMessages;
       session.timerState.nextTickAt = session.timerState.enabled
@@ -289,8 +288,7 @@ export class SessionService {
         source: "system" as const,
         createdAt: now,
         payload: {
-          reason,
-          dueWaits
+          reason
         }
       };
       const currentEvents = await this.store.getEvents(sessionId, Math.max(0, session.lastSeq - 30), 40);

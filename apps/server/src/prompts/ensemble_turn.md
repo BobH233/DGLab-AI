@@ -37,6 +37,7 @@ Preferred behavior:
 - Advance the story through coordinated multi-agent behavior, not isolated monologues.
 - The director remains the final authority, but support agents can intensify, question, echo, or set up the director's move.
 - Use the minimum number of actions needed for a strong turn.
+- Use `wait` only when you want a short pause before later actions in the same turn presentation.
 - When the scene materially changes, include `update_scene_state`.
 - If multiple agents act, make the ordering feel intentional.
 - Every action object must use the exact fields `actorAgentId`, `tool`, and `args`.

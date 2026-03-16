@@ -33,9 +33,9 @@
             <span class="eyebrow">Live Feed</span>
             <h3>剧情动态</h3>
           </div>
-          <span class="soft-pill">{{ events.length }} 条事件</span>
+          <span class="soft-pill">{{ displayedEventCount }} 条事件</span>
         </div>
-        <EventTimeline :events="events" />
+        <EventTimeline :events="events" :active-pause="activePause" />
       </section>
 
       <aside class="console-sidebar">
@@ -141,12 +141,25 @@ import EventTimeline from "../components/EventTimeline.vue";
 const route = useRoute();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
+const activePause = ref<{
+  title: string;
+  main: string;
+  meta?: string;
+  countdownLabel: string;
+} | null>(null);
 const message = ref("");
 const sending = ref(false);
 const error = ref("");
 const timerEnabled = ref(false);
 const intervalMs = ref(10000);
 let stream: EventSource | null = null;
+let playbackTimer: number | null = null;
+let countdownTimer: number | null = null;
+let queueRunning = false;
+let pendingPauseMs = 0;
+let playbackGeneration = 0;
+let pendingSleepResolve: (() => void) | null = null;
+const liveQueue: SessionEvent[] = [];
 
 const agentCards = computed(() => {
   const agents = session.value?.confirmedSetup?.agents ?? session.value?.draft.agents ?? [];
@@ -158,6 +171,8 @@ const agentCards = computed(() => {
   }));
 });
 
+const displayedEventCount = computed(() => events.value.length + (activePause.value ? 1 : 0));
+
 function syncSession(next: Session) {
   session.value = next;
   timerEnabled.value = next.timerState.enabled;
@@ -166,8 +181,9 @@ function syncSession(next: Session) {
 
 async function loadSession() {
   const id = String(route.params.id);
+  clearLivePlayback();
   syncSession(await api.getSession(id));
-  events.value = await api.getEvents(id);
+  events.value = (await api.getEvents(id)).filter((event) => event.type !== "system.wait_scheduled");
   connectStream(id);
 }
 
@@ -180,13 +196,145 @@ function connectStream(sessionId: string) {
   });
   stream.addEventListener("event.appended", (event) => {
     const payload = JSON.parse((event as MessageEvent).data) as { event: SessionEvent };
-    if (!events.value.some((item) => item.seq === payload.event.seq)) {
-      events.value = [...events.value, payload.event];
-    }
+    enqueueLiveEvent(payload.event);
   });
   stream.addEventListener("error", () => {
     error.value = "实时连接已断开，请刷新页面重试。";
   });
+}
+
+function enqueueLiveEvent(event: SessionEvent) {
+  if (events.value.some((item) => item.seq === event.seq) || liveQueue.some((item) => item.seq === event.seq)) {
+    return;
+  }
+  liveQueue.push(event);
+  void flushLiveQueue();
+}
+
+async function flushLiveQueue() {
+  if (queueRunning) {
+    return;
+  }
+  const generation = playbackGeneration;
+  queueRunning = true;
+  try {
+    while (liveQueue.length > 0) {
+      if (generation !== playbackGeneration) {
+        return;
+      }
+      const next = liveQueue.shift();
+      if (!next) {
+        continue;
+      }
+      if (next.type === "system.wait_scheduled") {
+        activatePause(next);
+        const rawDelay = Number(next.payload.delayMs ?? 0);
+        pendingPauseMs = Number.isFinite(rawDelay) && rawDelay > 0 ? rawDelay : 0;
+        if (pendingPauseMs > 0) {
+          await sleep(pendingPauseMs);
+          if (generation !== playbackGeneration) {
+            return;
+          }
+        }
+        pendingPauseMs = 0;
+        clearActivePause();
+        continue;
+      }
+      if (pendingPauseMs > 0) {
+        await sleep(pendingPauseMs);
+        if (generation !== playbackGeneration) {
+          return;
+        }
+        pendingPauseMs = 0;
+        clearActivePause();
+      }
+      events.value = [...events.value, next];
+    }
+  } finally {
+    queueRunning = false;
+    if (liveQueue.length > 0) {
+      void flushLiveQueue();
+    }
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    pendingSleepResolve = resolve;
+    playbackTimer = window.setTimeout(() => {
+      playbackTimer = null;
+      pendingSleepResolve = null;
+      resolve();
+    }, ms);
+  });
+}
+
+function activatePause(event: SessionEvent) {
+  const speaker = textOf(event.payload.speaker) || "对方";
+  const delayMs = Number(event.payload.delayMs ?? 0);
+  const startedAt = Date.now();
+  activePause.value = {
+    title: `${speaker} 正在注视你`,
+    main: `${speaker} 暂时没有继续开口，像是在观察你的反应……`,
+    meta: event.payload.reason ? `节奏说明：${textOf(event.payload.reason)}` : undefined,
+    countdownLabel: `约 ${formatPauseMs(delayMs)} 后继续`
+  };
+  if (countdownTimer !== null) {
+    window.clearInterval(countdownTimer);
+  }
+  if (delayMs <= 0) {
+    return;
+  }
+  countdownTimer = window.setInterval(() => {
+    const remaining = Math.max(0, delayMs - (Date.now() - startedAt));
+    if (activePause.value) {
+      activePause.value = {
+        ...activePause.value,
+        countdownLabel: remaining > 0 ? `约 ${formatPauseMs(remaining)} 后继续` : "即将继续"
+      };
+    }
+    if (remaining <= 0 && countdownTimer !== null) {
+      window.clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  }, 100);
+}
+
+function clearActivePause() {
+  activePause.value = null;
+  if (countdownTimer !== null) {
+    window.clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
+function clearLivePlayback() {
+  playbackGeneration += 1;
+  liveQueue.length = 0;
+  queueRunning = false;
+  pendingPauseMs = 0;
+  clearActivePause();
+  if (playbackTimer !== null) {
+    window.clearTimeout(playbackTimer);
+    playbackTimer = null;
+  }
+  pendingSleepResolve?.();
+  pendingSleepResolve = null;
+}
+
+function textOf(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value);
+}
+
+function formatPauseMs(ms: number): string {
+  if (ms >= 1000) {
+    const seconds = Math.max(0.1, ms / 1000);
+    return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`;
+  }
+  return `${Math.max(0, Math.round(ms))} ms`;
 }
 
 async function sendMessage() {
@@ -231,6 +379,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stream?.close();
+  clearLivePlayback();
 });
 </script>
-

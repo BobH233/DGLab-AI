@@ -157,4 +157,33 @@ describe("createDefaultToolRegistry", () => {
       pressure: 4
     })).rejects.toThrow();
   });
+
+  it("treats wait as an in-turn pause event instead of scheduling a future tick", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<unknown> = [];
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event);
+      }
+    }, "wait", {
+      delayMs: 1000,
+      reason: "停顿一秒后再继续说话。"
+    });
+
+    expect(session.timerState.pendingWaits).toHaveLength(0);
+    expect(events[0]).toMatchObject({
+      type: "system.wait_scheduled",
+      payload: {
+        delayMs: 1000,
+        reason: "停顿一秒后再继续说话。",
+        speaker: "Director",
+        mode: "in_turn_pause"
+      }
+    });
+  });
 });

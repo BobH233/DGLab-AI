@@ -26,6 +26,33 @@
         </div>
       </div>
     </article>
+    <article
+      v-if="activePause"
+      class="timeline-item timeline-item--live"
+      data-kind="pause"
+    >
+      <div class="timeline-rail">
+        <span class="timeline-dot timeline-dot--pause" />
+      </div>
+      <div class="event-card event-card--pause">
+        <header class="event-header">
+          <div class="event-title-block">
+            <span class="event-kicker">节奏控制</span>
+            <strong>{{ activePause.title }}</strong>
+          </div>
+          <span>{{ activePause.countdownLabel }}</span>
+        </header>
+        <div class="event-body">
+          <p class="event-main">{{ activePause.main }}</p>
+          <p v-if="activePause.meta" class="event-meta">{{ activePause.meta }}</p>
+        </div>
+        <div class="pause-indicator" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </article>
   </section>
 </template>
 
@@ -44,15 +71,23 @@ type PresentationItem = {
   createdAt: string;
 };
 
+type ActivePauseState = {
+  title: string;
+  main: string;
+  meta?: string;
+  countdownLabel: string;
+};
+
 const props = defineProps<{
   events: SessionEvent[];
+  activePause?: ActivePauseState | null;
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
-  return props.events.map((event) => {
+  return props.events.reduce<PresentationItem[]>((items, event) => {
     switch (event.type) {
       case "player.message":
-        return {
+        items.push({
           seq: event.seq,
           kind: "player",
           kicker: "玩家输入",
@@ -60,9 +95,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.text),
           tags: ["玩家"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "agent.speak_player":
-        return {
+        items.push({
           seq: event.seq,
           kind: "dialogue",
           kicker: "角色发言",
@@ -70,9 +106,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.message),
           tags: ["对你说"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "agent.speak_agent":
-        return {
+        items.push({
           seq: event.seq,
           kind: "dialogue",
           kicker: "角色互动",
@@ -81,9 +118,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: `目标角色：${textOf(event.payload.targetAgentId)}`,
           tags: ["角色间对话"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "agent.reasoning":
-        return {
+        items.push({
           seq: event.seq,
           kind: "thought",
           kicker: "意图摘要",
@@ -91,9 +129,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.summary),
           tags: ["可见推理"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "agent.stage_direction":
-        return {
+        items.push({
           seq: event.seq,
           kind: "action",
           kicker: "舞台动作",
@@ -101,9 +140,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.direction),
           tags: ["动作"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "agent.story_effect":
-        return {
+        items.push({
           seq: event.seq,
           kind: "effect",
           kicker: "剧情变化",
@@ -112,9 +152,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.intensity !== undefined ? `强度：${textOf(event.payload.intensity)}` : undefined,
           tags: ["效果"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "scene.updated":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "场景状态",
@@ -122,9 +163,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: buildSceneUpdateText(event.payload),
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "system.tick_started":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "系统调度",
@@ -133,9 +175,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
           tags: ["Tick"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "system.tick_completed":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "系统调度",
@@ -144,9 +187,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.status ? `当前状态：${textOf(event.payload.status)}` : undefined,
           tags: ["Tick"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "system.timer_updated":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "自动推进",
@@ -154,20 +198,12 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: event.payload.intervalMs ? `当前触发间隔为 ${textOf(event.payload.intervalMs)} ms。` : "定时配置已更新。",
           tags: ["定时器"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "system.wait_scheduled":
-        return {
-          seq: event.seq,
-          kind: "system",
-          kicker: "节奏控制",
-          title: "角色安排了稍后动作",
-          main: textOf(event.payload.reason),
-          meta: event.payload.delayMs ? `延迟：${textOf(event.payload.delayMs)} ms` : undefined,
-          tags: ["等待"],
-          createdAt: event.createdAt
-        };
+        return items;
       case "system.story_ended":
-        return {
+        items.push({
           seq: event.seq,
           kind: "effect",
           kicker: "结局",
@@ -176,9 +212,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.resolution ? `结局说明：${textOf(event.payload.resolution)}` : undefined,
           tags: ["结束"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "system.usage_recorded":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "模型调用",
@@ -187,9 +224,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.totalTokens ? `本次总消耗：${textOf(event.payload.totalTokens)} tokens` : undefined,
           tags: ["Usage"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "session.created":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "会话",
@@ -197,9 +235,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.title ?? "新的故事会话已建立。"),
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "draft.generated":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "草案",
@@ -207,9 +246,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: "系统已完成背景和角色补全，请在确认页检查细节。",
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "draft.updated":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "草案",
@@ -217,9 +257,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: "你对世界观或角色设定做了更新。",
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       case "session.confirmed":
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "会话",
@@ -227,9 +268,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: "设定已确认，系统将按当前背景持续推进剧情。",
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
       default:
-        return {
+        items.push({
           seq: event.seq,
           kind: "system",
           kicker: "系统",
@@ -237,9 +279,10 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: "系统记录了一条内部事件。",
           tags: ["系统"],
           createdAt: event.createdAt
-        };
+        });
+        return items;
     }
-  });
+  }, []);
 });
 
 function textOf(value: unknown): string {
@@ -268,4 +311,3 @@ function formatDate(value: string): string {
   });
 }
 </script>
-

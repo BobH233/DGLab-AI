@@ -141,7 +141,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
     },
     {
       id: "wait",
-      description: "Schedule this agent to rejoin after a short delay.",
+      description: "Insert a short visible pause before later actions in the same displayed turn.",
       visibility: "system",
       inputSchema: z.object({
         delayMs: z.number().int().min(200).max(60000),
@@ -152,22 +152,17 @@ export function createDefaultToolRegistry(): ToolRegistry {
         example: "{\"tool\":\"wait\",\"args\":{\"delayMs\":1200,\"reason\":\"停顿一秒，让刚才的话产生压迫感。\"}}"
       },
       async execute(context, args: { delayMs: number; reason: string }) {
-        const handle = {
-          id: createId("wait"),
-          agentId: context.agent.id,
-          runAt: new Date(Date.parse(context.now) + args.delayMs).toISOString(),
-          reason: args.reason
-        };
-        context.session.timerState.pendingWaits.push(handle);
         context.addEvent({
           type: "system.wait_scheduled",
           source: "system",
           agentId: context.agent.id,
           createdAt: context.now,
           payload: {
-            waitId: handle.id,
+            waitId: createId("wait"),
             delayMs: args.delayMs,
-            reason: args.reason
+            reason: args.reason,
+            speaker: context.agent.name,
+            mode: "in_turn_pause"
           }
         });
       }

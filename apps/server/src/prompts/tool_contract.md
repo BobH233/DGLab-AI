@@ -51,6 +51,7 @@ Forbidden alias examples:
 
 Rules:
 - Every visible line, gesture, reasoning summary, pause, scene update, or ending must be expressed as a tool call.
+- `wait` means a presentation pause inside the current action sequence. It delays the display of later actions in the same turn. It does not start a new turn.
 - Use `emit_reasoning_summary` only for player-visible strategic summaries, never for hidden private chain-of-thought.
 - Use concise action batches. Prefer 1-5 actions.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.
