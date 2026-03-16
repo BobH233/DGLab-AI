@@ -1,0 +1,58 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import cors from "cors";
+import express from "express";
+import { OpenAICompatibleProvider } from "./infra/OpenAICompatibleProvider.js";
+import { MongoSessionStore } from "./infra/mongo.js";
+import { FilePromptTemplateService } from "./infra/PromptTemplateService.js";
+import { WebChannelAdapter } from "./infra/WebChannelAdapter.js";
+import { isHttpError } from "./lib/errors.js";
+import { createConfigRoutes } from "./routes/configRoutes.js";
+import { createSessionRoutes } from "./routes/sessionRoutes.js";
+import { ConfigService } from "./services/ConfigService.js";
+import { DefaultOrchestratorService } from "./services/OrchestratorService.js";
+import { SchedulerService } from "./services/SchedulerService.js";
+import { SessionService } from "./services/SessionService.js";
+import { createDefaultToolRegistry } from "./tools/defaultTools.js";
+
+export async function createServerApp() {
+  const store = new MongoSessionStore(
+    process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017",
+    process.env.MONGODB_DB ?? "dglab_ai"
+  );
+  await store.init();
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const promptService = new FilePromptTemplateService(
+    path.resolve(currentDir, "prompts")
+  );
+  const provider = new OpenAICompatibleProvider();
+  const channel = new WebChannelAdapter();
+  const toolRegistry = createDefaultToolRegistry();
+  const orchestrator = new DefaultOrchestratorService(provider, promptService, toolRegistry);
+  const configService = new ConfigService(store);
+  const sessionService = new SessionService(store, channel, orchestrator, promptService);
+  const scheduler = new SchedulerService(() => sessionService.listSchedulableSessions(), sessionService);
+  sessionService.attachScheduler(scheduler);
+  await scheduler.bootstrap();
+
+  const app = express();
+  app.use(cors());
+  app.use(express.json({ limit: "1mb" }));
+
+  app.get("/api/health", (_request, response) => {
+    response.json({ ok: true });
+  });
+  app.use("/api/config", createConfigRoutes(configService));
+  app.use("/api/sessions", createSessionRoutes(sessionService, channel));
+
+  app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+    if (isHttpError(error)) {
+      response.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+    console.error(error);
+    response.status(500).json({ message: error instanceof Error ? error.message : "Internal server error" });
+  });
+
+  return app;
+}

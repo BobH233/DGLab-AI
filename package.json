@@ -1,0 +1,16 @@
+{
+  "name": "dglab-ai",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @dglab-ai/shared && npm run build -w @dglab-ai/server && npm run build -w @dglab-ai/web",
+    "dev:server": "npm run dev -w @dglab-ai/server",
+    "dev:web": "npm run dev -w @dglab-ai/web",
+    "test": "npm run test -w @dglab-ai/server && npm run test -w @dglab-ai/web"
+  }
+}
+

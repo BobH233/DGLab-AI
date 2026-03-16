@@ -1,0 +1,453 @@
+import {
+  actionBatchSchema,
+  mergeUsageEntry,
+  sessionDraftSchema,
+  type AgentProfile,
+  type LlmConfig,
+  type Session,
+  type SessionDraft,
+  type SessionEvent
+} from "@dglab-ai/shared";
+import { z } from "zod";
+import { createId } from "../lib/ids.js";
+import type {
+  LLMProvider,
+  OrchestratorService,
+  OrchestratorTurnResult,
+  PromptTemplateService,
+  ToolRegistry
+} from "../types/contracts.js";
+
+function stringify(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function toText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || fallback;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => toText(item))
+      .filter(Boolean)
+      .join("；");
+    return normalized || fallback;
+  }
+  if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const preferredKeys = ["summary", "description", "content", "text", "state", "status"];
+    for (const key of preferredKeys) {
+      const candidate = toText(source[key]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    const pairs = Object.entries(source)
+      .map(([key, item]) => {
+        const normalized = toText(item);
+        return normalized ? `${key}：${normalized}` : "";
+      })
+      .filter(Boolean);
+    return pairs.join("；") || fallback;
+  }
+  return fallback;
+}
+
+function toStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item).trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\n|；|;|，|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function toRole(value: unknown, index: number): "director" | "support" {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "director" || normalized === "主导者") {
+    return "director";
+  }
+  if (normalized === "support" || normalized === "辅助者") {
+    return "support";
+  }
+  return index === 0 ? "director" : "support";
+}
+
+function normalizeAgent(rawAgent: unknown, index: number) {
+  const source = typeof rawAgent === "object" && rawAgent !== null
+    ? rawAgent as Record<string, unknown>
+    : {};
+  const name = toText(source.name, `角色${index + 1}`);
+  const role = toRole(source.role, index);
+  const persona = toText(source.persona ?? source.personality ?? source.summary);
+  const style = toStringList(source.style);
+  const summary = toText(
+    source.summary ?? persona,
+    `${name}是本场景中的${role === "director" ? "主导者" : "辅助者"}。`
+  );
+  const goals = toStringList(source.goals);
+  return {
+    id: String(source.id ?? `agent_${index + 1}`).trim() || `agent_${index + 1}`,
+    name,
+    role,
+    summary,
+    persona: persona || summary,
+    goals: goals.length > 0
+      ? goals
+      : [role === "director" ? "主导局势并持续推进剧情。" : "配合主导者施压并强化场景气氛。"],
+    style,
+    boundaries: toStringList(source.boundaries),
+    sortOrder: typeof source.sortOrder === "number" ? source.sortOrder : index
+  };
+}
+
+function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): SessionDraft {
+  const source = typeof raw === "object" && raw !== null
+    ? raw as Record<string, unknown>
+    : {};
+  const agentsInput = Array.isArray(source.agents) ? source.agents : [];
+  const agents = agentsInput.length > 0
+    ? agentsInput.map((agent, index) => normalizeAgent(agent, index))
+    : [normalizeAgent({}, 0)];
+  return sessionDraftSchema.parse({
+    title: toText(source.title, "未命名剧情"),
+    playerBrief,
+    worldSummary: toText(source.worldSummary, "系统已根据玩家输入生成基础世界观。"),
+    openingSituation: toText(source.openingSituation, "故事从玩家被控制方压制后的开场处境开始。"),
+    playerState: toText(source.playerState, "玩家当前处于被动、受压制且难以反制的局面。"),
+    suggestedPace: toText(source.suggestedPace, "缓慢推进，通过对话与局势变化累积压力。"),
+    safetyFrame: toText(source.safetyFrame, "本次剧情为纯虚构推演，不映射现实伤害。"),
+    agents,
+    sceneGoals: toStringList(source.sceneGoals),
+    contentNotes: toStringList(source.contentNotes)
+  });
+}
+
+function trimEvents(events: SessionEvent[], limit = 18): SessionEvent[] {
+  return events.slice(Math.max(0, events.length - limit));
+}
+
+function toolReferenceForPrompt(toolRegistry: ToolRegistry): string {
+  return toolRegistry.list().map((tool) => {
+    return [
+      `- ${tool.id} (${tool.visibility}): ${tool.description}`,
+      `  Exact args object: ${tool.promptContract.argsShape}`,
+      `  Valid call example: ${tool.promptContract.example}`
+    ].join("\n");
+  }).join("\n");
+}
+
+function toolExamplesForPrompt(): string {
+  return [
+    "Example batch 1:",
+    "```json",
+    JSON.stringify({
+      actions: [
+        {
+          actorAgentId: "director",
+          tool: "perform_stage_direction",
+          args: {
+            direction: "他先是沉默地看着玩家，把桌上的文件慢慢推到正中央。"
+          }
+        },
+        {
+          actorAgentId: "director",
+          tool: "speak_to_player",
+          args: {
+            message: "从现在开始，你每一句话都要想清楚再说。"
+          }
+        },
+        {
+          actorAgentId: "support_1",
+          tool: "speak_to_agent",
+          args: {
+            targetAgentId: "director",
+            message: "她开始犹豫了。"
+          }
+        },
+        {
+          actorAgentId: "director",
+          tool: "wait",
+          args: {
+            delayMs: 1500,
+            reason: "停顿片刻，让刚才的警告沉下来。"
+          }
+        }
+      ],
+      turnControl: {
+        continue: true,
+        endStory: false,
+        needsHandoff: false
+      }
+    }, null, 2),
+    "```",
+    "Example batch 2:",
+    "```json",
+    JSON.stringify({
+      actions: [
+        {
+          actorAgentId: "support_1",
+          tool: "apply_story_effect",
+          args: {
+            label: "空气凝固",
+            description: "房间里的压迫感在短暂沉默后明显升高。",
+            intensity: 6
+          }
+        },
+        {
+          actorAgentId: "director",
+          tool: "update_scene_state",
+          args: {
+            location: "审讯室",
+            phase: "pressure",
+            tension: 7,
+            summary: "主导者已经通过沉默和质问掌握了局面。",
+            activeObjectives: ["逼玩家给出明确回答", "阻止玩家转移话题"]
+          }
+        }
+      ],
+      turnControl: {
+        continue: true,
+        endStory: false,
+        needsHandoff: false
+      }
+    }, null, 2),
+    "```",
+    "Example batch 3:",
+    "```json",
+    JSON.stringify({
+      actions: [
+        {
+          actorAgentId: "director",
+          tool: "end_story",
+          args: {
+            summary: "玩家的反抗彻底失败，场景进入收束。",
+            resolution: "控制方稳定了全部局势，故事以既定结局结束。"
+          }
+        }
+      ],
+      turnControl: {
+        continue: false,
+        endStory: true,
+        needsHandoff: false
+      }
+    }, null, 2),
+    "```"
+  ].join("\n");
+}
+
+function sortAgents(session: Session): AgentProfile[] {
+  const agents = session.confirmedSetup?.agents ?? session.draft.agents;
+  return [...agents].sort((left, right) => {
+    if (left.role === right.role) {
+      return left.sortOrder - right.sortOrder;
+    }
+    return left.role === "director" ? -1 : 1;
+  });
+}
+
+function formatAgentRoster(agents: AgentProfile[]): string {
+  return agents.map((agent) => [
+    `- id: ${agent.id}`,
+    `  name: ${agent.name}`,
+    `  role: ${agent.role}`,
+    `  summary: ${agent.summary}`,
+    `  persona: ${agent.persona}`,
+    `  goals: ${agent.goals.join("；")}`,
+    `  style: ${agent.style.join("；") || "无"}`
+  ].join("\n")).join("\n");
+}
+
+export class DefaultOrchestratorService implements OrchestratorService {
+  constructor(
+    private readonly provider: LLMProvider,
+    private readonly prompts: PromptTemplateService,
+    private readonly tools: ToolRegistry
+  ) {}
+
+  async generateDraft(playerBrief: string, config: LlmConfig): Promise<SessionDraft> {
+    const prompt = await this.prompts.render("world_builder", {
+      sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
+      playerBrief
+    });
+    const response = await this.provider.completeJson({
+      modelConfig: config,
+      messages: [
+        {
+          role: "system",
+          content: prompt
+        },
+        {
+          role: "user",
+          content: "Return a complete JSON draft for this story session."
+        }
+      ],
+      schema: z.object({}).passthrough(),
+      schemaName: "world_builder_output",
+      usageContext: {
+        kind: "world-builder"
+      }
+    });
+    return normalizeWorldBuilderOutput(response.data, playerBrief);
+  }
+
+  async summarizeScene(session: Session, config: LlmConfig): Promise<{ recentSummary: string }> {
+    const prompt = await this.prompts.render("scene_summarizer", {
+      sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
+      title: session.title,
+      storyState: stringify(session.storyState),
+      recentEvents: stringify([])
+    });
+    try {
+      const response = await this.provider.completeJson<{ recentSummary: string }>({
+        modelConfig: config,
+        messages: [
+          {
+            role: "system",
+            content: prompt
+          },
+          {
+            role: "user",
+            content: "Return a concise scene summary."
+          }
+        ],
+        schema: z.object({
+          recentSummary: z.string().min(1)
+        }),
+        schemaName: "scene_summary_output",
+        usageContext: {
+          kind: "scene-summary",
+          sessionId: session.id
+        }
+      });
+      return response.data;
+    } catch {
+      return {
+        recentSummary: `${session.title}: ${session.storyState.summary || session.draft.openingSituation}`
+      };
+    }
+  }
+
+  async runTick(
+    session: Session,
+    reason: string,
+    recentEvents: SessionEvent[],
+    config: LlmConfig
+  ): Promise<OrchestratorTurnResult> {
+    const events: Array<Omit<SessionEvent, "seq" | "sessionId">> = [];
+    const usageCalls: OrchestratorTurnResult["usageCalls"] = [];
+    const now = new Date().toISOString();
+    const agents = sortAgents(session);
+    const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+    const toolReference = toolReferenceForPrompt(this.tools);
+    const toolExamples = toolExamplesForPrompt();
+    const toolContract = await this.prompts.render("tool_contract", {
+      toolReference,
+      toolExamples
+    });
+    const tickContext = {
+      reason,
+      queuedPlayerMessages: session.timerState.queuedPlayerMessages,
+      dueWaits: session.timerState.pendingWaits.filter((wait) => Date.parse(wait.runAt) <= Date.parse(now))
+    };
+    const visibleEvents = trimEvents(recentEvents);
+    const hasEnded = (): boolean => session.status === "ended";
+    const prompt = await this.prompts.render("ensemble_turn", {
+      sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
+      toolContract,
+      agentRoster: formatAgentRoster(agents),
+      agentRuntimeState: stringify(session.agentStates),
+      sessionDraft: stringify(session.confirmedSetup ?? session.draft),
+      sceneState: stringify(session.storyState),
+      recentEvents: stringify(visibleEvents),
+      tickContext: stringify(tickContext)
+    });
+    const response = await this.provider.completeJson({
+      modelConfig: config,
+      messages: [
+        {
+          role: "system",
+          content: prompt
+        },
+        {
+          role: "user",
+          content: "Emit one shared multi-agent action batch as JSON."
+        }
+      ],
+      schema: actionBatchSchema,
+      schemaName: "ensemble_action_batch",
+      usageContext: {
+        kind: "ensemble-turn",
+        sessionId: session.id,
+        agentIds: agents.map((agent) => agent.id)
+      }
+    });
+    const usageId = createId("usage");
+    usageCalls.push({
+      id: usageId,
+      model: response.usage.model,
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
+      totalTokens: response.usage.totalTokens,
+      createdAt: now
+    });
+    session.usageTotals.session = mergeUsageEntry(session.usageTotals.session, {
+      ...response.usage
+    });
+    session.usageTotals.byCall.push({
+      id: usageId,
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
+      totalTokens: response.usage.totalTokens,
+      model: response.usage.model,
+      createdAt: now
+    });
+    events.push({
+      type: "system.usage_recorded",
+      source: "system",
+      createdAt: now,
+      payload: {
+        usageId,
+        mode: "ensemble",
+        model: response.usage.model,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens
+      }
+    });
+    for (const action of response.data.actions) {
+      const actor = agentById.get(action.actorAgentId);
+      if (!actor) {
+        throw new Error(`Unknown actorAgentId in action batch: ${action.actorAgentId}`);
+      }
+      const result = await this.tools.execute({
+        session,
+        agent: actor,
+        now,
+        addEvent: (event) => {
+          events.push(event);
+        }
+      }, action.tool, action.args);
+      if (result?.stopProcessing || hasEnded()) {
+        break;
+      }
+    }
+    if (response.data.turnControl.endStory && !hasEnded()) {
+      session.status = "ended";
+    }
+    return {
+      events,
+      usageCalls
+    };
+  }
+}
