@@ -15,11 +15,14 @@ const config: LlmConfig = {
 };
 
 class FakePromptService {
+  public renders: Array<{ name: string; data: Record<string, unknown> }> = [];
+
   async getTemplate(name: string): Promise<string> {
     return `template:${name}`;
   }
 
-  async render(name: string): Promise<string> {
+  async render(name: string, data: Record<string, unknown>): Promise<string> {
+    this.renders.push({ name, data });
     return `rendered:${name}`;
   }
 
@@ -95,5 +98,20 @@ describe("world builder normalization", () => {
     expect(draft.openingSituation).toContain("暧昧对峙");
     expect(draft.playerState).toContain("你正被卷入一场充满试探");
     expect(draft.suggestedPace).toContain("让你在互动、试探与情绪升温里逐步沉浸其中");
+  });
+
+  it("injects enabled tool world hooks into the world builder prompt", async () => {
+    const prompts = new FakePromptService();
+    const orchestrator = new DefaultOrchestratorService(
+      new FakeProvider({}),
+      prompts,
+      createDefaultToolRegistry()
+    );
+
+    await orchestrator.generateDraft("玩家简介", config);
+
+    const worldBuilderRender = prompts.renders.find((entry) => entry.name === "world_builder");
+    expect(worldBuilderRender?.data.toolWorldHooks).toContain("control_vibe_toy");
+    expect(worldBuilderRender?.data.toolWorldHooks).toContain("震动小玩具");
   });
 });

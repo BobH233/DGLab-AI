@@ -17,6 +17,11 @@ Design goals:
 Player brief:
 {{playerBrief}}
 
+Tool-specific world-building hooks:
+{{toolWorldHooks}}
+
+If tool-specific hooks are provided, treat them as active capabilities in this session and weave them into the generated background naturally. Any tool-enabled device, environment, or prop should already make sense inside `worldSummary`, `openingSituation`, `playerState`, relevant `sceneGoals`, and agent design.
+
 Return:
 - title
 - worldSummary

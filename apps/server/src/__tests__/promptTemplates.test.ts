@@ -44,4 +44,16 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Non-explicit romantic or suggestive content is allowed");
     expect(prompt).toContain("Favor emotional pull, chemistry, teasing, and narrative intimacy");
   });
+
+  it("allows world builder prompts to weave active tool hooks into the setup", async () => {
+    const prompt = await promptService.render("world_builder", {
+      sharedSafety: await promptService.getTemplate("shared_safety_preamble"),
+      playerBrief: "brief",
+      toolWorldHooks: "- Tool: control_vibe_toy\n玩家身上有一个可控制的小玩具。"
+    });
+
+    expect(prompt).toContain("Tool-specific world-building hooks");
+    expect(prompt).toContain("treat them as active capabilities in this session");
+    expect(prompt).toContain("control_vibe_toy");
+  });
 });

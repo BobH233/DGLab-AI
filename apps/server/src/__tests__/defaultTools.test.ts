@@ -61,6 +61,17 @@ function createSession(): Session {
 }
 
 describe("createDefaultToolRegistry", () => {
+  it("exposes tool-specific world prompt hooks for enabled tools", () => {
+    const registry = createDefaultToolRegistry();
+
+    const contributions = registry.getWorldPromptContributions({
+      playerBrief: "想要被遥控玩具挑逗的暧昧剧情"
+    });
+
+    expect(contributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(true);
+    expect(contributions.find((entry) => entry.toolId === "control_vibe_toy")?.prompt).toContain("震动小玩具");
+  });
+
   it("executes speak_to_player and emits a public event", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();
@@ -79,6 +90,34 @@ describe("createDefaultToolRegistry", () => {
       type: "agent.speak_player"
     });
     expect(session.agentStates.director.intent).toBe("speak_to_player");
+  });
+
+  it("executes control_vibe_toy and emits a visible simulated device event", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<unknown> = [];
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event);
+      }
+    }, "control_vibe_toy", {
+      intensityPercent: 72,
+      mode: "pulse"
+    });
+
+    expect(events[0]).toMatchObject({
+      type: "agent.device_control",
+      payload: {
+        intensityPercent: 72,
+        mode: "pulse",
+        status: "simulated"
+      }
+    });
+    expect(session.agentStates.director.intent).toBe("control_vibe_toy");
   });
 
   it("rejects unknown tools", async () => {

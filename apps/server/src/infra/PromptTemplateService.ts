@@ -5,7 +5,7 @@ import type { PromptTemplateService } from "../types/contracts.js";
 const TEMPLATE_VERSIONS: Record<string, string> = {
   "shared_safety_preamble": "1.2.0",
   "tool_contract": "2.2.0",
-  "world_builder": "1.2.0",
+  "world_builder": "1.3.0",
   "director_agent": "1.2.0",
   "support_agent": "1.2.0",
   "ensemble_turn": "1.2.0"

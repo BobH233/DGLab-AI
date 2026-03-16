@@ -153,6 +153,7 @@ export const eventTypeSchema = z.enum([
   "draft.updated",
   "session.confirmed",
   "player.message",
+  "agent.device_control",
   "agent.speak_player",
   "agent.speak_agent",
   "agent.reasoning",
@@ -306,7 +307,7 @@ export function defaultPromptVersions(): PromptVersions {
   return {
     sharedSafety: "1.2.0",
     toolContract: "2.2.0",
-    worldBuilder: "1.2.0",
+    worldBuilder: "1.3.0",
     directorAgent: "1.2.0",
     supportAgent: "1.2.0",
     ensembleTurn: "1.2.0"

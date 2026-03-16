@@ -58,6 +58,15 @@ export type ToolExecutionContext = {
   addEvent: (event: Omit<SessionEvent, "seq" | "sessionId">) => void;
 };
 
+export type ToolWorldPromptContext = {
+  playerBrief: string;
+};
+
+export interface ToolWorldPromptContribution {
+  toolId: string;
+  prompt: string;
+}
+
 export interface ToolPromptContract {
   argsShape: string;
   example: string;
@@ -69,12 +78,14 @@ export interface ToolDefinition<TArgs = unknown> {
   visibility: "public" | "system";
   inputSchema: ZodTypeAny;
   promptContract: ToolPromptContract;
+  buildWorldPrompt?(context: ToolWorldPromptContext): string | null | undefined;
   execute(context: ToolExecutionContext, args: TArgs): Promise<ToolExecutionResult | void>;
 }
 
 export interface ToolRegistry {
   get(toolId: string): ToolDefinition | undefined;
   list(): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">>;
+  getWorldPromptContributions(context: ToolWorldPromptContext): ToolWorldPromptContribution[];
   execute(context: ToolExecutionContext, toolId: string, args: unknown): Promise<ToolExecutionResult | void>;
 }
 

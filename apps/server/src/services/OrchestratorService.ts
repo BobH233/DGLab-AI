@@ -246,6 +246,16 @@ function toolExamplesForPrompt(): string {
   ].join("\n");
 }
 
+function worldBuilderToolHooksForPrompt(toolRegistry: ToolRegistry, playerBrief: string): string {
+  const contributions = toolRegistry.getWorldPromptContributions({ playerBrief });
+  if (contributions.length === 0) {
+    return "No additional tool-specific world constraints.";
+  }
+  return contributions.map((entry) => {
+    return [`- Tool: ${entry.toolId}`, entry.prompt].join("\n");
+  }).join("\n\n");
+}
+
 function sortAgents(session: Session): AgentProfile[] {
   const agents = session.confirmedSetup?.agents ?? session.draft.agents;
   return [...agents].sort((left, right) => {
@@ -278,7 +288,8 @@ export class DefaultOrchestratorService implements OrchestratorService {
   async generateDraft(playerBrief: string, config: LlmConfig): Promise<SessionDraft> {
     const prompt = await this.prompts.render("world_builder", {
       sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
-      playerBrief
+      playerBrief,
+      toolWorldHooks: worldBuilderToolHooksForPrompt(this.tools, playerBrief)
     });
     const response = await this.provider.completeJson({
       modelConfig: config,

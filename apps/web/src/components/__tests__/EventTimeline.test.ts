@@ -88,6 +88,38 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("把目光留在我这里");
   });
 
+  it("renders simulated device control events in the timeline", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 4,
+            type: "agent.device_control",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date().toISOString(),
+            payload: {
+              speaker: "钟离",
+              deviceId: "vibe_toy",
+              deviceName: "穿戴式震动小玩具",
+              intensityPercent: 80,
+              mode: "pulse",
+              supportedModes: ["steady", "pulse", "wave", "tease"],
+              status: "simulated"
+            }
+          }
+        ]
+      }
+    });
+
+    expect(wrapper.text()).toContain("设备控制");
+    expect(wrapper.text()).toContain("钟离 调用了 穿戴式震动小玩具");
+    expect(wrapper.text()).toContain("强度调整为 80%");
+    expect(wrapper.text()).toContain("模式切换为 pulse");
+    expect(wrapper.text()).toContain("执行状态：simulated");
+  });
+
   it("renders tick failure events with retryable context", () => {
     const wrapper = mount(EventTimeline, {
       props: {

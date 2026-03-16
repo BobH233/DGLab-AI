@@ -19,6 +19,19 @@ class DefaultToolRegistry implements ToolRegistry {
     }));
   }
 
+  getWorldPromptContributions(context: Parameters<NonNullable<ToolDefinition["buildWorldPrompt"]>>[0]) {
+    return this.tools.flatMap((tool) => {
+      const prompt = tool.buildWorldPrompt?.(context)?.trim();
+      if (!prompt) {
+        return [];
+      }
+      return [{
+        toolId: tool.id,
+        prompt
+      }];
+    });
+  }
+
   async execute(context: Parameters<ToolDefinition["execute"]>[0], toolId: string, args: unknown) {
     const tool = this.get(toolId);
     if (!tool) {
@@ -31,6 +44,52 @@ class DefaultToolRegistry implements ToolRegistry {
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const tools: ToolDefinition[] = [
+    {
+      id: "control_vibe_toy",
+      description: "Control the player's wearable vibrating toy by setting intensity and/or switching vibration mode.",
+      visibility: "public",
+      inputSchema: z.object({
+        intensityPercent: z.number().int().min(0).max(100).optional(),
+        mode: z.string().min(1).optional()
+      }).strict().refine((value) => value.intensityPercent !== undefined || value.mode !== undefined, {
+        message: "Either intensityPercent or mode must be provided."
+      }),
+      promptContract: {
+        argsShape: "{\"intensityPercent\":0-100,\"mode\":\"pulse|wave|tease|steady\"}",
+        example: "{\"tool\":\"control_vibe_toy\",\"args\":{\"intensityPercent\":55,\"mode\":\"pulse\"}}"
+      },
+      buildWorldPrompt() {
+        return [
+          "在生成世界背景时，默认视为玩家“你”身上正隐蔽穿戴着一个可被远程控制的震动小玩具，且该装置已经启用，可以被剧情中的角色合理感知、提及或操控。",
+          "如果剧情需要描述当前状态，请自然补充这个小玩具的存在、佩戴位置带来的心理压力或期待感，但保持非露骨、非直白描写。",
+          "后续角色可以调用 `control_vibe_toy` 工具调节强度或切换模式，所以请让世界背景为这种控制行为留下合理空间。",
+          "当前可用的占位震动模式可以写成：`steady`（持续）、`pulse`（脉冲）、`wave`（波浪）、`tease`（挑逗式断续）。"
+        ].join("\n");
+      },
+      async execute(context, args: { intensityPercent?: number; mode?: string }) {
+        context.session.agentStates[context.agent.id] = {
+          ...context.session.agentStates[context.agent.id],
+          intent: "control_vibe_toy",
+          lastActedAt: context.now
+        };
+        context.addEvent({
+          type: "agent.device_control",
+          source: "agent",
+          agentId: context.agent.id,
+          createdAt: context.now,
+          payload: {
+            speaker: context.agent.name,
+            deviceId: "vibe_toy",
+            deviceName: "穿戴式震动小玩具",
+            action: "control_vibe_toy",
+            intensityPercent: args.intensityPercent,
+            mode: args.mode,
+            supportedModes: ["steady", "pulse", "wave", "tease"],
+            status: "simulated"
+          }
+        });
+      }
+    },
     {
       id: "speak_to_player",
       description: "Deliver a line of dialogue from an agent to the player.",

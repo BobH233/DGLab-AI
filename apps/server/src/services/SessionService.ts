@@ -172,7 +172,7 @@ export class SessionService {
         ...defaultPromptVersions(),
         sharedSafety: versions.shared_safety_preamble ?? "1.2.0",
         toolContract: versions.tool_contract ?? "2.2.0",
-        worldBuilder: versions.world_builder ?? "1.2.0",
+        worldBuilder: versions.world_builder ?? "1.3.0",
         directorAgent: versions.director_agent ?? "1.2.0",
         supportAgent: versions.support_agent ?? "1.2.0",
         ensembleTurn: versions.ensemble_turn ?? "1.2.0"

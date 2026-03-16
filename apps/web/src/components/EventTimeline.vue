@@ -108,6 +108,18 @@ const presentationItems = computed<PresentationItem[]>(() => {
           createdAt: event.createdAt
         });
         return items;
+      case "agent.device_control":
+        items.push({
+          seq: event.seq,
+          kind: "action",
+          kicker: "设备控制",
+          title: `${textOf(event.payload.speaker)} 调用了 ${textOf(event.payload.deviceName || event.payload.deviceId || "设备")}`,
+          main: buildDeviceControlText(event.payload),
+          meta: buildDeviceControlMeta(event.payload),
+          tags: ["工具调用", textOf(event.payload.status, "simulated")],
+          createdAt: event.createdAt
+        });
+        return items;
       case "agent.speak_agent":
         items.push({
           seq: event.seq,
@@ -297,11 +309,12 @@ const presentationItems = computed<PresentationItem[]>(() => {
   }, []);
 });
 
-function textOf(value: unknown): string {
+function textOf(value: unknown, fallback = ""): string {
   if (value === undefined || value === null) {
-    return "";
+    return fallback;
   }
-  return String(value);
+  const normalized = String(value);
+  return normalized.trim() || fallback;
 }
 
 function cardClass(item: PresentationItem): string[] {
@@ -317,10 +330,32 @@ function buildSceneUpdateText(payload: Record<string, unknown>): string {
     payload.location ? `地点更新为「${textOf(payload.location)}」` : "",
     payload.summary ? textOf(payload.summary) : "",
     Array.isArray(payload.activeObjectives) && payload.activeObjectives.length > 0
-      ? `当前目标：${payload.activeObjectives.map(textOf).join("、")}`
+      ? `当前目标：${payload.activeObjectives.map((objective) => textOf(objective)).join("、")}`
       : ""
   ].filter(Boolean);
   return chunks.join("；") || "场景状态已同步更新。";
+}
+
+function buildDeviceControlText(payload: Record<string, unknown>): string {
+  const changes: string[] = [];
+  if (payload.intensityPercent !== undefined) {
+    changes.push(`强度调整为 ${textOf(payload.intensityPercent)}%`);
+  }
+  if (payload.mode !== undefined) {
+    changes.push(`模式切换为 ${textOf(payload.mode)}`);
+  }
+  return changes.join("；") || "设备控制请求已发送。";
+}
+
+function buildDeviceControlMeta(payload: Record<string, unknown>): string | undefined {
+  const entries: string[] = [];
+  if (Array.isArray(payload.supportedModes) && payload.supportedModes.length > 0) {
+    entries.push(`支持模式：${payload.supportedModes.map((mode) => textOf(mode)).join(" / ")}`);
+  }
+  if (payload.status !== undefined) {
+    entries.push(`执行状态：${textOf(payload.status)}`);
+  }
+  return entries.length > 0 ? entries.join("；") : undefined;
 }
 
 function formatDate(value: string): string {
