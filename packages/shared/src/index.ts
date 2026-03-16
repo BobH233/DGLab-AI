@@ -37,13 +37,6 @@ export const toolCatalog = [
     defaultEnabled: true
   },
   {
-    id: "wait",
-    name: "短暂停顿",
-    description: "在同一轮展示中插入节奏停顿。",
-    required: true,
-    defaultEnabled: true
-  },
-  {
     id: "apply_story_effect",
     name: "剧情效果",
     description: "施加剧情效果并更新氛围张力。",

@@ -138,7 +138,7 @@ function trimEvents(events: SessionEvent[], limit = 18): SessionEvent[] {
 }
 
 function toolReferenceForPrompt(toolRegistry: ToolRegistry, toolStates?: Record<string, boolean>): string {
-  return toolRegistry.list(toolStates).map((tool) => {
+  return toolRegistry.list(toolStates).filter((tool) => tool.id !== "wait").map((tool) => {
     return [
       `- ${tool.id} (${tool.visibility}): ${tool.description}`,
       `  Exact args object: ${tool.promptContract.argsShape}`,
@@ -164,7 +164,7 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "speak_to_player",
           args: {
-            message: "别急着躲开，让我先听听你真正想说的那一句。"
+            message: "别急着躲开。<delay>900</delay>先看着我，让我听听你真正想说的那一句。"
           }
         },
         {
@@ -172,15 +172,7 @@ function toolExamplesForPrompt(): string {
           tool: "speak_to_agent",
           args: {
             targetAgentId: "director",
-            message: "气氛已经起来了，别让这一刻断掉。"
-          }
-        },
-        {
-          actorAgentId: "director",
-          tool: "wait",
-          args: {
-            delayMs: 1500,
-            reason: "停顿片刻，让刚才那句话的余味慢慢发散。"
+            message: "气氛已经起来了。<delay>700</delay>别让这一刻断掉。"
           }
         }
       ],

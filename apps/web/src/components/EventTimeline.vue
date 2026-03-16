@@ -29,7 +29,7 @@
     </article>
     <article
       v-for="item in presentationItems"
-      :key="`${item.seq}-${item.kind}`"
+      :key="item.id"
       class="timeline-item"
       :data-kind="item.kind"
       :data-optional-tool="item.optionalTool ? 'true' : undefined"
@@ -60,8 +60,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { isToolRequired, type SessionEvent } from "@dglab-ai/shared";
+import { stripInlineDelays } from "../lib/inlineDelays";
 
 type PresentationItem = {
+  id: string;
   seq: number;
   kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error";
   kicker: string;
@@ -86,10 +88,12 @@ const props = defineProps<{
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
-  const items = props.events.reduce<PresentationItem[]>((items, event) => {
+  const items = props.events.reduce<PresentationItem[]>((items, event, index) => {
+    const itemId = `${event.seq}:${index}:${event.type}`;
     switch (event.type) {
       case "player.message":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "player",
           kicker: "玩家输入",
@@ -101,6 +105,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "agent.speak_player":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "dialogue",
           kicker: "角色发言",
@@ -113,6 +118,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
       case "agent.device_control":
         const optionalTool = isOptionalToolEvent(event);
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "action",
           kicker: "设备控制",
@@ -128,6 +134,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "agent.speak_agent":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "dialogue",
           kicker: "角色互动",
@@ -140,6 +147,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "agent.reasoning":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "thought",
           kicker: "意图摘要",
@@ -151,6 +159,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "agent.stage_direction":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "action",
           kicker: "舞台动作",
@@ -162,6 +171,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "agent.story_effect":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "effect",
           kicker: "剧情变化",
@@ -174,6 +184,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "scene.updated":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "场景状态",
@@ -185,6 +196,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.tick_started":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "系统调度",
@@ -197,6 +209,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.tick_completed":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "系统调度",
@@ -209,6 +222,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.tick_failed":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "error",
           kicker: "系统异常",
@@ -221,6 +235,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.timer_updated":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "自动推进",
@@ -234,6 +249,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.story_ended":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "effect",
           kicker: "结局",
@@ -246,6 +262,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "system.usage_recorded":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "模型调用",
@@ -258,6 +275,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "session.created":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "会话",
@@ -269,6 +287,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "draft.generated":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "草案",
@@ -280,6 +299,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "draft.updated":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "草案",
@@ -291,6 +311,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       case "session.confirmed":
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "会话",
@@ -302,6 +323,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         return items;
       default:
         items.push({
+          id: itemId,
           seq: event.seq,
           kind: "system",
           kicker: "系统",
@@ -321,7 +343,7 @@ function textOf(value: unknown, fallback = ""): string {
   if (value === undefined || value === null) {
     return fallback;
   }
-  const normalized = String(value);
+  const normalized = stripInlineDelays(String(value));
   return normalized.trim() || fallback;
 }
 

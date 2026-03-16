@@ -92,6 +92,30 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("把目光留在我这里");
   });
 
+  it("strips inline delay tags from rendered text", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 2,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date().toISOString(),
+            payload: {
+              speaker: "钟离",
+              message: "先别躲。<delay>1000</delay>看着我。"
+            }
+          }
+        ]
+      }
+    });
+
+    expect(wrapper.text()).toContain("先别躲。看着我。");
+    expect(wrapper.text()).not.toContain("<delay>");
+  });
+
   it("renders simulated device control events in the timeline", () => {
     const wrapper = mount(EventTimeline, {
       props: {

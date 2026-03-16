@@ -41,6 +41,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Avoid repetitive fixation on a single device or mechanic");
     expect(prompt).toContain("Tool calls are presentation containers, not a restriction on fictional scene content");
     expect(prompt).toContain("Do not stall waiting for the player to invent the next move");
+    expect(prompt).toContain("<delay>1000</delay>");
+    expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {

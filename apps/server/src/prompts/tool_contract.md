@@ -39,15 +39,9 @@ Use only the exact argument keys below:
 - `speak_to_agent`: `{"targetAgentId":"...","message":"..."}`
 - `emit_reasoning_summary`: `{"summary":"..."}`
 - `perform_stage_direction`: `{"direction":"..."}`
-- `wait`: `{"delayMs":1000,"reason":"..."}`
 - `apply_story_effect`: `{"label":"...","description":"...","intensity":5}`
 - `update_scene_state`: `{"location":"...","phase":"...","tension":4,"summary":"...","activeObjectives":["..."]}`
 - `end_story`: `{"summary":"...","resolution":"..."}`
-
-Forbidden alias examples:
-- Do not use `agent_id`, `speaker_id`, `actingAgent`, `actor`, `agentId`, `recipient`, `recipient_id`, `target`, `text`, `content`, `dialogue`, `effect_label`, `effect_description`.
-- Do not use keys such as `action`, `tool_code`, `toolName`, `parameters`, or `params`.
-- Do not include extra keys that are not part of the tool's exact argument shape.
 
 Perspective rules for all player-visible strings:
 - `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must be written from the player's direct second-person perspective.
@@ -56,11 +50,13 @@ Perspective rules for all player-visible strings:
 - When the tone is not otherwise specified, prefer romantic, playful, adult, suggestive, non-explicit beats over punitive, fear-based, or purely coercive beats.
 
 Rules:
-- Every visible line, gesture, reasoning summary, pause, scene update, or ending must be expressed as a tool call.
+- Every visible beat must live inside an existing tool call, but one tool call may contain multiple sentences, multiple emotional beats, or a short back-and-forth when that reads more naturally.
+- For `speak_to_player`, `speak_to_agent`, `perform_stage_direction`, `apply_story_effect.description`, and `update_scene_state.summary`, you may insert inline pause tags like `<delay>1000</delay>` directly inside the string when a small dramatic pause improves the presentation.
+- Treat `<delay>1000</delay>` as a display cue inside the same turn, not as a separate action and not as spoken text.
 - Tool calls are presentation containers, not a restriction on fictional scene content. A `perform_stage_direction`, `speak_to_player`, `apply_story_effect`, or `update_scene_state` string may include props, furnishings, costume elements, restraints, toys, or ritual objects that exist in the brief or established scene even if no dedicated tool exists for each object.
-- `wait` means a presentation pause inside the current action sequence. It delays the display of later actions in the same turn. It does not start a new turn.
 - Use `emit_reasoning_summary` only for player-visible strategic summaries, never for hidden private chain-of-thought.
-- Use concise action batches. Prefer 1-5 actions.
+- Do not fall into a rigid one-line-then-one-tool rhythm. It is fine for a character to speak in a fuller, more human cadence, to do several fictional things inside one narrated beat, or to chain a few coordinated actions in the same turn.
+- Use concise action batches, but not artificially tiny ones. Prefer roughly 1-8 actions when that gives the scene room to breathe.
 - The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
 - Do not stall waiting for the player to invent the next move. When the scene already contains enough context, let agents proactively choose the next pressure point, prop, instruction, or positional change.

@@ -147,16 +147,30 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api";
 import EventTimeline from "../components/EventTimeline.vue";
+import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
 
-const route = useRoute();
-const session = ref<Session | null>(null);
-const events = ref<SessionEvent[]>([]);
-const activePause = ref<{
+type ActivePauseState = {
   title: string;
   main: string;
   meta?: string;
   countdownLabel: string;
-} | null>(null);
+};
+
+type PlaybackStep =
+  | {
+    type: "event";
+    event: SessionEvent;
+  }
+  | {
+    type: "pause";
+    delayMs: number;
+    pause: Omit<ActivePauseState, "countdownLabel">;
+  };
+
+const route = useRoute();
+const session = ref<Session | null>(null);
+const events = ref<SessionEvent[]>([]);
+const activePause = ref<ActivePauseState | null>(null);
 const message = ref("");
 const sending = ref(false);
 const retrying = ref(false);
@@ -167,7 +181,6 @@ let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
 let queueRunning = false;
-let pendingPauseMs = 0;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
 const liveQueue: SessionEvent[] = [];
@@ -254,28 +267,19 @@ async function flushLiveQueue() {
         continue;
       }
       if (next.type === "system.wait_scheduled") {
-        activatePause(next);
-        const rawDelay = Number(next.payload.delayMs ?? 0);
-        pendingPauseMs = Number.isFinite(rawDelay) && rawDelay > 0 ? rawDelay : 0;
-        if (pendingPauseMs > 0) {
-          await sleep(pendingPauseMs);
-          if (generation !== playbackGeneration) {
-            return;
-          }
-        }
-        pendingPauseMs = 0;
-        clearActivePause();
+        await runPause(createLegacyPauseState(next), Number(next.payload.delayMs ?? 0), generation);
         continue;
       }
-      if (pendingPauseMs > 0) {
-        await sleep(pendingPauseMs);
+      for (const step of expandPlaybackSteps(next)) {
         if (generation !== playbackGeneration) {
           return;
         }
-        pendingPauseMs = 0;
-        clearActivePause();
+        if (step.type === "pause") {
+          await runPause(step.pause, step.delayMs, generation);
+          continue;
+        }
+        events.value = [...events.value, step.event];
       }
-      events.value = [...events.value, next];
     }
   } finally {
     queueRunning = false;
@@ -283,6 +287,17 @@ async function flushLiveQueue() {
       void flushLiveQueue();
     }
   }
+}
+
+async function runPause(pause: Omit<ActivePauseState, "countdownLabel">, delayMs: number, generation: number) {
+  activatePause(pause, delayMs);
+  if (delayMs > 0) {
+    await sleep(delayMs);
+    if (generation !== playbackGeneration) {
+      return;
+    }
+  }
+  clearActivePause();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -296,14 +311,10 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-function activatePause(event: SessionEvent) {
-  const speaker = textOf(event.payload.speaker) || "对方";
-  const delayMs = Number(event.payload.delayMs ?? 0);
+function activatePause(pause: Omit<ActivePauseState, "countdownLabel">, delayMs: number) {
   const startedAt = Date.now();
   activePause.value = {
-    title: `${speaker} 正在注视你`,
-    main: `${speaker} 暂时没有继续开口，像是在观察你的反应……`,
-    meta: event.payload.reason ? `节奏说明：${textOf(event.payload.reason)}` : undefined,
+    ...pause,
     countdownLabel: `约 ${formatPauseMs(delayMs)} 后继续`
   };
   if (countdownTimer !== null) {
@@ -339,7 +350,6 @@ function clearLivePlayback() {
   playbackGeneration += 1;
   liveQueue.length = 0;
   queueRunning = false;
-  pendingPauseMs = 0;
   clearActivePause();
   if (playbackTimer !== null) {
     window.clearTimeout(playbackTimer);
@@ -353,7 +363,7 @@ function textOf(value: unknown): string {
   if (value === undefined || value === null) {
     return "";
   }
-  return String(value);
+  return stripInlineDelays(String(value));
 }
 
 function formatPauseMs(ms: number): string {
@@ -362,6 +372,133 @@ function formatPauseMs(ms: number): string {
     return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`;
   }
   return `${Math.max(0, Math.round(ms))} ms`;
+}
+
+function expandPlaybackSteps(event: SessionEvent): PlaybackStep[] {
+  const field = playbackFieldForEvent(event);
+  if (!field) {
+    return [{
+      type: "event",
+      event
+    }];
+  }
+
+  const rawValue = event.payload[field];
+  if (typeof rawValue !== "string" || !hasInlineDelays(rawValue)) {
+    return [{
+      type: "event",
+      event
+    }];
+  }
+
+  const steps: PlaybackStep[] = [];
+  for (const part of splitInlineDelays(rawValue)) {
+    if (part.type === "delay") {
+      steps.push({
+        type: "pause",
+        delayMs: part.delayMs,
+        pause: createInlinePauseState(event)
+      });
+      continue;
+    }
+
+    const text = part.text.trim();
+    if (!text) {
+      continue;
+    }
+    steps.push({
+      type: "event",
+      event: {
+        ...event,
+        payload: {
+          ...event.payload,
+          [field]: text
+        }
+      }
+    });
+  }
+
+  if (steps.length > 0) {
+    return steps;
+  }
+
+  return [{
+    type: "event",
+    event: {
+      ...event,
+      payload: {
+        ...event.payload,
+        [field]: stripInlineDelays(rawValue).trim()
+      }
+    }
+  }];
+}
+
+function playbackFieldForEvent(event: SessionEvent): string | null {
+  switch (event.type) {
+    case "agent.speak_player":
+    case "agent.speak_agent":
+      return "message";
+    case "agent.reasoning":
+      return "summary";
+    case "agent.stage_direction":
+      return "direction";
+    case "agent.story_effect":
+      return "description";
+    default:
+      return null;
+  }
+}
+
+function createLegacyPauseState(event: SessionEvent): Omit<ActivePauseState, "countdownLabel"> {
+  const speaker = textOf(event.payload.speaker) || "对方";
+  return {
+    title: `${speaker} 正在注视你`,
+    main: `${speaker} 暂时没有继续开口，像是在观察你的反应……`,
+    meta: event.payload.reason ? `节奏说明：${textOf(event.payload.reason)}` : undefined
+  };
+}
+
+function createInlinePauseState(event: SessionEvent): Omit<ActivePauseState, "countdownLabel"> {
+  const speaker = textOf(event.payload.speaker) || "对方";
+  switch (event.type) {
+    case "agent.speak_player":
+      return {
+        title: `${speaker} 停了一下`,
+        main: `${speaker} 把话音压住半拍，像是在等你把那层意思自己听清。`,
+        meta: "文本内节奏停顿"
+      };
+    case "agent.speak_agent":
+      return {
+        title: `${speaker} 稍作停顿`,
+        main: `${speaker} 把话留在空气里片刻，像是故意给场中每个人一点反应时间。`,
+        meta: "角色间对白停顿"
+      };
+    case "agent.stage_direction":
+      return {
+        title: "动作停在半空",
+        main: `${speaker} 的动作没有立刻接下去，气氛被有意拉长了一瞬。`,
+        meta: "舞台节奏停顿"
+      };
+    case "agent.story_effect":
+      return {
+        title: "气氛慢慢发酵",
+        main: "那一点变化没有立刻散去，反而在沉默里更明显地漫开。",
+        meta: "剧情效果停顿"
+      };
+    case "agent.reasoning":
+      return {
+        title: `${speaker} 还在拿捏节奏`,
+        main: `${speaker} 没有立刻把下一步亮出来，像是在等这一拍先落进你心里。`,
+        meta: "意图节奏停顿"
+      };
+    default:
+      return {
+        title: `${speaker} 停了一下`,
+        main: "空气里短暂安静了一瞬，像是故意把余味留得更久一点。",
+        meta: "文本内节奏停顿"
+      };
+  }
 }
 
 async function sendMessage() {

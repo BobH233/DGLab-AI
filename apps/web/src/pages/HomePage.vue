@@ -52,7 +52,7 @@ const error = ref("");
 const activeBackendLabel = computed(() => {
   const appConfig = configStore.appConfig.value;
   const activeBackend = appConfig?.backends.find((backend) => backend.id === appConfig.activeBackendId);
-  return activeBackend ? `${activeBackend.name} · ${activeBackend.model}` : "加载中...";
+  return activeBackend ? activeBackend.name : "加载中...";
 });
 
 async function loadSessions() {

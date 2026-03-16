@@ -25,7 +25,7 @@
               :key="backend.id"
               :value="backend.id"
             >
-              {{ backend.name }} · {{ backend.model }}
+              {{ backend.name }}
             </option>
           </select>
         </label>
