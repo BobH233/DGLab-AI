@@ -5,6 +5,7 @@
       :key="`${item.seq}-${item.kind}`"
       class="timeline-item"
       :data-kind="item.kind"
+      :data-optional-tool="item.optionalTool ? 'true' : undefined"
     >
       <div class="timeline-rail">
         <span class="timeline-dot" />
@@ -58,7 +59,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { SessionEvent } from "@dglab-ai/shared";
+import { isToolRequired, type SessionEvent } from "@dglab-ai/shared";
 
 type PresentationItem = {
   seq: number;
@@ -69,6 +70,7 @@ type PresentationItem = {
   meta?: string;
   tags: string[];
   createdAt: string;
+  optionalTool?: boolean;
 };
 
 type ActivePauseState = {
@@ -109,6 +111,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
         });
         return items;
       case "agent.device_control":
+        const optionalTool = isOptionalToolEvent(event);
         items.push({
           seq: event.seq,
           kind: "action",
@@ -116,8 +119,11 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: `${textOf(event.payload.speaker)} 调用了 ${textOf(event.payload.deviceName || event.payload.deviceId || "设备")}`,
           main: buildDeviceControlText(event.payload),
           meta: buildDeviceControlMeta(event.payload),
-          tags: ["工具调用", textOf(event.payload.status, "simulated")],
-          createdAt: event.createdAt
+          tags: optionalTool
+            ? ["可选工具", "工具调用", textOf(event.payload.status, "simulated")]
+            : ["工具调用", textOf(event.payload.status, "simulated")],
+          createdAt: event.createdAt,
+          optionalTool
         });
         return items;
       case "agent.speak_agent":
@@ -320,8 +326,14 @@ function textOf(value: unknown, fallback = ""): string {
 function cardClass(item: PresentationItem): string[] {
   return [
     "event-card",
-    ...(item.kind === "dialogue" ? ["event-card--dialogue"] : [])
+    ...(item.kind === "dialogue" ? ["event-card--dialogue"] : []),
+    ...(item.optionalTool ? ["event-card--optional-tool"] : [])
   ];
+}
+
+function isOptionalToolEvent(event: SessionEvent): boolean {
+  const toolId = typeof event.payload.action === "string" ? event.payload.action : "";
+  return Boolean(toolId) && !isToolRequired(toolId);
 }
 
 function buildSceneUpdateText(payload: Record<string, unknown>): string {

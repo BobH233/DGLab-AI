@@ -295,6 +295,13 @@ a {
   box-shadow: 0 0 0 6px rgba(196, 154, 108, 0.18);
 }
 
+.timeline-item[data-optional-tool="true"] .timeline-dot {
+  background: linear-gradient(135deg, #f09b4a 0%, #d05656 48%, #8b4cc7 100%);
+  box-shadow:
+    0 0 0 6px rgba(240, 155, 74, 0.14),
+    0 0 22px rgba(208, 86, 86, 0.2);
+}
+
 .timeline-item--live .timeline-rail::after {
   background: linear-gradient(180deg, rgba(159, 116, 71, 0.42), rgba(159, 116, 71, 0.08));
 }
@@ -338,6 +345,61 @@ a {
   background: linear-gradient(135deg, rgba(255, 251, 246, 0.98), rgba(255, 246, 238, 0.96));
   transform: rotate(45deg);
   border-bottom-left-radius: 4px;
+}
+
+.event-card--optional-tool {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(255, 215, 149, 0.24), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(208, 86, 86, 0.14), transparent 34%),
+    linear-gradient(135deg, rgba(255, 252, 245, 0.98), rgba(255, 241, 235, 0.96) 52%, rgba(247, 241, 255, 0.96));
+  border-color: rgba(208, 108, 72, 0.28);
+  box-shadow:
+    0 18px 40px rgba(170, 94, 61, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.event-card--optional-tool::before {
+  content: "OPTIONAL TOOL";
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: rgba(145, 79, 54, 0.72);
+}
+
+.event-card--optional-tool::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.4) 42%, transparent 62%);
+  transform: translateX(-120%);
+  animation: optionalToolSheen 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.timeline-item[data-optional-tool="true"] .event-kicker {
+  color: #b35f2f;
+}
+
+.timeline-item[data-optional-tool="true"] .event-header strong {
+  color: #6e3325;
+}
+
+.timeline-item[data-optional-tool="true"] .event-main {
+  color: #4c261c;
+}
+
+.timeline-item[data-optional-tool="true"] .event-meta {
+  color: #875642;
+}
+
+.timeline-item[data-optional-tool="true"] .event-tag {
+  background: rgba(179, 95, 47, 0.12);
+  color: #8f4e2c;
 }
 
 .timeline-item[data-kind="dialogue"] .event-kicker {
@@ -439,6 +501,20 @@ a {
   }
   40% {
     transform: translateY(-3px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes optionalToolSheen {
+  0%,
+  68%,
+  100% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  16%,
+  38% {
+    transform: translateX(120%);
     opacity: 1;
   }
 }

@@ -101,6 +101,7 @@ describe("EventTimeline", () => {
             createdAt: new Date().toISOString(),
             payload: {
               speaker: "钟离",
+              action: "control_vibe_toy",
               deviceId: "vibe_toy",
               deviceName: "穿戴式震动小玩具",
               intensityPercent: 80,
@@ -113,7 +114,13 @@ describe("EventTimeline", () => {
       }
     });
 
+    const optionalToolItem = wrapper.find('.timeline-item[data-optional-tool="true"]');
+    const optionalToolCard = wrapper.find('.timeline-item[data-optional-tool="true"] .event-card');
+
+    expect(optionalToolItem.exists()).toBe(true);
+    expect(optionalToolCard.classes()).toContain("event-card--optional-tool");
     expect(wrapper.text()).toContain("设备控制");
+    expect(wrapper.text()).toContain("可选工具");
     expect(wrapper.text()).toContain("钟离 调用了 穿戴式震动小玩具");
     expect(wrapper.text()).toContain("强度调整为 80%");
     expect(wrapper.text()).toContain("模式切换为 pulse");
