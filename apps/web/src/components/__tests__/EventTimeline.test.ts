@@ -215,4 +215,80 @@ describe("EventTimeline", () => {
     expect(cards[0]?.text()).toContain("最新消息");
     expect(cards[1]?.text()).toContain("第一条消息");
   });
+
+  it("renders tick and usage events as compact timeline notes", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 8,
+            type: "system.tick_started",
+            source: "system",
+            createdAt: new Date().toISOString(),
+            payload: {
+              reason: "player_message"
+            }
+          },
+          {
+            sessionId: "session_1",
+            seq: 9,
+            type: "system.usage_recorded",
+            source: "system",
+            createdAt: new Date().toISOString(),
+            payload: {
+              totalTokens: 10905,
+              model: "gpt-4.1-mini"
+            }
+          }
+        ]
+      }
+    });
+
+    const compactItems = wrapper.findAll('.timeline-item[data-compact="true"] .timeline-compact');
+
+    expect(compactItems).toHaveLength(2);
+    expect(wrapper.text()).toContain("推演开始");
+    expect(wrapper.text()).toContain("原因：player_message");
+    expect(wrapper.text()).toContain("10905 tokens");
+    expect(wrapper.text()).not.toContain("本次模型调用消耗已计入会话统计");
+    expect(wrapper.find('.timeline-item[data-compact="true"] .event-card').exists()).toBe(false);
+  });
+
+  it("renders scene updates as separate detail rows instead of one sentence", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 10,
+            type: "scene.updated",
+            source: "system",
+            createdAt: new Date().toISOString(),
+            payload: {
+              phase: "teasing",
+              location: "会客室",
+              tension: 7,
+              summary: "你已经被他若即若离的试探牵住心神。",
+              activeObjectives: ["让你继续留在这场对话里", "引出你更坦率的回应"]
+            }
+          }
+        ]
+      }
+    });
+
+    const detailRows = wrapper.findAll('.timeline-item[data-kind="system"] .event-detail-row');
+
+    expect(detailRows).toHaveLength(6);
+    expect(wrapper.text()).toContain("阶段");
+    expect(wrapper.text()).toContain("teasing");
+    expect(wrapper.text()).toContain("地点");
+    expect(wrapper.text()).toContain("会客室");
+    expect(wrapper.text()).toContain("张力");
+    expect(wrapper.text()).toContain("7");
+    expect(wrapper.text()).toContain("概要");
+    expect(wrapper.text()).toContain("你已经被他若即若离的试探牵住心神");
+    expect(wrapper.text()).toContain("目标");
+    expect(wrapper.text()).not.toContain("阶段变更为");
+  });
 });

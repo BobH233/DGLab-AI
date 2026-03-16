@@ -32,12 +32,20 @@
       :key="item.id"
       class="timeline-item"
       :data-kind="item.kind"
+      :data-compact="item.compact ? 'true' : undefined"
       :data-optional-tool="item.optionalTool ? 'true' : undefined"
     >
       <div class="timeline-rail">
         <span class="timeline-dot" />
       </div>
-      <div :class="cardClass(item)">
+      <div v-if="item.compact" class="timeline-compact">
+        <span class="timeline-compact__kicker">{{ item.kicker }}</span>
+        <strong class="timeline-compact__title">{{ item.title }}</strong>
+        <span v-if="item.main" class="timeline-compact__main">{{ item.main }}</span>
+        <span v-if="item.meta" class="timeline-compact__meta">{{ item.meta }}</span>
+        <span class="timeline-compact__time">{{ formatDate(item.createdAt) }}</span>
+      </div>
+      <div v-else :class="cardClass(item)">
         <header class="event-header">
           <div class="event-title-block">
             <span class="event-kicker">{{ item.kicker }}</span>
@@ -46,7 +54,13 @@
           <span>#{{ item.seq }} · {{ formatDate(item.createdAt) }}</span>
         </header>
         <div class="event-body">
-          <p class="event-main">{{ item.main }}</p>
+          <p v-if="item.main" class="event-main">{{ item.main }}</p>
+          <div v-if="item.details?.length" class="event-detail-list">
+            <p v-for="detail in item.details" :key="`${detail.label}-${detail.value}`" class="event-detail-row">
+              <strong class="event-detail-label">{{ detail.label }}：</strong>
+              <span class="event-detail-value">{{ detail.value }}</span>
+            </p>
+          </div>
           <p v-if="item.meta" class="event-meta">{{ item.meta }}</p>
         </div>
         <div v-if="item.tags.length" class="event-tags">
@@ -62,6 +76,11 @@ import { computed } from "vue";
 import { isToolRequired, type SessionEvent } from "@dglab-ai/shared";
 import { stripInlineDelays } from "../lib/inlineDelays";
 
+type PresentationDetail = {
+  label: string;
+  value: string;
+};
+
 type PresentationItem = {
   id: string;
   seq: number;
@@ -69,10 +88,12 @@ type PresentationItem = {
   kicker: string;
   title: string;
   main: string;
+  details?: PresentationDetail[];
   meta?: string;
   tags: string[];
   createdAt: string;
   optionalTool?: boolean;
+  compact?: boolean;
 };
 
 type ActivePauseState = {
@@ -189,7 +210,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           kind: "system",
           kicker: "场景状态",
           title: "场景已更新",
-          main: buildSceneUpdateText(event.payload),
+          main: "",
+          details: buildSceneUpdateDetails(event.payload),
           tags: ["系统"],
           createdAt: event.createdAt
         });
@@ -199,12 +221,13 @@ const presentationItems = computed<PresentationItem[]>(() => {
           id: itemId,
           seq: event.seq,
           kind: "system",
-          kicker: "系统调度",
-          title: "新一轮推演开始",
-          main: "系统已收集本轮上下文并开始推进剧情。",
-          meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
-          tags: ["Tick"],
-          createdAt: event.createdAt
+          kicker: "系统",
+          title: "推演开始",
+          main: "",
+          meta: event.payload.reason ? `原因：${textOf(event.payload.reason)}` : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          compact: true
         });
         return items;
       case "system.tick_completed":
@@ -212,12 +235,13 @@ const presentationItems = computed<PresentationItem[]>(() => {
           id: itemId,
           seq: event.seq,
           kind: "system",
-          kicker: "系统调度",
-          title: "本轮推演已完成",
-          main: "角色响应与场景更新已经完成。",
-          meta: event.payload.status ? `当前状态：${textOf(event.payload.status)}` : undefined,
-          tags: ["Tick"],
-          createdAt: event.createdAt
+          kicker: "系统",
+          title: "推演完成",
+          main: "",
+          meta: event.payload.status ? `状态：${textOf(event.payload.status)}` : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          compact: true
         });
         return items;
       case "system.tick_failed":
@@ -265,12 +289,13 @@ const presentationItems = computed<PresentationItem[]>(() => {
           id: itemId,
           seq: event.seq,
           kind: "system",
-          kicker: "模型调用",
-          title: "Token 统计已更新",
-          main: "本次模型调用消耗已计入会话统计。",
-          meta: event.payload.totalTokens ? `本次总消耗：${textOf(event.payload.totalTokens)} tokens` : undefined,
-          tags: ["Usage"],
-          createdAt: event.createdAt
+          kicker: "用量",
+          title: event.payload.totalTokens ? `${textOf(event.payload.totalTokens)} tokens` : "Token 统计已更新",
+          main: "",
+          meta: event.payload.model ? textOf(event.payload.model) : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          compact: true
         });
         return items;
       case "session.created":
@@ -361,16 +386,51 @@ function isOptionalToolEvent(event: SessionEvent): boolean {
   return Boolean(toolId) && !isToolRequired(toolId);
 }
 
-function buildSceneUpdateText(payload: Record<string, unknown>): string {
-  const chunks = [
-    payload.phase ? `阶段变更为「${textOf(payload.phase)}」` : "",
-    payload.location ? `地点更新为「${textOf(payload.location)}」` : "",
-    payload.summary ? textOf(payload.summary) : "",
-    Array.isArray(payload.activeObjectives) && payload.activeObjectives.length > 0
-      ? `当前目标：${payload.activeObjectives.map((objective) => textOf(objective)).join("、")}`
-      : ""
-  ].filter(Boolean);
-  return chunks.join("；") || "场景状态已同步更新。";
+function buildSceneUpdateDetails(payload: Record<string, unknown>): PresentationDetail[] {
+  const details: PresentationDetail[] = [];
+  if (payload.phase) {
+    details.push({
+      label: "阶段",
+      value: textOf(payload.phase)
+    });
+  }
+  if (payload.location) {
+    details.push({
+      label: "地点",
+      value: textOf(payload.location)
+    });
+  }
+  if (payload.tension !== undefined && payload.tension !== null && textOf(payload.tension)) {
+    details.push({
+      label: "张力",
+      value: textOf(payload.tension)
+    });
+  }
+  if (payload.summary) {
+    details.push({
+      label: "概要",
+      value: textOf(payload.summary)
+    });
+  }
+  if (Array.isArray(payload.activeObjectives) && payload.activeObjectives.length > 0) {
+    for (const objective of payload.activeObjectives) {
+      const text = textOf(objective);
+      if (!text) {
+        continue;
+      }
+      details.push({
+        label: "目标",
+        value: text
+      });
+    }
+  }
+  if (details.length === 0) {
+    details.push({
+      label: "状态",
+      value: "场景状态已同步更新"
+    });
+  }
+  return details;
 }
 
 function buildDeviceControlText(payload: Record<string, unknown>): string {
