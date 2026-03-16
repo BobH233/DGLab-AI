@@ -21,6 +21,7 @@ Tool-specific world-building hooks:
 {{toolWorldHooks}}
 
 If tool-specific hooks are provided, treat them as active capabilities in this session and weave them into the generated background naturally. Any tool-enabled device, environment, or prop should already make sense inside `worldSummary`, `openingSituation`, `playerState`, relevant `sceneGoals`, and agent design.
+Do not let a single enabled device monopolize the setup. Even when one interactive device exists, broaden the world with varied non-explicit sources of tension and attraction such as atmosphere, wardrobe details, ritualized gestures, environmental cues, symbolic props, invitation-and-withdrawal beats, and shifts in distance or control.
 
 Return:
 - title

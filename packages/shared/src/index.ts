@@ -409,10 +409,10 @@ export function mergeUsageEntry(base: UsageEntry, next: Partial<UsageEntry>): Us
 export function defaultPromptVersions(): PromptVersions {
   return {
     sharedSafety: "1.2.0",
-    toolContract: "2.2.0",
-    worldBuilder: "1.3.0",
+    toolContract: "2.3.0",
+    worldBuilder: "1.4.0",
     directorAgent: "1.2.0",
     supportAgent: "1.2.0",
-    ensembleTurn: "1.2.0"
+    ensembleTurn: "1.3.0"
   };
 }

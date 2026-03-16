@@ -60,5 +60,7 @@ Rules:
 - `wait` means a presentation pause inside the current action sequence. It delays the display of later actions in the same turn. It does not start a new turn.
 - Use `emit_reasoning_summary` only for player-visible strategic summaries, never for hidden private chain-of-thought.
 - Use concise action batches. Prefer 1-5 actions.
+- The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
+- Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.
 - Never invent tools outside the provided tool list.
