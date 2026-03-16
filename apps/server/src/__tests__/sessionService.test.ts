@@ -1,4 +1,4 @@
-import { createEmptyUsageStats, defaultToolStates, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createEmptyUsageStats, defaultToolStates, normalizeAppConfig, type AppConfig, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { describe, expect, it, vi } from "vitest";
 import { SessionService } from "../services/SessionService.js";
 
@@ -76,10 +76,16 @@ function createSession(): Session {
 class InMemoryStore {
   public session = createSession();
   public events: SessionEvent[] = [];
+  public appConfig: AppConfig = normalizeAppConfig(config);
 
   async init() {}
   async getConfig() { return config; }
   async saveConfig(next: LlmConfig) { return next; }
+  async getAppConfig() { return this.appConfig; }
+  async saveAppConfig(next: AppConfig) {
+    this.appConfig = next;
+    return next;
+  }
   async listSessions() { return []; }
   async createSession(session: Session) { this.session = session; return session; }
   async getSession(sessionId: string) { return sessionId === this.session.id ? this.session : null; }

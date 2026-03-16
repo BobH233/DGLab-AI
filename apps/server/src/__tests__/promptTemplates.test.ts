@@ -24,6 +24,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("do not refer to the player as `玩家`, by proper name, or with third-person pronouns");
     expect(prompt).toContain("slow-burn, romantic, adult, emotionally charged cadence");
     expect(prompt).toContain("Do not over-focus on any single enabled tool or device");
+    expect(prompt).toContain("Do not leave the entire burden of momentum on the player");
+    expect(prompt).toContain("Props and scene elements mentioned in the player brief");
   });
 
   it("keeps tool contract guidance aligned with player-facing second-person output", async () => {
@@ -37,6 +39,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("A character may still say the player's name inside direct dialogue");
     expect(prompt).toContain("prefer romantic, playful, adult, suggestive, non-explicit beats");
     expect(prompt).toContain("Avoid repetitive fixation on a single device or mechanic");
+    expect(prompt).toContain("Tool calls are presentation containers, not a restriction on fictional scene content");
+    expect(prompt).toContain("Do not stall waiting for the player to invent the next move");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
@@ -58,5 +62,7 @@ describe("prompt templates", () => {
     expect(prompt).toContain("treat them as active capabilities in this session");
     expect(prompt).toContain("control_vibe_toy");
     expect(prompt).toContain("Do not let a single enabled device monopolize the setup");
+    expect(prompt).toContain("If the player brief already mentions props");
+    expect(prompt).toContain("Make the `sceneGoals` and agent goals proactive");
   });
 });

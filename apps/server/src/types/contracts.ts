@@ -3,6 +3,7 @@ import type { z, ZodTypeAny } from "zod";
 import type {
   ActionBatch,
   AgentProfile,
+  AppConfig,
   LlmConfig,
   Session,
   SessionDraft,
@@ -98,6 +99,8 @@ export interface SessionStore {
   init(): Promise<void>;
   getConfig(): Promise<LlmConfig>;
   saveConfig(config: LlmConfig): Promise<LlmConfig>;
+  getAppConfig(): Promise<AppConfig>;
+  saveAppConfig(config: AppConfig): Promise<AppConfig>;
   listSessions(): Promise<Array<Pick<Session, "id" | "title" | "status" | "updatedAt" | "createdAt">>>;
   createSession(session: Session): Promise<Session>;
   getSession(sessionId: string): Promise<Session | null>;

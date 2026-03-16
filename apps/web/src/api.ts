@@ -1,5 +1,5 @@
 import type {
-  LlmConfig,
+  AppConfig,
   Session,
   SessionEvent,
   SessionListItem,
@@ -25,13 +25,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getConfig(): Promise<LlmConfig> {
-    return request<LlmConfig>("/config");
+  getAppConfig(): Promise<AppConfig> {
+    return request<AppConfig>("/config");
   },
-  saveConfig(config: LlmConfig): Promise<LlmConfig> {
-    return request<LlmConfig>("/config", {
+  saveAppConfig(config: AppConfig): Promise<AppConfig> {
+    return request<AppConfig>("/config", {
       method: "PUT",
       body: JSON.stringify(config)
+    });
+  },
+  setActiveBackend(backendId: string): Promise<AppConfig> {
+    return request<AppConfig>("/config/active-backend", {
+      method: "PATCH",
+      body: JSON.stringify({ backendId })
     });
   },
   listSessions(): Promise<SessionListItem[]> {

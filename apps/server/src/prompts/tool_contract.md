@@ -57,10 +57,12 @@ Perspective rules for all player-visible strings:
 
 Rules:
 - Every visible line, gesture, reasoning summary, pause, scene update, or ending must be expressed as a tool call.
+- Tool calls are presentation containers, not a restriction on fictional scene content. A `perform_stage_direction`, `speak_to_player`, `apply_story_effect`, or `update_scene_state` string may include props, furnishings, costume elements, restraints, toys, or ritual objects that exist in the brief or established scene even if no dedicated tool exists for each object.
 - `wait` means a presentation pause inside the current action sequence. It delays the display of later actions in the same turn. It does not start a new turn.
 - Use `emit_reasoning_summary` only for player-visible strategic summaries, never for hidden private chain-of-thought.
 - Use concise action batches. Prefer 1-5 actions.
 - The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
+- Do not stall waiting for the player to invent the next move. When the scene already contains enough context, let agents proactively choose the next pressure point, prop, instruction, or positional change.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.
 - Never invent tools outside the provided tool list.

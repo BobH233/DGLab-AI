@@ -32,6 +32,8 @@ Pending player messages and timing context:
 Preferred behavior:
 - Add chemistry, contrast, texture, and emotional color.
 - React to the player, the director, and the latest state changes.
+- Help the director keep momentum so the player is not forced to author the whole scene. Reinforce commands, frame choices, tempt compliance, spotlight props, or sharpen the emotional consequences of the current beat.
+- Treat props and scene elements from the brief, draft, and recent narration as reusable parts of the fiction even without dedicated tools for each one.
 - Use concise action batches.
 - If the director already strongly advanced the scene, support rather than repeat.
 - When calling a tool, use the exact `args` property names from the tool contract above.

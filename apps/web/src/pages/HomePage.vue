@@ -2,6 +2,10 @@
   <div class="grid two-col">
     <section class="panel">
       <h2>新建推演</h2>
+      <p class="soft-note">
+        当前默认后端：
+        <strong>{{ activeBackendLabel }}</strong>
+      </p>
       <textarea
         v-model="playerBrief"
         class="field textarea"
@@ -33,16 +37,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api";
 import type { SessionListItem } from "@dglab-ai/shared";
+import { useConfigStore } from "../configStore";
 
 const router = useRouter();
+const configStore = useConfigStore();
 const playerBrief = ref("");
 const sessions = ref<SessionListItem[]>([]);
 const loading = ref(false);
 const error = ref("");
+const activeBackendLabel = computed(() => {
+  const appConfig = configStore.appConfig.value;
+  const activeBackend = appConfig?.backends.find((backend) => backend.id === appConfig.activeBackendId);
+  return activeBackend ? `${activeBackend.name} · ${activeBackend.model}` : "加载中...";
+});
 
 async function loadSessions() {
   sessions.value = await api.listSessions();
@@ -66,7 +77,7 @@ function formatDate(value: string): string {
 }
 
 onMounted(() => {
+  void configStore.ensureConfigLoaded();
   void loadSessions();
 });
 </script>
-

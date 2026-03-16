@@ -88,6 +88,24 @@ a {
   font-weight: 600;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.backend-switch {
+  display: grid;
+  gap: 6px;
+  min-width: 260px;
+}
+
+.backend-switch span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
 .topnav a {
   padding: 10px 14px;
   border-radius: 999px;
@@ -142,6 +160,11 @@ a {
   background: rgba(255, 255, 255, 0.96);
   font: inherit;
   color: inherit;
+}
+
+.field--compact {
+  margin-top: 0;
+  min-height: 46px;
 }
 
 .textarea {
@@ -228,6 +251,62 @@ a {
   border: 1px solid var(--line-soft);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.78);
+}
+
+.settings-layout {
+  align-items: start;
+}
+
+.backend-list {
+  display: grid;
+  gap: 12px;
+}
+
+.backend-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.backend-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(36, 92, 132, 0.24);
+  box-shadow: var(--shadow-soft);
+}
+
+.backend-card--selected {
+  border-color: rgba(36, 92, 132, 0.36);
+  background:
+    radial-gradient(circle at top right, rgba(113, 160, 201, 0.14), transparent 38%),
+    rgba(255, 255, 255, 0.92);
+}
+
+.backend-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.backend-card p,
+.backend-card small {
+  margin: 0;
+}
+
+.backend-card p {
+  color: var(--text-soft);
+}
+
+.backend-card small {
+  color: var(--text-soft);
+  word-break: break-all;
 }
 
 .timeline {
@@ -733,6 +812,16 @@ a {
     gap: 12px;
   }
 
+  .topbar-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .backend-switch {
+    min-width: 0;
+  }
+
   .console-hero__stats,
   .usage-grid {
     grid-template-columns: 1fr 1fr;
@@ -746,6 +835,11 @@ a {
 
   .topbar {
     padding: 18px 16px 14px;
+  }
+
+  .topnav {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .console-hero__stats,

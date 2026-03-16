@@ -95,6 +95,9 @@ export function isToolEnabled(toolId: string, toolStates?: Record<string, boolea
   return normalizeToolStates(toolStates)[toolId] ?? true;
 }
 
+export const DEFAULT_MODEL_BACKEND_ID = "default-openai";
+export const DEFAULT_MODEL_BACKEND_NAME = "默认后端";
+
 export const llmConfigSchema = z.object({
   provider: z.literal("openai-compatible").default("openai-compatible"),
   baseUrl: z.string().url(),
@@ -109,11 +112,113 @@ export const llmConfigSchema = z.object({
 
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
 
+export function createDefaultLlmConfig(): LlmConfig {
+  return {
+    provider: "openai-compatible",
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "replace-me",
+    model: "gpt-4.1-mini",
+    temperature: 0.9,
+    maxTokens: 1200,
+    topP: 1,
+    requestTimeoutMs: 120000,
+    toolStates: defaultToolStates()
+  };
+}
+
 export function normalizeLlmConfig(config: LlmConfig): LlmConfig {
   return {
     ...config,
     toolStates: normalizeToolStates(config.toolStates)
   };
+}
+
+export const modelBackendSchema = llmConfigSchema.extend({
+  id: z.string().min(1),
+  name: z.string().min(1)
+});
+
+export type ModelBackend = z.infer<typeof modelBackendSchema>;
+
+export function createDefaultModelBackend(): ModelBackend {
+  return {
+    id: DEFAULT_MODEL_BACKEND_ID,
+    name: DEFAULT_MODEL_BACKEND_NAME,
+    ...createDefaultLlmConfig()
+  };
+}
+
+export function normalizeModelBackend(backend: ModelBackend): ModelBackend {
+  return {
+    ...backend,
+    name: backend.name.trim() || DEFAULT_MODEL_BACKEND_NAME,
+    ...normalizeLlmConfig(backend)
+  };
+}
+
+export const appConfigSchema = z.object({
+  activeBackendId: z.string().min(1),
+  backends: z.array(modelBackendSchema).min(1)
+});
+
+export type AppConfig = z.infer<typeof appConfigSchema>;
+
+export function createDefaultAppConfig(): AppConfig {
+  const backend = createDefaultModelBackend();
+  return {
+    activeBackendId: backend.id,
+    backends: [backend]
+  };
+}
+
+export function extractLlmConfig(backend: ModelBackend): LlmConfig {
+  return normalizeLlmConfig({
+    provider: backend.provider,
+    baseUrl: backend.baseUrl,
+    apiKey: backend.apiKey,
+    model: backend.model,
+    temperature: backend.temperature,
+    maxTokens: backend.maxTokens,
+    topP: backend.topP,
+    requestTimeoutMs: backend.requestTimeoutMs,
+    toolStates: backend.toolStates
+  });
+}
+
+export function normalizeAppConfig(config: AppConfig | LlmConfig): AppConfig {
+  if ("backends" in config) {
+    const normalizedBackends = config.backends.reduce<ModelBackend[]>((result, backend, index) => {
+      const normalized = normalizeModelBackend(backend);
+      const uniqueId = result.some((item) => item.id === normalized.id)
+        ? `${normalized.id}-${index + 1}`
+        : normalized.id;
+      result.push({
+        ...normalized,
+        id: uniqueId
+      });
+      return result;
+    }, []);
+    const fallbackBackend = normalizedBackends[0] ?? createDefaultModelBackend();
+    const activeBackend = normalizedBackends.find((backend) => backend.id === config.activeBackendId) ?? fallbackBackend;
+    return {
+      activeBackendId: activeBackend.id,
+      backends: normalizedBackends.length > 0 ? normalizedBackends : [fallbackBackend]
+    };
+  }
+
+  const legacyBackend = normalizeModelBackend({
+    id: DEFAULT_MODEL_BACKEND_ID,
+    name: DEFAULT_MODEL_BACKEND_NAME,
+    ...config
+  });
+  return {
+    activeBackendId: legacyBackend.id,
+    backends: [legacyBackend]
+  };
+}
+
+export function findActiveModelBackend(config: AppConfig): ModelBackend {
+  return config.backends.find((backend) => backend.id === config.activeBackendId) ?? config.backends[0] ?? createDefaultModelBackend();
 }
 
 export const usageEntrySchema = z.object({

@@ -1,28 +1,22 @@
 import { MongoClient, type Collection } from "mongodb";
 import {
-  defaultToolStates,
+  appConfigSchema,
+  createDefaultAppConfig,
+  extractLlmConfig,
+  findActiveModelBackend,
+  llmConfigSchema,
+  normalizeAppConfig,
   normalizeLlmConfig,
+  type AppConfig,
   type LlmConfig,
   type Session,
   type SessionEvent
 } from "@dglab-ai/shared";
 import type { SessionStore } from "../types/contracts.js";
 
-const DEFAULT_CONFIG: LlmConfig = {
-  provider: "openai-compatible",
-  baseUrl: "https://api.openai.com/v1",
-  apiKey: "replace-me",
-  model: "gpt-4.1-mini",
-  temperature: 0.9,
-  maxTokens: 1200,
-  topP: 1,
-  requestTimeoutMs: 120000,
-  toolStates: defaultToolStates()
-};
-
 type ConfigDocument = {
   _id: "default";
-  config: LlmConfig;
+  config: unknown;
 };
 
 export class MongoSessionStore implements SessionStore {
@@ -56,22 +50,63 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async getConfig(): Promise<LlmConfig> {
-    const document = await this.configs.findOne({ _id: "default" });
-    if (!document) {
-      await this.saveConfig(DEFAULT_CONFIG);
-      return DEFAULT_CONFIG;
-    }
-    return normalizeLlmConfig(document.config);
+    return extractLlmConfig(findActiveModelBackend(await this.getAppConfig()));
   }
 
   async saveConfig(config: LlmConfig): Promise<LlmConfig> {
-    const normalized = normalizeLlmConfig(config);
+    const current = await this.getAppConfig();
+    const activeBackend = findActiveModelBackend(current);
+    const next = normalizeAppConfig({
+      ...current,
+      backends: current.backends.map((backend) => (
+        backend.id === activeBackend.id
+          ? {
+            ...activeBackend,
+            ...normalizeLlmConfig(config)
+          }
+          : backend
+      ))
+    });
+    await this.writeAppConfig(next);
+    return extractLlmConfig(findActiveModelBackend(next));
+  }
+
+  async getAppConfig(): Promise<AppConfig> {
+    const document = await this.configs.findOne({ _id: "default" });
+    if (!document) {
+      const defaultConfig = createDefaultAppConfig();
+      await this.writeAppConfig(defaultConfig);
+      return defaultConfig;
+    }
+    const normalized = this.parseStoredAppConfig(document.config);
+    await this.writeAppConfig(normalized);
+    return normalized;
+  }
+
+  async saveAppConfig(config: AppConfig): Promise<AppConfig> {
+    const normalized = normalizeAppConfig(config);
+    await this.writeAppConfig(normalized);
+    return normalized;
+  }
+
+  private parseStoredAppConfig(config: unknown): AppConfig {
+    const appConfig = appConfigSchema.safeParse(config);
+    if (appConfig.success) {
+      return normalizeAppConfig(appConfig.data);
+    }
+    const legacyConfig = llmConfigSchema.safeParse(config);
+    if (legacyConfig.success) {
+      return normalizeAppConfig(legacyConfig.data);
+    }
+    return createDefaultAppConfig();
+  }
+
+  private async writeAppConfig(config: AppConfig): Promise<void> {
     await this.configs.updateOne(
       { _id: "default" },
-      { $set: { config: normalized } },
+      { $set: { config } },
       { upsert: true }
     );
-    return normalized;
   }
 
   async listSessions(): Promise<Array<Pick<Session, "id" | "title" | "status" | "updatedAt" | "createdAt">>> {

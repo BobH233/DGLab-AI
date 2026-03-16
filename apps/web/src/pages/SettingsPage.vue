@@ -1,87 +1,211 @@
 <template>
-  <section class="panel stack">
-    <h2>全局 LLM 配置</h2>
-    <label>
-      <span>API Base URL</span>
-      <input v-model="config.baseUrl" class="field" />
-    </label>
-    <label>
-      <span>API Key</span>
-      <input v-model="config.apiKey" class="field" type="password" />
-    </label>
-    <label>
-      <span>Model</span>
-      <input v-model="config.model" class="field" />
-    </label>
-    <label>
-      <span>Temperature</span>
-      <input v-model.number="config.temperature" class="field" type="number" min="0" max="2" step="0.1" />
-    </label>
-    <label>
-      <span>Top P</span>
-      <input v-model.number="config.topP" class="field" type="number" min="0" max="1" step="0.05" />
-    </label>
-    <label>
-      <span>Max Tokens</span>
-      <input v-model.number="config.maxTokens" class="field" type="number" min="1" step="100" />
-    </label>
-    <label>
-      <span>Request Timeout (ms)</span>
-      <input v-model.number="config.requestTimeoutMs" class="field" type="number" min="1000" step="1000" />
-    </label>
-    <div class="stack">
-      <h3>全局工具开关</h3>
-      <label
-        v-for="tool in toolCatalog"
-        :key="tool.id"
-        class="tool-toggle"
-      >
+  <div class="grid two-col settings-layout">
+    <section class="panel stack">
+      <div class="section-head">
         <div>
-          <strong>{{ tool.name }}</strong>
-          <p class="tool-description">{{ tool.description }}</p>
-          <p class="tool-meta">
-            {{ tool.required ? "必选工具，始终启用" : "可选工具，新建对话时会按这里的全局设置决定是否启用" }}
-          </p>
+          <h2>模型后端列表</h2>
+          <p class="soft-note">管理多个模型后端，顶部下拉可快速切换当前默认后端。</p>
         </div>
+        <button class="button secondary" @click="addBackend">新增后端</button>
+      </div>
+
+      <div class="backend-list">
+        <button
+          v-for="backend in form.backends"
+          :key="backend.id"
+          class="backend-card"
+          :class="{ 'backend-card--selected': backend.id === selectedBackendId }"
+          type="button"
+          @click="selectedBackendId = backend.id"
+        >
+          <div class="backend-card__head">
+            <strong>{{ backend.name }}</strong>
+            <span v-if="backend.id === form.activeBackendId" class="soft-pill">当前</span>
+          </div>
+          <p>{{ backend.model }}</p>
+          <small>{{ backend.baseUrl }}</small>
+        </button>
+      </div>
+
+      <p v-if="message" class="success-text">{{ message }}</p>
+      <p v-if="error" class="error-text">{{ error }}</p>
+    </section>
+
+    <section v-if="selectedBackend" class="panel stack">
+      <div class="section-head">
+        <div>
+          <h2>编辑后端</h2>
+          <p class="soft-note">每个后端都维护独立的模型参数和工具默认开关，新建 session 时使用当前后端。</p>
+        </div>
+        <div class="actions">
+          <button
+            class="button secondary"
+            :disabled="selectedBackend.id === form.activeBackendId"
+            @click="form.activeBackendId = selectedBackend.id"
+          >
+            设为当前
+          </button>
+          <button
+            class="button secondary"
+            :disabled="form.backends.length === 1"
+            @click="removeBackend(selectedBackend.id)"
+          >
+            删除后端
+          </button>
+        </div>
+      </div>
+
+      <label>
+        <span>后端名称</span>
+        <input v-model="selectedBackend.name" class="field" />
+      </label>
+      <label>
+        <span>API Base URL</span>
+        <input v-model="selectedBackend.baseUrl" class="field" />
+      </label>
+      <label>
+        <span>API Key</span>
+        <input v-model="selectedBackend.apiKey" class="field" type="password" />
+      </label>
+      <label>
+        <span>Model</span>
+        <input v-model="selectedBackend.model" class="field" />
+      </label>
+      <label>
+        <span>Temperature</span>
         <input
-          v-model="config.toolStates[tool.id]"
-          type="checkbox"
-          :disabled="tool.required"
+          v-model.number="selectedBackend.temperature"
+          class="field"
+          type="number"
+          min="0"
+          max="2"
+          step="0.1"
         />
       </label>
-    </div>
-    <div class="actions">
-      <button class="button primary" :disabled="saving" @click="save">
-        {{ saving ? "保存中..." : "保存配置" }}
-      </button>
-    </div>
-    <p v-if="message" class="success-text">{{ message }}</p>
-    <p v-if="error" class="error-text">{{ error }}</p>
-  </section>
+      <label>
+        <span>Top P</span>
+        <input
+          v-model.number="selectedBackend.topP"
+          class="field"
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+        />
+      </label>
+      <label>
+        <span>Max Tokens</span>
+        <input v-model.number="selectedBackend.maxTokens" class="field" type="number" min="1" step="100" />
+      </label>
+      <label>
+        <span>Request Timeout (ms)</span>
+        <input v-model.number="selectedBackend.requestTimeoutMs" class="field" type="number" min="1000" step="1000" />
+      </label>
+
+      <div class="stack">
+        <h3>工具默认开关</h3>
+        <label
+          v-for="tool in toolCatalog"
+          :key="tool.id"
+          class="tool-toggle"
+        >
+          <div>
+            <strong>{{ tool.name }}</strong>
+            <p class="tool-description">{{ tool.description }}</p>
+            <p class="tool-meta">
+              {{ tool.required ? "必选工具，始终启用" : "当前后端作为默认模型时，新建对话将按这里的设置启用工具" }}
+            </p>
+          </div>
+          <input
+            v-model="selectedBackend.toolStates[tool.id]"
+            type="checkbox"
+            :disabled="tool.required"
+          />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button class="button primary" :disabled="saving" @click="save">
+          {{ saving ? "保存中..." : "保存全部配置" }}
+        </button>
+      </div>
+    </section>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { defaultToolStates, toolCatalog, type LlmConfig } from "@dglab-ai/shared";
-import { onMounted, reactive, ref } from "vue";
-import { api } from "../api";
+import {
+  createDefaultModelBackend,
+  toolCatalog,
+  type AppConfig,
+  type ModelBackend
+} from "@dglab-ai/shared";
+import { computed, onMounted, reactive, ref } from "vue";
+import { useConfigStore } from "../configStore";
 
-const config = reactive<LlmConfig>({
-  provider: "openai-compatible",
-  baseUrl: "https://api.openai.com/v1",
-  apiKey: "replace-me",
-  model: "gpt-4.1-mini",
-  temperature: 0.9,
-  maxTokens: 1200,
-  topP: 1,
-  requestTimeoutMs: 120000,
-  toolStates: defaultToolStates()
+const configStore = useConfigStore();
+const form = reactive<AppConfig>({
+  activeBackendId: "",
+  backends: []
 });
+const selectedBackendId = ref("");
 const saving = ref(false);
 const message = ref("");
 const error = ref("");
 
+const selectedBackend = computed<ModelBackend | null>(() => (
+  form.backends.find((backend) => backend.id === selectedBackendId.value)
+  ?? form.backends[0]
+  ?? null
+));
+
+function cloneBackend(backend: ModelBackend): ModelBackend {
+  return {
+    ...backend,
+    toolStates: { ...backend.toolStates }
+  };
+}
+
+function replaceForm(config: AppConfig) {
+  form.activeBackendId = config.activeBackendId;
+  form.backends = config.backends.map(cloneBackend);
+  if (!form.backends.some((backend) => backend.id === selectedBackendId.value)) {
+    selectedBackendId.value = form.activeBackendId || form.backends[0]?.id || "";
+  }
+}
+
+function createBackendId(): string {
+  return `backend-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function addBackend() {
+  const template = selectedBackend.value ?? createDefaultModelBackend();
+  const backend = cloneBackend({
+    ...template,
+    id: createBackendId(),
+    name: `${template.name} ${form.backends.length + 1}`
+  });
+  form.backends.push(backend);
+  selectedBackendId.value = backend.id;
+}
+
+function removeBackend(backendId: string) {
+  if (form.backends.length === 1) {
+    return;
+  }
+  const nextBackends = form.backends.filter((backend) => backend.id !== backendId);
+  form.backends = nextBackends;
+  if (form.activeBackendId === backendId) {
+    form.activeBackendId = nextBackends[0]?.id ?? "";
+  }
+  if (selectedBackendId.value === backendId) {
+    selectedBackendId.value = form.activeBackendId || nextBackends[0]?.id || "";
+  }
+}
+
 async function loadConfig() {
-  Object.assign(config, await api.getConfig());
+  error.value = "";
+  replaceForm(await configStore.ensureConfigLoaded());
 }
 
 async function save() {
@@ -89,8 +213,12 @@ async function save() {
   message.value = "";
   error.value = "";
   try {
-    Object.assign(config, await api.saveConfig({ ...config }));
-    message.value = "配置已保存。新建 session 会使用新的全局默认工具和模型配置。";
+    const saved = await configStore.saveAppConfig({
+      activeBackendId: form.activeBackendId,
+      backends: form.backends.map(cloneBackend)
+    });
+    replaceForm(saved);
+    message.value = "配置已保存。当前默认后端会用于之后新建的 session。";
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "保存失败";
   } finally {

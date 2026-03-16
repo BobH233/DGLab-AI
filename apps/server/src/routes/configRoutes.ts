@@ -6,7 +6,7 @@ export function createConfigRoutes(configService: ConfigService): Router {
 
   router.get("/", async (_request, response, next) => {
     try {
-      response.json(await configService.getConfig());
+      response.json(await configService.getAppConfig());
     } catch (error) {
       next(error);
     }
@@ -14,7 +14,15 @@ export function createConfigRoutes(configService: ConfigService): Router {
 
   router.put("/", async (request, response, next) => {
     try {
-      response.json(await configService.saveConfig(request.body));
+      response.json(await configService.saveAppConfig(request.body));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/active-backend", async (request, response, next) => {
+    try {
+      response.json(await configService.setActiveBackend(request.body));
     } catch (error) {
       next(error);
     }
@@ -22,4 +30,3 @@ export function createConfigRoutes(configService: ConfigService): Router {
 
   return router;
 }
-
