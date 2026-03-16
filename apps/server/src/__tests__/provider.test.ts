@@ -150,6 +150,44 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
+  it("parses SSE data chunk responses and reconstructs content", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      [
+        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"ok\\\":\"},\"finish_reason\":null}]}",
+        "",
+        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"true}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}",
+        "",
+        "data: [DONE]"
+      ].join("\n"),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream"
+        }
+      }
+    ));
+
+    const provider = new OpenAICompatibleProvider();
+    const result = await provider.completeJson({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return JSON"
+        }
+      ],
+      schema: z.object({
+        ok: z.boolean()
+      }),
+      schemaName: "test_schema",
+      usageContext: {}
+    });
+
+    expect(result.data).toEqual({ ok: true });
+    expect(result.rawText).toBe("{\"ok\":true}");
+    expect(result.usage.totalTokens).toBe(5);
+  });
+
   it("rejects action batches that use legacy tool key aliases", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
       JSON.stringify({

@@ -23,6 +23,19 @@ type CompletionPayload = {
   };
 };
 
+type CompletionChunkPayload = {
+  choices?: Array<{
+    delta?: {
+      content?: string | Array<{
+        type?: string;
+        text?: string;
+      }>;
+    };
+    finish_reason?: string | null;
+  }>;
+  usage?: CompletionPayload["usage"];
+};
+
 function debugLog(label: string, payload: unknown): void {
   if (process.env.DEBUG_LLM !== "1") {
     return;
@@ -47,6 +60,61 @@ function normalizeContent(
       .join("");
   }
   return "";
+}
+
+function parseCompletionPayload(responseText: string): CompletionPayload {
+  try {
+    return JSON.parse(responseText) as CompletionPayload;
+  } catch (error) {
+    if (!/^\s*data:/m.test(responseText)) {
+      const parseError = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Provider returned non-JSON response body: ${parseError}`
+      );
+    }
+    return parseSseCompletionPayload(responseText);
+  }
+}
+
+function parseSseCompletionPayload(responseText: string): CompletionPayload {
+  const contentParts: string[] = [];
+  let usage: CompletionPayload["usage"];
+  let sawChunk = false;
+
+  for (const line of responseText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) {
+      continue;
+    }
+    const data = trimmed.slice(5).trim();
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+    const chunk = JSON.parse(data) as CompletionChunkPayload;
+    sawChunk = true;
+    const deltaContent = normalizeContent(chunk.choices?.[0]?.delta?.content);
+    if (deltaContent) {
+      contentParts.push(deltaContent);
+    }
+    if (chunk.usage) {
+      usage = chunk.usage;
+    }
+  }
+
+  if (!sawChunk) {
+    throw new Error("Provider returned SSE response without any data chunks");
+  }
+
+  return {
+    choices: [
+      {
+        message: {
+          content: contentParts.join("")
+        }
+      }
+    ],
+    usage
+  };
 }
 
 function extractJsonObject(text: string): string {
@@ -189,7 +257,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
         }
       }
 
-      const payload = await response.json() as CompletionPayload;
+      const responseText = await response.text();
+      debugLog("raw_http_response", responseText);
+      const payload = parseCompletionPayload(responseText);
       const rawText = normalizeContent(payload.choices?.[0]?.message?.content);
       debugLog("raw_response", payload);
       debugLog("raw_content", rawText);
