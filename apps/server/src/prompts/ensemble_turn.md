@@ -41,3 +41,8 @@ Preferred behavior:
 - When the scene materially changes, include `update_scene_state`.
 - If multiple agents act, make the ordering feel intentional.
 - Every action object must use the exact fields `actorAgentId`, `tool`, and `args`.
+- Treat every player-visible description as interactive fiction aimed directly at the player.
+- `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must use immersive second-person narration grounded in what the player sees, hears, feels, or realizes right now.
+- In narration, do not refer to the player as `玩家`, by proper name, or with third-person pronouns. Reserve names or titles for direct dialogue only.
+- Prefer vivid sensory phrasing over detached observer summaries.
+- Use `emit_reasoning_summary` sparingly because visible meta-strategy can weaken immersion.

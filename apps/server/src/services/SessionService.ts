@@ -162,13 +162,13 @@ export class SessionService {
       session.llmConfigSnapshot = config;
       session.promptVersions = {
         ...defaultPromptVersions(),
-        sharedSafety: versions.shared_safety_preamble ?? "1.0.0",
-        toolContract: versions.tool_contract ?? "2.1.0",
-        worldBuilder: versions.world_builder ?? "1.0.0",
+        sharedSafety: versions.shared_safety_preamble ?? "1.1.0",
+        toolContract: versions.tool_contract ?? "2.2.0",
+        worldBuilder: versions.world_builder ?? "1.1.0",
         directorAgent: versions.director_agent ?? "1.1.0",
         supportAgent: versions.support_agent ?? "1.1.0",
-        ensembleTurn: versions.ensemble_turn ?? "1.0.0",
-        sceneSummarizer: versions.scene_summarizer ?? "1.0.0"
+        ensembleTurn: versions.ensemble_turn ?? "1.1.0",
+        sceneSummarizer: versions.scene_summarizer ?? "1.1.0"
       };
       session.storyState = {
         ...session.storyState,

@@ -10,6 +10,8 @@ Design goals:
 - Keep everything fictional and non-explicit.
 - Produce agents that have clear personalities, goals, and contrasting styles.
 - The director agent must clearly hold final authority over the scene.
+- Any player-facing setup text should read like an immersive briefing addressed directly to the player.
+- `openingSituation`, `playerState`, `suggestedPace`, `safetyFrame`, and any summary-like prose should use `你` / `你的` instead of describing the player from an outside viewpoint.
 
 Player brief:
 {{playerBrief}}

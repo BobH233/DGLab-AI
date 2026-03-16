@@ -122,10 +122,10 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
   return sessionDraftSchema.parse({
     title: toText(source.title, "未命名剧情"),
     playerBrief,
-    worldSummary: toText(source.worldSummary, "系统已根据玩家输入生成基础世界观。"),
-    openingSituation: toText(source.openingSituation, "故事从玩家被控制方压制后的开场处境开始。"),
-    playerState: toText(source.playerState, "玩家当前处于被动、受压制且难以反制的局面。"),
-    suggestedPace: toText(source.suggestedPace, "缓慢推进，通过对话与局势变化累积压力。"),
+    worldSummary: toText(source.worldSummary, "系统已根据你的输入生成基础世界观。"),
+    openingSituation: toText(source.openingSituation, "故事从你被压制、难以抽身的开场处境开始。"),
+    playerState: toText(source.playerState, "你当前处于被动、受压制且难以反制的局面。"),
+    suggestedPace: toText(source.suggestedPace, "缓慢推进，让你在对话与局势变化里逐步感到压力累积。"),
     safetyFrame: toText(source.safetyFrame, "本次剧情为纯虚构推演，不映射现实伤害。"),
     agents,
     sceneGoals: toStringList(source.sceneGoals),
@@ -157,7 +157,7 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "perform_stage_direction",
           args: {
-            direction: "他先是沉默地看着玩家，把桌上的文件慢慢推到正中央。"
+            direction: "你看见他先是沉默地盯着你，然后把桌上的文件慢慢推到正中央。"
           }
         },
         {
@@ -172,7 +172,7 @@ function toolExamplesForPrompt(): string {
           tool: "speak_to_agent",
           args: {
             targetAgentId: "director",
-            message: "她开始犹豫了。"
+            message: "对方已经开始犹豫了。"
           }
         },
         {
@@ -200,7 +200,7 @@ function toolExamplesForPrompt(): string {
           tool: "apply_story_effect",
           args: {
             label: "空气凝固",
-            description: "房间里的压迫感在短暂沉默后明显升高。",
+            description: "你感到房间里的压迫感在短暂沉默后明显升高，连呼吸都变得谨慎起来。",
             intensity: 6
           }
         },
@@ -211,8 +211,8 @@ function toolExamplesForPrompt(): string {
             location: "审讯室",
             phase: "pressure",
             tension: 7,
-            summary: "主导者已经通过沉默和质问掌握了局面。",
-            activeObjectives: ["逼玩家给出明确回答", "阻止玩家转移话题"]
+            summary: "你已经被他的沉默和质问压进角落，局面完全落进他的掌控里。",
+            activeObjectives: ["逼你给出明确回答", "阻止你转移话题"]
           }
         }
       ],
@@ -231,8 +231,8 @@ function toolExamplesForPrompt(): string {
           actorAgentId: "director",
           tool: "end_story",
           args: {
-            summary: "玩家的反抗彻底失败，场景进入收束。",
-            resolution: "控制方稳定了全部局势，故事以既定结局结束。"
+            summary: "你的反抗被彻底压回去，场景开始收束。",
+            resolution: "对方稳稳锁住了局势，你只能被迫迎向既定结局。"
           }
         }
       ],

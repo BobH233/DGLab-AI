@@ -49,6 +49,11 @@ Forbidden alias examples:
 - Do not use keys such as `action`, `tool_code`, `toolName`, `parameters`, or `params`.
 - Do not include extra keys that are not part of the tool's exact argument shape.
 
+Perspective rules for all player-visible strings:
+- `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must be written from the player's direct second-person perspective.
+- Narration should describe what `you` see, hear, feel, or realize in the moment.
+- Do not refer to the player as `the player`, `玩家`, by their proper name, or with third-person pronouns in narration. A character may still say the player's name inside direct dialogue.
+
 Rules:
 - Every visible line, gesture, reasoning summary, pause, scene update, or ending must be expressed as a tool call.
 - `wait` means a presentation pause inside the current action sequence. It delays the display of later actions in the same turn. It does not start a new turn.

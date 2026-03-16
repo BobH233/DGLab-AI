@@ -70,7 +70,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"targetAgentId\":\"...\",\"message\":\"...\"}",
-        example: "{\"tool\":\"speak_to_agent\",\"args\":{\"targetAgentId\":\"support_1\",\"message\":\"把门关上，不要给她退路。\"}}"
+        example: "{\"tool\":\"speak_to_agent\",\"args\":{\"targetAgentId\":\"support_1\",\"message\":\"把门关上，不要给对方留退路。\"}}"
       },
       async execute(context, args: { targetAgentId: string; message: string }) {
         context.addEvent({
@@ -95,7 +95,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"summary\":\"...\"}",
-        example: "{\"tool\":\"emit_reasoning_summary\",\"args\":{\"summary\":\"我先维持沉默压迫，再在她试图辩解时收紧节奏。\"}}"
+        example: "{\"tool\":\"emit_reasoning_summary\",\"args\":{\"summary\":\"我先维持沉默压迫，再在你试图辩解时收紧节奏。\"}}"
       },
       async execute(context, args: { summary: string }) {
         context.session.agentStates[context.agent.id] = {
@@ -117,14 +117,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
     },
     {
       id: "perform_stage_direction",
-      description: "Emit a visible, non-physical story direction or gesture.",
+      description: "Emit a visible, player-facing stage direction or gesture in immersive second-person narration.",
       visibility: "public",
       inputSchema: z.object({
         direction: z.string().min(1)
       }).strict(),
       promptContract: {
         argsShape: "{\"direction\":\"...\"}",
-        example: "{\"tool\":\"perform_stage_direction\",\"args\":{\"direction\":\"他把椅背缓慢拉近，金属腿在地面上拖出刺耳的摩擦声。\"}}"
+        example: "{\"tool\":\"perform_stage_direction\",\"args\":{\"direction\":\"你看见他缓慢把椅背拉近，金属腿在地面上拖出刺耳的摩擦声。\"}}"
       },
       async execute(context, args: { direction: string }) {
         context.addEvent({
@@ -169,7 +169,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
     },
     {
       id: "apply_story_effect",
-      description: "Apply a visible narrative effect label to the scene.",
+      description: "Apply a visible narrative effect label to the scene with immersive second-person description.",
       visibility: "public",
       inputSchema: z.object({
         label: z.string().min(1),
@@ -178,7 +178,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"label\":\"...\",\"description\":\"...\",\"intensity\":5}",
-        example: "{\"tool\":\"apply_story_effect\",\"args\":{\"label\":\"压迫感升级\",\"description\":\"房间里的空气像被无形地收紧了一层。\",\"intensity\":6}}"
+        example: "{\"tool\":\"apply_story_effect\",\"args\":{\"label\":\"压迫感升级\",\"description\":\"你感到房间里的空气像被无形地收紧了一层，连呼吸都被迫放轻。\",\"intensity\":6}}"
       },
       async execute(context, args: { label: string; description: string; intensity: number }) {
         context.session.storyState.tension = Math.max(
@@ -201,7 +201,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
     },
     {
       id: "update_scene_state",
-      description: "Update the shared scene state for future turns.",
+      description: "Update the shared scene state for future turns, keeping any summary player-facing and second-person.",
       visibility: "system",
       inputSchema: z.object({
         location: z.string().optional(),
@@ -212,7 +212,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"location\":\"...\",\"phase\":\"...\",\"tension\":4,\"summary\":\"...\",\"activeObjectives\":[\"...\"]}",
-        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"审讯室\",\"phase\":\"pressure\",\"tension\":7,\"summary\":\"主导者已经彻底掌控谈话节奏。\",\"activeObjectives\":[\"逼玩家给出解释\",\"阻断玩家转移话题\"]}}"
+        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"审讯室\",\"phase\":\"pressure\",\"tension\":7,\"summary\":\"你已经被他的沉默和质问逼进角落，谈话节奏完全落在他手里。\",\"activeObjectives\":[\"逼你给出解释\",\"阻断你转移话题\"]}}"
       },
       async execute(context, args: {
         location?: string;
@@ -248,7 +248,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }).strict(),
       promptContract: {
         argsShape: "{\"summary\":\"...\",\"resolution\":\"...\"}",
-        example: "{\"tool\":\"end_story\",\"args\":{\"summary\":\"玩家最终接受了既定结局。\",\"resolution\":\"控制方锁定了局势，故事进入收束。\"}}"
+        example: "{\"tool\":\"end_story\",\"args\":{\"summary\":\"你的反抗被彻底压回去，场景开始收束。\",\"resolution\":\"对方锁死了局面，你只能被迫迎向既定结局。\"}}"
       },
       async execute(context, args: { summary: string; resolution: string }) {
         context.session.status = "ended";

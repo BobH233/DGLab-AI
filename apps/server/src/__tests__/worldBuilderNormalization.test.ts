@@ -29,26 +29,11 @@ class FakePromptService {
 }
 
 class FakeProvider {
+  constructor(private readonly payload: Record<string, unknown>) {}
+
   async completeJson<T>() {
     return {
-      data: {
-        title: "测试草案",
-        worldSummary: "世界",
-        openingSituation: "开场",
-        playerState: "状态",
-        suggestedPace: "节奏",
-        safetyFrame: "虚构",
-        sceneGoals: ["目标一"],
-        contentNotes: "备注一，备注二",
-        agents: [
-          {
-            name: "塞西莉亚",
-            role: "Director",
-            personality: "冷酷主导者",
-            style: "慵懒，压迫"
-          }
-        ]
-      } as T,
+      data: this.payload as T,
       rawText: "",
       usage: {
         model: "test-model",
@@ -66,7 +51,24 @@ class FakeProvider {
 describe("world builder normalization", () => {
   it("normalizes loose model output into a valid session draft", async () => {
     const orchestrator = new DefaultOrchestratorService(
-      new FakeProvider(),
+      new FakeProvider({
+        title: "测试草案",
+        worldSummary: "世界",
+        openingSituation: "开场",
+        playerState: "状态",
+        suggestedPace: "节奏",
+        safetyFrame: "虚构",
+        sceneGoals: ["目标一"],
+        contentNotes: "备注一，备注二",
+        agents: [
+          {
+            name: "塞西莉亚",
+            role: "Director",
+            personality: "冷酷主导者",
+            style: "慵懒，压迫"
+          }
+        ]
+      }),
       new FakePromptService(),
       createDefaultToolRegistry()
     );
@@ -79,5 +81,19 @@ describe("world builder normalization", () => {
     expect(draft.agents[0].style).toEqual(["慵懒", "压迫"]);
     expect(draft.agents[0].goals.length).toBeGreaterThan(0);
     expect(draft.agents[0].id).toBe("agent_1");
+  });
+
+  it("uses second-person fallback copy for player-facing draft fields", async () => {
+    const orchestrator = new DefaultOrchestratorService(
+      new FakeProvider({}),
+      new FakePromptService(),
+      createDefaultToolRegistry()
+    );
+    const draft = await orchestrator.generateDraft("玩家简介", config);
+
+    expect(draft.worldSummary).toContain("你的输入");
+    expect(draft.openingSituation).toContain("你被压制");
+    expect(draft.playerState).toContain("你当前处于被动");
+    expect(draft.suggestedPace).toContain("让你在对话与局势变化里逐步感到压力累积");
   });
 });
