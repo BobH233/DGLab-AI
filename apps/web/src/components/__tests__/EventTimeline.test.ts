@@ -21,6 +21,10 @@ describe("EventTimeline", () => {
       }
     });
 
+    const playerCard = wrapper.find('.timeline-item[data-kind="player"] .event-card');
+
+    expect(playerCard.exists()).toBe(true);
+    expect(playerCard.classes()).toContain("event-card--player");
     expect(wrapper.text()).toContain("玩家输入");
     expect(wrapper.text()).toContain("你说");
     expect(wrapper.text()).toContain("测试消息");

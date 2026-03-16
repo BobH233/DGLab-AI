@@ -322,6 +322,31 @@ a {
   border-color: rgba(159, 116, 71, 0.18);
 }
 
+.event-card--player {
+  position: relative;
+  background:
+    radial-gradient(circle at top right, rgba(171, 233, 207, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(243, 255, 250, 0.98), rgba(228, 249, 241, 0.96));
+  border-color: rgba(78, 146, 124, 0.24);
+  box-shadow:
+    0 16px 34px rgba(74, 128, 111, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.event-card--player::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 22px;
+  width: 18px;
+  height: 18px;
+  border-left: 1px solid rgba(78, 146, 124, 0.24);
+  border-bottom: 1px solid rgba(78, 146, 124, 0.24);
+  background: linear-gradient(135deg, rgba(243, 255, 250, 0.98), rgba(228, 249, 241, 0.96));
+  transform: rotate(45deg);
+  border-bottom-left-radius: 4px;
+}
+
 .event-card--dialogue {
   position: relative;
   background:
@@ -404,6 +429,27 @@ a {
 
 .timeline-item[data-kind="dialogue"] .event-kicker {
   color: #8a5d3f;
+}
+
+.timeline-item[data-kind="player"] .event-kicker {
+  color: #357662;
+}
+
+.timeline-item[data-kind="player"] .event-header strong {
+  color: #214f42;
+}
+
+.timeline-item[data-kind="player"] .event-main {
+  color: #1f4339;
+}
+
+.timeline-item[data-kind="player"] .event-meta {
+  color: #477565;
+}
+
+.timeline-item[data-kind="player"] .event-tag {
+  background: rgba(78, 146, 124, 0.12);
+  color: #2f6f5b;
 }
 
 .timeline-item[data-kind="dialogue"] .event-header strong {

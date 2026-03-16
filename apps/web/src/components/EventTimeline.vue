@@ -326,6 +326,7 @@ function textOf(value: unknown, fallback = ""): string {
 function cardClass(item: PresentationItem): string[] {
   return [
     "event-card",
+    ...(item.kind === "player" ? ["event-card--player"] : []),
     ...(item.kind === "dialogue" ? ["event-card--dialogue"] : []),
     ...(item.optionalTool ? ["event-card--optional-tool"] : [])
   ];
