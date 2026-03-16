@@ -137,8 +137,8 @@ function trimEvents(events: SessionEvent[], limit = 18): SessionEvent[] {
   return events.slice(Math.max(0, events.length - limit));
 }
 
-function toolReferenceForPrompt(toolRegistry: ToolRegistry): string {
-  return toolRegistry.list().map((tool) => {
+function toolReferenceForPrompt(toolRegistry: ToolRegistry, toolStates?: Record<string, boolean>): string {
+  return toolRegistry.list(toolStates).map((tool) => {
     return [
       `- ${tool.id} (${tool.visibility}): ${tool.description}`,
       `  Exact args object: ${tool.promptContract.argsShape}`,
@@ -246,8 +246,12 @@ function toolExamplesForPrompt(): string {
   ].join("\n");
 }
 
-function worldBuilderToolHooksForPrompt(toolRegistry: ToolRegistry, playerBrief: string): string {
-  const contributions = toolRegistry.getWorldPromptContributions({ playerBrief });
+function worldBuilderToolHooksForPrompt(
+  toolRegistry: ToolRegistry,
+  playerBrief: string,
+  toolStates?: Record<string, boolean>
+): string {
+  const contributions = toolRegistry.getWorldPromptContributions({ playerBrief }, toolStates);
   if (contributions.length === 0) {
     return "No additional tool-specific world constraints.";
   }
@@ -289,7 +293,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
     const prompt = await this.prompts.render("world_builder", {
       sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
       playerBrief,
-      toolWorldHooks: worldBuilderToolHooksForPrompt(this.tools, playerBrief)
+      toolWorldHooks: worldBuilderToolHooksForPrompt(this.tools, playerBrief, config.toolStates)
     });
     const response = await this.provider.completeJson({
       modelConfig: config,
@@ -323,7 +327,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
     const now = new Date().toISOString();
     const agents = sortAgents(session);
     const agentById = new Map(agents.map((agent) => [agent.id, agent]));
-    const toolReference = toolReferenceForPrompt(this.tools);
+    const toolReference = toolReferenceForPrompt(this.tools, config.toolStates);
     const toolExamples = toolExamplesForPrompt();
     const toolContract = await this.prompts.render("tool_contract", {
       toolReference,
@@ -411,7 +415,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
         addEvent: (event) => {
           events.push(event);
         }
-      }, action.tool, action.args);
+      }, action.tool, action.args, config.toolStates);
       if (result?.stopProcessing || hasEnded()) {
         break;
       }

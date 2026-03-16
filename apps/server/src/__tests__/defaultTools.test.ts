@@ -72,6 +72,30 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.find((entry) => entry.toolId === "control_vibe_toy")?.prompt).toContain("震动小玩具");
   });
 
+  it("filters optional tools by global tool state while keeping required tools enabled", async () => {
+    const registry = createDefaultToolRegistry();
+    const disabledOptionalTools = {
+      control_vibe_toy: false,
+      speak_to_player: false
+    };
+
+    const listedTools = registry.list(disabledOptionalTools).map((tool) => tool.id);
+    const contributions = registry.getWorldPromptContributions({
+      playerBrief: "普通剧情"
+    }, disabledOptionalTools);
+
+    expect(listedTools).not.toContain("control_vibe_toy");
+    expect(listedTools).toContain("speak_to_player");
+    expect(contributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(false);
+
+    await expect(registry.execute({
+      session: createSession(),
+      agent: createSession().draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: () => undefined
+    }, "control_vibe_toy", { intensityPercent: 10 }, disabledOptionalTools)).rejects.toThrow("Tool is disabled");
+  });
+
   it("executes speak_to_player and emits a public event", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();

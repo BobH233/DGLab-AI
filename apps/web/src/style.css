@@ -176,6 +176,37 @@ a {
   gap: 12px;
 }
 
+.tool-toggle {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.tool-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 4px;
+}
+
+.tool-description,
+.tool-meta {
+  margin: 6px 0 0;
+}
+
+.tool-description {
+  color: var(--ink-700);
+}
+
+.tool-meta {
+  font-size: 0.92rem;
+  color: var(--ink-500);
+}
+
 .actions--spread {
   justify-content: space-between;
   align-items: center;

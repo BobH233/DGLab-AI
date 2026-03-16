@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { defaultToolStates } from "@dglab-ai/shared";
 import { z } from "zod";
 import { OpenAICompatibleProvider } from "../infra/OpenAICompatibleProvider.js";
 
@@ -9,7 +10,8 @@ const modelConfig = {
   temperature: 0.8,
   maxTokens: 300,
   topP: 1,
-  requestTimeoutMs: 1000
+  requestTimeoutMs: 1000,
+  toolStates: defaultToolStates()
 };
 
 describe("OpenAICompatibleProvider", () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isToolEnabled } from "@dglab-ai/shared";
 import type { ToolDefinition, ToolRegistry } from "../types/contracts.js";
 import { HttpError } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
@@ -10,17 +11,24 @@ class DefaultToolRegistry implements ToolRegistry {
     return this.tools.find((tool) => tool.id === toolId);
   }
 
-  list(): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">> {
-    return this.tools.map(({ id, description, visibility, promptContract }) => ({
+  list(toolStates?: Record<string, boolean>): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">> {
+    return this.tools
+      .filter((tool) => isToolEnabled(tool.id, toolStates))
+      .map(({ id, description, visibility, promptContract }) => ({
       id,
       description,
       visibility,
       promptContract
-    }));
+      }));
   }
 
-  getWorldPromptContributions(context: Parameters<NonNullable<ToolDefinition["buildWorldPrompt"]>>[0]) {
-    return this.tools.flatMap((tool) => {
+  getWorldPromptContributions(
+    context: Parameters<NonNullable<ToolDefinition["buildWorldPrompt"]>>[0],
+    toolStates?: Record<string, boolean>
+  ) {
+    return this.tools
+      .filter((tool) => isToolEnabled(tool.id, toolStates))
+      .flatMap((tool) => {
       const prompt = tool.buildWorldPrompt?.(context)?.trim();
       if (!prompt) {
         return [];
@@ -32,10 +40,18 @@ class DefaultToolRegistry implements ToolRegistry {
     });
   }
 
-  async execute(context: Parameters<ToolDefinition["execute"]>[0], toolId: string, args: unknown) {
+  async execute(
+    context: Parameters<ToolDefinition["execute"]>[0],
+    toolId: string,
+    args: unknown,
+    toolStates?: Record<string, boolean>
+  ) {
     const tool = this.get(toolId);
     if (!tool) {
       throw new HttpError(400, `Unknown tool: ${toolId}`);
+    }
+    if (!isToolEnabled(toolId, toolStates)) {
+      throw new HttpError(400, `Tool is disabled: ${toolId}`);
     }
     const parsed = tool.inputSchema.parse(args);
     return tool.execute(context, parsed);

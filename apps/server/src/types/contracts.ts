@@ -84,9 +84,14 @@ export interface ToolDefinition<TArgs = unknown> {
 
 export interface ToolRegistry {
   get(toolId: string): ToolDefinition | undefined;
-  list(): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">>;
-  getWorldPromptContributions(context: ToolWorldPromptContext): ToolWorldPromptContribution[];
-  execute(context: ToolExecutionContext, toolId: string, args: unknown): Promise<ToolExecutionResult | void>;
+  list(toolStates?: Record<string, boolean>): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">>;
+  getWorldPromptContributions(context: ToolWorldPromptContext, toolStates?: Record<string, boolean>): ToolWorldPromptContribution[];
+  execute(
+    context: ToolExecutionContext,
+    toolId: string,
+    args: unknown,
+    toolStates?: Record<string, boolean>
+  ): Promise<ToolExecutionResult | void>;
 }
 
 export interface SessionStore {

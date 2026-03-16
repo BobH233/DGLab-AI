@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyUsageStats, type ActionBatch, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createEmptyUsageStats, defaultToolStates, type ActionBatch, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { DefaultOrchestratorService } from "../services/OrchestratorService.js";
 import { createDefaultToolRegistry } from "../tools/defaultTools.js";
 
@@ -11,7 +11,8 @@ const config: LlmConfig = {
   temperature: 0.7,
   maxTokens: 500,
   topP: 1,
-  requestTimeoutMs: 1000
+  requestTimeoutMs: 1000,
+  toolStates: defaultToolStates()
 };
 
 function createSession(): Session {

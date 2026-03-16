@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LlmConfig } from "@dglab-ai/shared";
+import { defaultToolStates, type LlmConfig } from "@dglab-ai/shared";
 import { DefaultOrchestratorService } from "../services/OrchestratorService.js";
 import { createDefaultToolRegistry } from "../tools/defaultTools.js";
 
@@ -11,7 +11,8 @@ const config: LlmConfig = {
   temperature: 0.7,
   maxTokens: 500,
   topP: 1,
-  requestTimeoutMs: 1000
+  requestTimeoutMs: 1000,
+  toolStates: defaultToolStates()
 };
 
 class FakePromptService {
@@ -113,5 +114,25 @@ describe("world builder normalization", () => {
     const worldBuilderRender = prompts.renders.find((entry) => entry.name === "world_builder");
     expect(worldBuilderRender?.data.toolWorldHooks).toContain("control_vibe_toy");
     expect(worldBuilderRender?.data.toolWorldHooks).toContain("震动小玩具");
+  });
+
+  it("omits disabled optional tool hooks from the world builder prompt", async () => {
+    const prompts = new FakePromptService();
+    const orchestrator = new DefaultOrchestratorService(
+      new FakeProvider({}),
+      prompts,
+      createDefaultToolRegistry()
+    );
+
+    await orchestrator.generateDraft("玩家简介", {
+      ...config,
+      toolStates: {
+        ...config.toolStates,
+        control_vibe_toy: false
+      }
+    });
+
+    const worldBuilderRender = prompts.renders.find((entry) => entry.name === "world_builder");
+    expect(worldBuilderRender?.data.toolWorldHooks).not.toContain("control_vibe_toy");
   });
 });

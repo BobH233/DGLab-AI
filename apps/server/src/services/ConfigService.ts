@@ -1,4 +1,4 @@
-import { llmConfigSchema, type LlmConfig } from "@dglab-ai/shared";
+import { llmConfigSchema, normalizeLlmConfig, type LlmConfig } from "@dglab-ai/shared";
 import type { SessionStore } from "../types/contracts.js";
 
 export class ConfigService {
@@ -10,7 +10,6 @@ export class ConfigService {
 
   async saveConfig(config: unknown): Promise<LlmConfig> {
     const parsed = llmConfigSchema.parse(config);
-    return this.store.saveConfig(parsed);
+    return this.store.saveConfig(normalizeLlmConfig(parsed));
   }
 }
-

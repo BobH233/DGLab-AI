@@ -1,8 +1,10 @@
 import { MongoClient, type Collection } from "mongodb";
-import type {
-  LlmConfig,
-  Session,
-  SessionEvent
+import {
+  defaultToolStates,
+  normalizeLlmConfig,
+  type LlmConfig,
+  type Session,
+  type SessionEvent
 } from "@dglab-ai/shared";
 import type { SessionStore } from "../types/contracts.js";
 
@@ -14,7 +16,8 @@ const DEFAULT_CONFIG: LlmConfig = {
   temperature: 0.9,
   maxTokens: 1200,
   topP: 1,
-  requestTimeoutMs: 120000
+  requestTimeoutMs: 120000,
+  toolStates: defaultToolStates()
 };
 
 type ConfigDocument = {
@@ -58,16 +61,17 @@ export class MongoSessionStore implements SessionStore {
       await this.saveConfig(DEFAULT_CONFIG);
       return DEFAULT_CONFIG;
     }
-    return document.config;
+    return normalizeLlmConfig(document.config);
   }
 
   async saveConfig(config: LlmConfig): Promise<LlmConfig> {
+    const normalized = normalizeLlmConfig(config);
     await this.configs.updateOne(
       { _id: "default" },
-      { $set: { config } },
+      { $set: { config: normalized } },
       { upsert: true }
     );
-    return config;
+    return normalized;
   }
 
   async listSessions(): Promise<Array<Pick<Session, "id" | "title" | "status" | "updatedAt" | "createdAt">>> {

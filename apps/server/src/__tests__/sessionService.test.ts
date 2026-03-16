@@ -1,4 +1,4 @@
-import { createEmptyUsageStats, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createEmptyUsageStats, defaultToolStates, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { describe, expect, it, vi } from "vitest";
 import { SessionService } from "../services/SessionService.js";
 
@@ -10,7 +10,8 @@ const config: LlmConfig = {
   temperature: 0.7,
   maxTokens: 500,
   topP: 1,
-  requestTimeoutMs: 1000
+  requestTimeoutMs: 1000,
+  toolStates: defaultToolStates()
 };
 
 function createSession(): Session {

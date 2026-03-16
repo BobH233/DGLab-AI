@@ -1,5 +1,100 @@
 import { z } from "zod";
 
+export const toolCatalog = [
+  {
+    id: "control_vibe_toy",
+    name: "穿戴式震动小玩具",
+    description: "允许角色调节玩家身上穿戴式震动小玩具的强度和模式。",
+    required: false,
+    defaultEnabled: true
+  },
+  {
+    id: "speak_to_player",
+    name: "角色对玩家说话",
+    description: "角色向玩家输出对白。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "speak_to_agent",
+    name: "角色间对话",
+    description: "角色之间交换对白或提示。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "emit_reasoning_summary",
+    name: "可见推理摘要",
+    description: "输出可见的意图或推理摘要。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "perform_stage_direction",
+    name: "舞台动作",
+    description: "输出面向玩家的动作或舞台描述。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "wait",
+    name: "短暂停顿",
+    description: "在同一轮展示中插入节奏停顿。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "apply_story_effect",
+    name: "剧情效果",
+    description: "施加剧情效果并更新氛围张力。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "update_scene_state",
+    name: "场景状态更新",
+    description: "更新后续回合共享的场景状态。",
+    required: true,
+    defaultEnabled: true
+  },
+  {
+    id: "end_story",
+    name: "结束故事",
+    description: "在满足条件时结束本次故事。",
+    required: true,
+    defaultEnabled: true
+  }
+] as const;
+
+export type ToolCatalogEntry = typeof toolCatalog[number];
+export type ToolStateMap = Record<string, boolean>;
+
+export function defaultToolStates(): ToolStateMap {
+  return Object.fromEntries(toolCatalog.map((tool) => [tool.id, tool.defaultEnabled]));
+}
+
+export function normalizeToolStates(toolStates?: Record<string, boolean>): ToolStateMap {
+  const normalized = defaultToolStates();
+  for (const tool of toolCatalog) {
+    if (tool.required) {
+      normalized[tool.id] = true;
+      continue;
+    }
+    if (typeof toolStates?.[tool.id] === "boolean") {
+      normalized[tool.id] = toolStates[tool.id];
+    }
+  }
+  return normalized;
+}
+
+export function isToolRequired(toolId: string): boolean {
+  return toolCatalog.some((tool) => tool.id === toolId && tool.required);
+}
+
+export function isToolEnabled(toolId: string, toolStates?: Record<string, boolean>): boolean {
+  return normalizeToolStates(toolStates)[toolId] ?? true;
+}
+
 export const llmConfigSchema = z.object({
   provider: z.literal("openai-compatible").default("openai-compatible"),
   baseUrl: z.string().url(),
@@ -8,10 +103,18 @@ export const llmConfigSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.9),
   maxTokens: z.number().int().positive().default(1200),
   topP: z.number().min(0).max(1).default(1),
-  requestTimeoutMs: z.number().int().positive().default(120000)
+  requestTimeoutMs: z.number().int().positive().default(120000),
+  toolStates: z.record(z.boolean()).default(defaultToolStates())
 });
 
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
+
+export function normalizeLlmConfig(config: LlmConfig): LlmConfig {
+  return {
+    ...config,
+    toolStates: normalizeToolStates(config.toolStates)
+  };
+}
 
 export const usageEntrySchema = z.object({
   promptTokens: z.number().int().nonnegative().default(0),
