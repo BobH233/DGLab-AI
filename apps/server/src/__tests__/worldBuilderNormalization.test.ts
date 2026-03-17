@@ -98,7 +98,8 @@ describe("world builder normalization", () => {
     expect(draft.worldSummary).toContain("你的输入");
     expect(draft.openingSituation).toContain("暧昧对峙");
     expect(draft.playerState).toContain("你正被卷入一场充满试探");
-    expect(draft.suggestedPace).toContain("让你在互动、试探与情绪升温里逐步沉浸其中");
+    expect(draft.suggestedPace).toContain("整体会先用试探与拉近距离让你进入状态");
+    expect(draft.suggestedPace).toContain("每一段都会提前埋好道具、动作与掌控方式");
   });
 
   it("injects enabled tool world hooks into the world builder prompt", async () => {

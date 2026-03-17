@@ -126,7 +126,10 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
     worldSummary: toText(source.worldSummary, "系统已根据你的输入生成基础世界观。"),
     openingSituation: toText(source.openingSituation, "故事从一场让你难以抽身的暧昧对峙里缓缓展开。"),
     playerState: toText(source.playerState, "你正被卷入一场充满试探、吸引力与情绪拉扯的互动之中。"),
-    suggestedPace: toText(source.suggestedPace, "缓慢推进，让你在互动、试探与情绪升温里逐步沉浸其中。"),
+    suggestedPace: toText(
+      source.suggestedPace,
+      "整体会先用试探与拉近距离让你进入状态，再进入逐步加压与条件引导的中段，最后以情绪回收和余韵收束；每一段都会提前埋好道具、动作与掌控方式，让你在互动、试探与情绪升温里逐步沉浸其中。"
+    ),
     safetyFrame: toText(source.safetyFrame, "本次剧情为纯虚构推演，不映射现实伤害。"),
     agents,
     sceneGoals: toStringList(source.sceneGoals),

@@ -87,6 +87,10 @@ describe("prompt templates", () => {
     expect(prompt).toContain("control_vibe_toy");
     expect(prompt).toContain("Do not let a single enabled device monopolize the setup");
     expect(prompt).toContain("If the player brief already mentions props");
+    expect(prompt).toContain("must function as a forward-looking outline for the whole story");
+    expect(prompt).toContain("pre-plan 3 to 6 sequential phases or time blocks");
+    expect(prompt).toContain("state the rough order or timing");
+    expect(prompt).toContain("Use `suggestedPace` to pre-commit to a varied sequence");
     expect(prompt).toContain("Make the `sceneGoals` and agent goals proactive");
   });
 
