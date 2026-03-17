@@ -31,6 +31,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Props and scene elements mentioned in the player brief");
     expect(prompt).toContain("narrate it as a sequence instead of a shortcut");
     expect(prompt).toContain("Keep the fiction close to the body and moment-by-moment");
+    expect(prompt).toContain("Keep dialogue and action separate");
+    expect(prompt).toContain("Do not hide motion, touching, prop handling, posture changes, or narration inside dialogue strings");
   });
 
   it("keeps tool contract guidance aligned with player-facing second-person output", async () => {
@@ -50,6 +52,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
     expect(prompt).toContain("do not skip from intent to completion");
     expect(prompt).toContain("Favor concrete sensory progression over abstract summaries");
+    expect(prompt).toContain("must contain only the words spoken to the player");
+    expect(prompt).toContain("split it across tools");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
