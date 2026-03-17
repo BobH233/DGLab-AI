@@ -1,59 +1,163 @@
 # DGLabAI
 
-DGLabAI 是一个基于大语言模型驱动的多智能体剧情推演系统。项目采用前后端分离架构，支持由玩家输入故事背景、自动生成剧情草案、确认设定后进入持续推进的单人互动叙事会话，并通过事件流展示各个智能体的对白、动作、剧情效果与系统状态。
+DGLabAI 是一个基于大语言模型的单玩家、多智能体互动叙事原型系统。项目并不把模型当作“直接聊天回复器”，而是把世界构建、人工审阅、共享回合编排、工具执行、事件持久化、长程记忆压缩与前端实时呈现串成一条完整链路。
 
-当前实现的核心目标是把“世界观补全 + 多角色协同推进 + 工具化输出 + 会话持久化 + 实时前端展示”串成一条完整链路。
+当前代码已经实现：
+
+- 世界草案生成与人工确认流程
+- 单次共享编排的多角色回合推进
+- 工具化输出与事件流持久化
+- MongoDB 会话快照与事件日志
+- 多后端模型配置管理
+- 分层记忆摘要与上下文装配
+- SSE 实时更新与前端时间线播放
+- 记忆调试页与用量统计
 
 ## 项目特性
 
-- 多智能体叙事编排：服务端使用一次世界构建调用生成草案，再用一次共享编排调用驱动整组角色推进当前回合。
-- 工具化输出：模型不直接输出自由文本，而是输出结构化工具调用，后端再把工具调用落成事件。
-- 草案确认流程：玩家先生成草案，再人工修改并确认，避免模型直接把未审阅设定带入正式会话。
-- 会话持久化：会话、配置、事件均保存到 MongoDB，可恢复历史 Session。
-- 实时事件流：前端通过 SSE 接收会话更新和新增事件，实时渲染剧情时间线。
-- 自动推进：支持开启定时触发，让故事按固定间隔继续推进。
-- 配置可视化：前端可配置 OpenAI 兼容接口地址、模型、密钥、温度、Token 上限与工具开关。
-- 可扩展设计：通道适配器、工具注册表、提示词模板和共享类型已经抽象出来，便于后续增加接入端或工具。
+- 两阶段叙事生成：先生成结构化草案，再进入正式剧情推演。
+- Human-in-the-loop：草案进入正式会话前可人工修改并确认。
+- 单次共享编排：每个 Tick 只做一次 LLM 调用，由模型统一规划整组角色的动作批次。
+- 工具化执行：模型输出结构化 action batch，后端将其执行为事件和状态变更。
+- 事件驱动呈现：前端消费 `SessionEvent`，而不是直接渲染模型原文。
+- 分层记忆：按 turn、episode、archive 三层压缩历史上下文，并保留最近原始回合窗口。
+- 多后端配置：支持维护多个 OpenAI-compatible 后端，并切换当前默认后端。
+- 实时界面：前端通过 SSE 接收增量更新，并带有内联停顿与播放队列。
+- 可观测性：提供记忆调试页、Token 用量记录与失败重试入口。
 
 ## 技术栈
 
 - 前端：Vue 3、Vue Router、Vite、Vitest
 - 后端：Node.js、Express、MongoDB、Zod、Vitest
-- 共享包：TypeScript + Zod，用于沉淀前后端共用的数据模型与校验逻辑
-- 模型接入：OpenAI Compatible Chat Completions 接口
+- 共享包：TypeScript + Zod
+- 模型接入：OpenAI-compatible `/chat/completions`
+- 实时通信：Server-Sent Events
 
 ## 仓库结构
 
 ```text
 .
 ├── apps
-│   ├── server              # Express 服务、编排器、Mongo 存储、提示词、工具
-│   └── web                 # Vue 前端，包含首页、草案确认、会话控制台、配置页
+│   ├── server              # Express 服务、编排器、Mongo 存储、提示词、工具、记忆系统
+│   └── web                 # Vue 前端，包含首页、草案页、会话页、调试页、配置页
 ├── packages
-│   └── shared              # 共享 schema、类型、工具目录与请求/响应定义
-├── doc                     # 中文项目文档
-├── package.json            # 工作区脚本
-└── prompt.txt              # 项目原始需求说明
+│   └── shared              # 共享 schema、类型、事件、工具目录与请求/响应结构
+├── doc                     # 中文技术文档
+├── package.json            # workspace 脚本
+└── prompt.txt              # 原始需求说明
 ```
 
-## 运行流程
+## 核心流程
 
-1. 玩家在首页输入故事背景，前端调用 `POST /api/sessions/draft`。
-2. 服务端读取全局模型配置，调用 `world_builder` 提示词生成结构化草案。
-3. 草案保存为 `draft` 状态 Session，并记录创建事件与草案生成事件。
-4. 玩家在草案页修改世界背景、角色设定和节奏说明后点击确认。
-5. Session 进入 `active` 状态，服务端保存模型配置快照和提示词版本。
-6. 玩家发送消息或定时器触发时，调度器请求一次新的 Tick。
-7. 编排器使用 `ensemble_turn` 提示词让模型输出一个共享动作批次。
-8. 后端逐条执行工具调用，把对白、动作、剧情效果、场景更新等写入事件流。
-9. 前端通过 SSE 订阅会话更新，实时渲染剧情时间线、模型消耗和自动推进状态。
+### 1. 草案生成
+
+1. 玩家在首页输入 `playerBrief`
+2. 前端调用 `POST /api/sessions/draft`
+3. 后端读取当前激活模型后端配置
+4. 编排器渲染 `world_builder` 提示词并调用模型
+5. 服务端将宽松 JSON 归一化为合法 `SessionDraft`
+6. 会话以 `draft` 状态持久化，并写入 `session.created` 与 `draft.generated`
+
+### 2. 草案确认
+
+1. 玩家在草案页编辑世界设定与 Agent 档案
+2. 前端调用 `PATCH /api/sessions/:id/draft`
+3. 点击确认后调用 `POST /api/sessions/:id/confirm`
+4. 后端将草案冻结为 `confirmedSetup`
+5. 同时保存当时的 LLM 配置快照与提示词版本快照
+
+### 3. 正式推演
+
+1. 玩家发送消息，或前端自动推进倒计时到点后调用 `/auto-tick`
+2. `SessionService` 汇总排队消息、触发原因和最近事件
+3. `MemoryContextAssembler` 组装当前场景、压缩记忆、近期原始回合与玩家消息账本
+4. `DefaultOrchestratorService` 渲染 `ensemble_turn` 提示词
+5. 模型返回一个结构化 action batch
+6. 工具注册表逐条校验并执行工具调用
+7. 结果被落成事件流，同时更新 `storyState`、`agentStates` 与用量统计
+8. 前端通过 SSE 收到 `session.updated` 与 `event.appended`，实时刷新时间线
+
+## 记忆系统
+
+项目已经实现分层记忆压缩链路：
+
+- 最近原始回合：保留最近若干个完整成功回合
+- Turn Summary：对每个完成回合生成摘要
+- Episode Summary：当 turn 摘要过多时向上压缩
+- Archive Summary：当 episode 摘要过多时继续归档压缩
+
+这些摘要不会替代当前场景状态，而是与：
+
+- `storyState`
+- `agentStates`
+- 玩家历史消息
+- 当前排队消息与触发原因
+
+一起被装配进正式推演的上下文中。前端还提供独立的“记忆调试”页面查看这一过程。
+
+## 自动推进的当前实现
+
+当前“自动推进”不是后端常驻定时任务服务，而是：
+
+- 后端维护 `timerState`、会话级去重与 Tick 合并
+- 前端在会话页面可见时轮询当前倒计时
+- 到点后前端调用 `POST /api/sessions/:id/auto-tick`
+- 后端判断是否真的到点、是否已在推演中，再决定是否触发新 Tick
+
+这意味着自动推进依赖打开中的 Web 会话页，不是脱离前端独立运行的后台调度器。
+
+## 模型配置
+
+配置页支持维护多个模型后端。每个后端独立保存：
+
+- 后端名称
+- API Base URL
+- API Key
+- Model
+- Temperature
+- Top P
+- Max Tokens
+- Request Timeout
+- 工具默认开关
+
+新建 Session 时使用当前激活后端。已确认的 Session 会把配置快照写入自身，不会随着全局切换而被追改。
+
+## 当前工具与输出方式
+
+后端注册了以下运行时工具：
+
+- `control_vibe_toy`
+- `speak_to_player`
+- `speak_to_agent`
+- `emit_reasoning_summary`
+- `perform_stage_direction`
+- `wait`
+- `apply_story_effect`
+- `update_scene_state`
+- `end_story`
+
+其中：
+
+- `wait` 是内部节奏工具，当前不会在设置页中作为可切换项展示
+- 正式提示词主要鼓励使用字符串内联 `<delay>1000</delay>` 来表达同一轮中的停顿
+- 前端会把显式 `system.wait_scheduled` 事件和内联 delay 都渲染为可见节奏停顿
+- `control_vibe_toy` 当前只产生 `simulated` 设备控制事件，不连接真实硬件
+
+## 关键设计取舍
+
+- 用“共享回合编排”替代“每个角色各调用一次模型”
+- 用“工具调用 + 事件流”替代“直接自由文本输出”
+- 用“人工确认草案”隔离世界构建阶段和正式运行阶段
+- 用“分层摘要 + 最近原文窗口”控制长上下文成本
+- 用“快照 + 事件日志”兼顾快速恢复与完整回放
 
 ## 快速开始
 
-### 1. 准备环境
+### 1. 环境准备
 
-- Node.js 20 或更高版本
-- MongoDB（默认连接 `mongodb://127.0.0.1:27017`）
+- Node.js 20+
+- npm 10+
+- MongoDB 6+
 
 ### 2. 安装依赖
 
@@ -67,7 +171,7 @@ npm install
 npm run dev:server
 ```
 
-默认端口为 `3001`。
+默认端口：`3001`
 
 ### 4. 启动前端
 
@@ -75,11 +179,11 @@ npm run dev:server
 npm run dev:web
 ```
 
-默认前端地址为 `http://localhost:5173`。
+默认地址：`http://localhost:5173`
 
-### 5. 配置模型
+### 5. 配置模型后端
 
-打开前端配置页，填写：
+进入前端“配置”页，至少填写一个可用后端的：
 
 - `API Base URL`
 - `API Key`
@@ -88,22 +192,21 @@ npm run dev:web
 - `Top P`
 - `Max Tokens`
 - `Request Timeout`
-- 各工具开关
 
-默认后端会使用 OpenAI 兼容接口 `/chat/completions`，并优先尝试 `response_format=json_schema`，如果目标兼容服务不支持，会自动回退到“纯提示词 JSON 输出”模式。
+默认接入方式为 OpenAI-compatible `/chat/completions`。后端会优先尝试 `response_format=json_schema`；如果兼容服务不支持，再自动回退到“纯提示词要求 JSON 输出”的模式。
 
 ## 环境变量
 
-服务端：
+### 服务端
 
-- `PORT`：服务监听端口，默认 `3001`
-- `MONGODB_URI`：MongoDB 连接串，默认 `mongodb://127.0.0.1:27017`
-- `MONGODB_DB`：数据库名，默认 `dglab_ai`
-- `DEBUG_LLM=1`：开启后打印模型请求、原始响应和解析结果
+- `PORT`：默认 `3001`
+- `MONGODB_URI`：默认 `mongodb://127.0.0.1:27017`
+- `MONGODB_DB`：默认 `dglab_ai`
+- `DEBUG_LLM=1`：打印模型请求、原始响应、JSON 提取与校验过程
 
-前端：
+### 前端
 
-- `VITE_API_BASE`：后端 API 基础地址，默认 `http://localhost:3001/api`
+- `VITE_API_BASE`：默认 `http://localhost:3001/api`
 
 ## 常用脚本
 
@@ -114,21 +217,14 @@ npm run dev:web
 npm test
 ```
 
-## 当前实现重点
+## 当前实现边界
 
-- 世界草案生成与确认流程已经完成
-- 多角色共享回合编排已经完成
-- 事件持久化、SSE 推送、时间线渲染已经完成
-- 配置管理、模型消耗统计、自动推进已经完成
-- 工具注册与可选工具开关已经完成
-
-## 当前边界与注意事项
-
-- 当前只实现了 Web 通道，`WebChannelAdapter` 为后续接入 QQ 机器人等渠道预留了抽象接口。
-- `control_vibe_toy` 目前只会生成“模拟执行”的叙事事件，不会连接真实硬件。
-- `wait` 当前是“同一轮展示中的停顿效果”，不会在未来重新调度一个独立 Tick。
-- 仓库里保留了 `director_agent.md` 和 `support_agent.md` 模板，但当前正式流程使用的是单次 `ensemble_turn` 共享编排。
-- 事件与配置没有接入权限控制，适合本地开发和原型验证，不适合直接暴露到公网。
+- 当前只有 Web 前端和 SSE 通道，没有脱离前端的后台自动调度守护进程
+- 当前没有用户体系、权限控制或公网安全加固
+- `UsageStats.byAgent` 结构已定义，但实际只记录会话总量和每次调用记录
+- `wait` 更多是界面节奏控制，不是未来任务系统
+- 渠道抽象已预留，但真正实现的只有 `WebChannelAdapter`
+- 仓库中保留了 `director_agent.md` 和 `support_agent.md`，但正式运行链路使用的是 `ensemble_turn`
 
 ## 文档导航
 
@@ -139,11 +235,3 @@ npm test
 - [API 参考](./doc/api.md)
 - [提示词与工具](./doc/prompts-and-tools.md)
 - [开发与部署](./doc/development.md)
-
-## 适合继续扩展的方向
-
-- 增加新的通道适配器，例如 QQ 机器人、Discord、Telegram
-- 增加更多工具，例如真实设备控制、外部知识检索、记忆系统
-- 为不同类型题材拆分提示词模板
-- 加入鉴权、审计、速率限制和生产部署配置
-- 将当前事件模型进一步抽象为可复用的“叙事引擎”

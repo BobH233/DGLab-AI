@@ -1,6 +1,6 @@
 # 开发与部署
 
-## 1. 本地开发准备
+## 1. 本地开发环境
 
 推荐环境：
 
@@ -10,8 +10,9 @@
 
 原因：
 
-- 后端直接使用 Node 原生 `fetch`
-- 工程使用 ES Module、TypeScript、顶层 `await`
+- 后端依赖 Node 原生 `fetch`
+- 项目使用 ES Module 和 TypeScript
+- MongoDB 是当前唯一持久化存储
 
 ## 2. 安装依赖
 
@@ -21,43 +22,48 @@
 npm install
 ```
 
-项目采用 npm workspaces，根目录会统一安装和管理子包依赖。
+项目采用 npm workspaces，根目录统一管理 `apps/*` 与 `packages/*`。
 
 ## 3. 启动 MongoDB
 
-默认配置：
+默认参数：
 
 - URI：`mongodb://127.0.0.1:27017`
 - DB：`dglab_ai`
 
-如果需要自定义，可通过环境变量修改：
+如需自定义：
 
 ```bash
 export MONGODB_URI="mongodb://127.0.0.1:27017"
 export MONGODB_DB="dglab_ai"
 ```
 
-## 4. 启动服务
+## 4. 启动项目
 
-### 后端
+### 4.1 启动后端
 
 ```bash
 npm run dev:server
 ```
 
-默认监听 `3001` 端口。
+默认端口：`3001`
 
-### 前端
+### 4.2 启动前端
 
 ```bash
 npm run dev:web
 ```
 
-默认监听 `5173` 端口。
+默认端口：`5173`
+
+### 4.3 访问页面
+
+- 首页：`http://localhost:5173`
+- 配置页：`http://localhost:5173/settings`
 
 ## 5. 环境变量
 
-### 服务端
+### 5.1 服务端
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -66,71 +72,110 @@ npm run dev:web
 | `MONGODB_DB` | `dglab_ai` | 数据库名 |
 | `DEBUG_LLM` | 未开启 | 为 `1` 时打印模型调试日志 |
 
-### 前端
+### 5.2 前端
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `VITE_API_BASE` | `http://localhost:3001/api` | 后端 API 地址 |
+| `VITE_API_BASE` | `http://localhost:3001/api` | 后端 API 基础地址 |
 
 ## 6. 构建与测试
 
-### 构建
+### 6.1 构建
 
 ```bash
 npm run build
 ```
 
-顺序为：
+构建顺序：
 
-1. 构建共享包
-2. 构建服务端
-3. 构建前端
+1. `@dglab-ai/shared`
+2. `@dglab-ai/server`
+3. `@dglab-ai/web`
 
-### 测试
+### 6.2 测试
 
 ```bash
 npm test
 ```
 
-当前测试覆盖的重点包括：
+当前仓库测试通过情况为：
 
-- 提示词模板内容约束
+- 服务端：`43` 个测试
+- 前端：`17` 个测试
+- 合计：`60` 个测试
+
+覆盖重点包括：
+
+- 提示词模板约束
+- Provider JSON Schema / fallback / SSE 解析
 - 世界草案归一化
 - 工具参数校验与执行
-- 编排器共享动作批次
-- 调度器 Tick 合并
-- Session 失败重试逻辑
-- Provider 对 JSON Schema 和回退逻辑的处理
-- 前端时间线组件显示
+- 编排器共享 action batch
+- Session Tick 失败与恢复
+- 调度器原因合并
+- 记忆摘要与上下文装配
+- 前端时间线、内联 delay 和自动推进显示
 
-## 7. 调试建议
+## 7. 配置模型后端
 
-### 调试模型请求
+第一次启动后，应先打开前端配置页补充至少一个可用后端。
 
-设置：
+每个后端可以配置：
+
+- 名称
+- API Base URL
+- API Key
+- Model
+- Temperature
+- Top P
+- Max Tokens
+- Request Timeout
+- 工具默认开关
+
+项目使用 OpenAI-compatible `/chat/completions`，并优先尝试 `response_format=json_schema`；若目标服务不支持，则自动回退到“提示词要求 JSON 输出”模式。
+
+## 8. 调试建议
+
+### 8.1 调试模型请求
 
 ```bash
 DEBUG_LLM=1 npm run dev:server
 ```
 
-会输出：
+会打印：
 
 - 请求目标地址
-- 使用的模型
+- 模型名
 - schema 名称
-- 发送给模型的消息
+- 发送给模型的 messages
 - 原始响应
-- JSON 提取与校验结果
+- 提取出的 JSON
+- Zod 校验后的结果
 
-### 调试前端事件流
+### 8.2 调试前端事件流
 
-可以在浏览器开发者工具中查看：
+在浏览器开发者工具中观察：
 
-- `EventSource` 是否建立成功
-- `event.appended` 是否持续到达
-- 时间线是否收到 `system.wait_scheduled`
+- `EventSource` 是否正常连接
+- `session.updated` 与 `event.appended` 是否持续到达
+- 时间线中的 `system.wait_scheduled` 是否符合预期
 
-## 8. 代码阅读建议
+### 8.3 调试记忆链路
+
+进入某个 Session 的：
+
+```text
+/sessions/:id/debug
+```
+
+可以直接查看：
+
+- turn / episode / archive 摘要树
+- 下一轮真正会送给模型的上下文块
+- 被字符预算丢弃的 block
+- 最近记忆运行记录
+
+## 9. 建议的阅读顺序
 
 如果要快速理解项目，推荐按下面顺序阅读：
 
@@ -138,37 +183,32 @@ DEBUG_LLM=1 npm run dev:server
 2. `apps/server/src/app.ts`
 3. `apps/server/src/services/SessionService.ts`
 4. `apps/server/src/services/OrchestratorService.ts`
-5. `apps/server/src/tools/defaultTools.ts`
-6. `apps/web/src/pages/SessionConsolePage.vue`
-7. `apps/web/src/components/EventTimeline.vue`
-
-## 9. 部署建议
-
-当前仓库偏向本地开发和原型验证。若要部署到生产环境，至少还需要补：
-
-- 鉴权与权限控制
-- 敏感配置保护
-- MongoDB 备份策略
-- HTTPS 与反向代理
-- 请求限流
-- 日志与告警
-- LLM 调用失败重试策略
-- 前后端环境变量管理
+5. `apps/server/src/services/MemoryService.ts`
+6. `apps/server/src/services/MemoryContextAssembler.ts`
+7. `apps/server/src/tools/defaultTools.ts`
+8. `apps/web/src/pages/SessionConsolePage.vue`
+9. `apps/web/src/components/EventTimeline.vue`
+10. `apps/web/src/pages/SessionMemoryDebugPage.vue`
 
 ## 10. 当前已知限制
 
-- 没有 Dockerfile、docker-compose 或 CI 配置
+- 没有 Dockerfile、compose 或 CI 配置
 - 没有数据库 migration 机制
-- 没有用户体系和多租户隔离
-- 没有消息渠道抽象的完整实现，只有 Web SSE
-- 自动推进只传递“触发原因”，没有显式传递真实经过时长
-- `UsageStats.byAgent` 虽然定义了，但目前没有实际统计来源
+- 没有用户体系和权限隔离
+- 没有后台守护进程式自动推进服务
+- 自动推进依赖打开中的前端会话页
+- `UsageStats.byAgent` 结构已定义但尚未真正统计
+- 只有 Web SSE 通道，没有其他渠道适配器
 
-## 11. 适合继续补强的工程项
+## 11. 部署建议
 
-- 增加 `.env.example`
-- 增加 Docker 与部署脚本
-- 增加端到端测试
-- 增加提示词版本演进策略
-- 增加通道适配器接口文档
-- 将编译产物与源代码文件的组织方式进一步收敛
+当前仓库更适合本地开发与原型验证。若要投入正式环境，至少需要补：
+
+- 鉴权与权限控制
+- API 限流
+- HTTPS 与反向代理
+- 配置与密钥管理
+- MongoDB 备份策略
+- 日志、监控与告警
+- 后台任务或守护式自动推进
+- 更完整的故障恢复和重试机制

@@ -1,10 +1,10 @@
 # API 参考
 
-本文档基于当前代码实现整理，所有路径默认以前缀 `/api` 暴露。
+所有接口都以前缀 `/api` 暴露。本文档描述当前代码中的实际实现。
 
 ## 1. 健康检查
 
-### `GET /health`
+### `GET /api/health`
 
 返回：
 
@@ -16,53 +16,79 @@
 
 ## 2. 配置接口
 
-### `GET /config`
+当前配置接口围绕 `AppConfig` 工作，支持多个模型后端。
 
-读取全局 LLM 配置。
+### 2.1 `GET /api/config`
 
-### `PUT /config`
+读取完整 `AppConfig`。
 
-保存全局 LLM 配置。
+### 2.2 `PUT /api/config`
 
-请求体示例：
+保存完整 `AppConfig`。
+
+示例：
 
 ```json
 {
-  "provider": "openai-compatible",
-  "baseUrl": "https://api.openai.com/v1",
-  "apiKey": "sk-xxx",
-  "model": "gpt-4.1-mini",
-  "temperature": 0.9,
-  "maxTokens": 1200,
-  "topP": 1,
-  "requestTimeoutMs": 120000,
-  "toolStates": {
-    "control_vibe_toy": true,
-    "speak_to_player": true,
-    "speak_to_agent": true,
-    "emit_reasoning_summary": true,
-    "perform_stage_direction": true,
-    "wait": true,
-    "apply_story_effect": true,
-    "update_scene_state": true,
-    "end_story": true
-  }
+  "activeBackendId": "default-openai",
+  "backends": [
+    {
+      "id": "default-openai",
+      "name": "默认后端",
+      "provider": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "sk-xxx",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.9,
+      "maxTokens": 1200,
+      "topP": 1,
+      "requestTimeoutMs": 120000,
+      "toolStates": {
+        "control_vibe_toy": true,
+        "speak_to_player": true,
+        "speak_to_agent": true,
+        "emit_reasoning_summary": true,
+        "perform_stage_direction": true,
+        "apply_story_effect": true,
+        "update_scene_state": true,
+        "end_story": true
+      }
+    }
+  ]
+}
+```
+
+### 2.3 `PATCH /api/config/active-backend`
+
+切换当前激活后端。
+
+请求体：
+
+```json
+{
+  "backendId": "default-openai"
 }
 ```
 
 ## 3. Session 接口
 
-### `GET /sessions`
+### 3.1 `GET /api/sessions`
 
-返回 Session 列表，字段包括：
+返回 Session 列表：
 
-- `id`
-- `title`
-- `status`
-- `updatedAt`
-- `createdAt`
+```json
+[
+  {
+    "id": "session_xxx",
+    "title": "剧情标题",
+    "status": "draft",
+    "updatedAt": "2026-03-17T00:00:00.000Z",
+    "createdAt": "2026-03-17T00:00:00.000Z"
+  }
+]
+```
 
-### `POST /sessions/draft`
+### 3.2 `POST /api/sessions/draft`
 
 根据玩家简介生成草案。
 
@@ -70,17 +96,17 @@
 
 ```json
 {
-  "playerBrief": "请输入故事背景与角色设定"
+  "playerBrief": "请输入你的故事背景与角色设定"
 }
 ```
 
-返回完整 Session，状态为 `draft`。
+返回完整 `Session`，状态为 `draft`。
 
-### `PATCH /sessions/:id/draft`
+### 3.3 `PATCH /api/sessions/:id/draft`
 
-修改草案内容。
+更新草案内容。
 
-请求体字段可选，包括：
+请求体字段均为可选：
 
 - `title`
 - `worldSummary`
@@ -92,15 +118,17 @@
 - `contentNotes`
 - `agents`
 
-### `POST /sessions/:id/confirm`
+### 3.4 `POST /api/sessions/:id/confirm`
 
-确认草案并进入正式推演，返回最新 Session。
+确认草案并进入正式推演。
 
-### `GET /sessions/:id`
+返回最新 `Session`。
 
-获取单个 Session 快照。
+### 3.5 `GET /api/sessions/:id`
 
-### `POST /sessions/:id/messages`
+读取单个 Session 快照。
+
+### 3.6 `POST /api/sessions/:id/messages`
 
 发送玩家消息。
 
@@ -112,13 +140,23 @@
 }
 ```
 
-### `POST /sessions/:id/retry`
+### 3.7 `POST /api/sessions/:id/retry`
 
-手动重试当前会话的下一轮推进。
+对最近一次失败推进进行手动重试。
 
-### `POST /sessions/:id/timer`
+### 3.8 `POST /api/sessions/:id/auto-tick`
 
-更新自动推进配置。
+请求后端检查该 Session 是否到达自动推进时间。
+
+说明：
+
+- 该接口没有请求体
+- 即使前端调用了，也不代表一定会真正触发 Tick
+- 后端会检查 `enabled`、`inFlight` 和 `nextTickAt`
+
+### 3.9 `POST /api/sessions/:id/timer`
+
+更新自动推进设置。
 
 请求体：
 
@@ -129,45 +167,83 @@
 }
 ```
 
-### `GET /sessions/:id/events`
+### 3.10 `GET /api/sessions/:id/events`
 
 读取事件流。
 
 查询参数：
 
-- `cursor`：只返回序号大于该值的事件
-- `limit`：最大返回数量
+- `cursor`：只返回 `seq > cursor` 的事件
+- `limit`：限制返回数量
 
-### `GET /sessions/:id/stream`
+### 3.11 `GET /api/sessions/:id/memory-debug`
+
+读取记忆调试数据。
+
+返回：
+
+- 当前 `memoryState`
+- 最近原始回合
+- 下一轮真正使用的 assembled context
+- 当前 `storyState` 快照
+- 当前消息队列快照
+
+### 3.12 `GET /api/sessions/:id/stream`
 
 建立 SSE 长连接。
 
-连接成功后会先收到：
+连接成功后先收到：
 
 ```text
 event: ready
 data: {"sessionId":"session_xxx"}
 ```
 
-## 4. 核心数据结构
+## 4. SSE 事件
 
-## 4.1 `LlmConfig`
+当前定义的 SSE 事件类型为：
+
+- `session.updated`
+- `event.appended`
+- `tick.started`
+- `tick.completed`
+- `usage.updated`
+- `timer.updated`
+- `error`
+
+实际代码里后端常发的是：
+
+- `session.updated`
+- `event.appended`
+- `usage.updated`
+- `timer.updated`
+
+## 5. 关键数据结构
+
+## 5.1 AppConfig
 
 ```json
 {
-  "provider": "openai-compatible",
-  "baseUrl": "https://api.openai.com/v1",
-  "apiKey": "string",
-  "model": "string",
-  "temperature": 0.9,
-  "maxTokens": 1200,
-  "topP": 1,
-  "requestTimeoutMs": 120000,
-  "toolStates": {}
+  "activeBackendId": "default-openai",
+  "backends": [
+    {
+      "id": "default-openai",
+      "name": "默认后端",
+      "provider": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "string",
+      "model": "string",
+      "temperature": 0.9,
+      "maxTokens": 1200,
+      "topP": 1,
+      "requestTimeoutMs": 120000,
+      "toolStates": {}
+    }
+  ]
 }
 ```
 
-## 4.2 `SessionDraft`
+## 5.2 SessionDraft
 
 ```json
 {
@@ -184,9 +260,9 @@ data: {"sessionId":"session_xxx"}
 }
 ```
 
-## 4.3 `Session`
+## 5.3 Session
 
-重要字段：
+主要字段：
 
 - `id`
 - `status`: `draft | active | ended`
@@ -196,6 +272,7 @@ data: {"sessionId":"session_xxx"}
 - `confirmedSetup`
 - `storyState`
 - `agentStates`
+- `memoryState`
 - `timerState`
 - `usageTotals`
 - `llmConfigSnapshot`
@@ -204,7 +281,34 @@ data: {"sessionId":"session_xxx"}
 - `updatedAt`
 - `lastSeq`
 
-## 4.4 `SessionEvent`
+## 5.4 StoryState
+
+```json
+{
+  "location": "会客室",
+  "phase": "teasing",
+  "tension": 6,
+  "summary": "当前场景概要",
+  "activeObjectives": ["让你继续回应"],
+  "lastPlayerMessageAt": "2026-03-17T00:00:00.000Z"
+}
+```
+
+## 5.5 TimerState
+
+```json
+{
+  "enabled": true,
+  "intervalMs": 10000,
+  "inFlight": false,
+  "nextTickAt": "2026-03-17T00:00:10.000Z",
+  "queuedReasons": [],
+  "queuedPlayerMessages": [],
+  "pendingWaits": []
+}
+```
+
+## 5.6 SessionEvent
 
 ```json
 {
@@ -213,14 +317,54 @@ data: {"sessionId":"session_xxx"}
   "type": "player.message",
   "source": "player",
   "agentId": "optional",
-  "createdAt": "2026-03-16T00:00:00.000Z",
+  "createdAt": "2026-03-17T00:00:00.000Z",
   "payload": {}
 }
 ```
 
-## 5. 事件类型
+## 5.7 MemoryState
 
-当前已定义事件类型如下：
+```json
+{
+  "version": 1,
+  "lastProcessedSeq": 42,
+  "policy": {
+    "rawTurnsToKeep": 2,
+    "turnsPerEpisode": 4,
+    "maxTurnSummariesBeforeMerge": 6,
+    "maxEpisodeSummaries": 6,
+    "archiveCharBudget": 1200,
+    "episodeCharBudget": 1800,
+    "turnCharBudget": 1800,
+    "rawEventCharBudget": 3500
+  },
+  "archiveSummary": null,
+  "episodeSummaries": [],
+  "turnSummaries": [],
+  "debug": {
+    "lastRefreshStatus": "idle",
+    "lastRefreshError": null,
+    "lastCompactionAt": null,
+    "lastCompactionMode": null,
+    "recentRuns": []
+  }
+}
+```
+
+## 5.8 MemoryDebugResponse
+
+主要字段：
+
+- `sessionId`
+- `memoryState`
+- `recentRawTurns`
+- `assembledContext`
+- `storyStateSnapshot`
+- `queueSnapshot`
+
+## 6. 事件类型
+
+当前 `SessionEvent.type` 包括：
 
 - `session.created`
 - `draft.generated`
@@ -242,90 +386,8 @@ data: {"sessionId":"session_xxx"}
 - `system.story_ended`
 - `system.usage_recorded`
 
-## 6. SSE 消息
+## 7. 注意事项
 
-SSE 通道当前实际会发送以下类型：
-
-### `session.updated`
-
-数据格式：
-
-```json
-{
-  "session": {}
-}
-```
-
-### `event.appended`
-
-数据格式：
-
-```json
-{
-  "event": {}
-}
-```
-
-### `usage.updated`
-
-数据格式：
-
-```json
-{
-  "usageTotals": {},
-  "recentCalls": []
-}
-```
-
-### `timer.updated`
-
-数据格式：
-
-```json
-{
-  "timerState": {}
-}
-```
-
-## 7. 错误语义
-
-统一错误处理中间件会返回：
-
-```json
-{
-  "message": "错误说明"
-}
-```
-
-常见情况：
-
-- 404：Session 不存在
-- 400：状态不允许当前操作，例如试图在非 `draft` Session 修改草案
-- 500：未处理异常，例如模型调用失败或内部逻辑错误
-
-## 8. 状态变化约定
-
-### 新建草案
-
-- 先返回完整 `draft` Session
-- 同时事件流中会追加 `session.created` 和 `draft.generated`
-
-### 发送消息
-
-- 接口本身只表示“消息已入队”
-- 真正的剧情推进结果要等待后续 Tick 和 SSE 事件流
-
-### 自动推进
-
-- 开关变化会立即写入 Session
-- 后续是否继续推进由调度器负责
-
-## 9. 当前 API 边界
-
-- 没有鉴权
-- 没有分页元数据封装
-- 没有幂等键
-- 没有 WebSocket，只使用 SSE
-- 没有按 Agent 独立读取上下文的接口
-
-这些限制与项目当前“本地原型 / 控制台应用”定位一致。
+- 自动推进接口是“请求检查是否可推进”，不是“强制立刻推进”
+- 当前没有独立后台定时守护进程
+- 已确认 Session 会保存模型配置快照，不跟随后续全局切换自动变化

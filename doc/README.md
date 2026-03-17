@@ -1,20 +1,21 @@
 # DGLabAI 中文文档
 
-本目录整理了项目当前实现对应的中文技术文档，内容基于仓库内现有代码整理，不包含未落地的设想性功能。
+本目录基于当前仓库代码整理，描述的是已经落地的实现，而不是早期设想。
 
 ## 文档目录
 
-- [架构设计](./architecture.md)：整体架构、核心流程、数据流和关键设计取舍
-- [后端说明](./backend.md)：Express 服务、Mongo 存储、调度、编排器与服务职责
-- [前端说明](./frontend.md)：页面结构、时间线渲染、SSE 联动与交互方式
-- [API 参考](./api.md)：HTTP 接口、SSE 事件和关键数据结构
-- [提示词与工具](./prompts-and-tools.md)：提示词模板、工具注册表和扩展方式
-- [开发与部署](./development.md)：环境准备、启动方式、测试构建和后续部署建议
+- [架构设计](./architecture.md)：系统分层、关键数据流、记忆链路与设计取舍
+- [后端说明](./backend.md)：Express、Mongo、编排器、配置服务、记忆服务与工具执行
+- [前端说明](./frontend.md)：页面结构、SSE 联动、时间线播放与自动推进交互
+- [API 参考](./api.md)：HTTP 路由、SSE 事件与主要数据结构
+- [提示词与工具](./prompts-and-tools.md)：提示词模板、运行时工具与扩展方式
+- [开发与部署](./development.md)：本地开发、调试方式、测试覆盖与已知限制
 
 ## 阅读建议
 
-- 想先理解项目怎么跑起来：先读 [README](../README.md) 和 [开发与部署](./development.md)
-- 想快速把握系统全貌：先读 [架构设计](./architecture.md)
-- 想改后端逻辑：重点看 [后端说明](./backend.md) 与 [提示词与工具](./prompts-and-tools.md)
-- 想改前端交互：重点看 [前端说明](./frontend.md)
-- 想对接别的客户端或外部系统：重点看 [API 参考](./api.md) 与 [架构设计](./architecture.md)
+- 想快速了解项目是什么：先读 [README](../README.md)
+- 想把握系统全貌：先读 [架构设计](./architecture.md)
+- 想改后端链路：读 [后端说明](./backend.md) 和 [提示词与工具](./prompts-and-tools.md)
+- 想改前端交互：读 [前端说明](./frontend.md)
+- 想对接接口：读 [API 参考](./api.md)
+- 想跑本地环境：读 [开发与部署](./development.md)
