@@ -35,8 +35,7 @@ type SummaryShape = z.infer<typeof summaryShapeSchema>;
 function summarizerConfig(config: LlmConfig): LlmConfig {
   return {
     ...config,
-    temperature: 0.2,
-    maxTokens: Math.min(config.maxTokens, 350)
+    temperature: 0.2
   };
 }
 
@@ -256,13 +255,50 @@ function turnShapeIsInsufficient(shape: SummaryShape): boolean {
     || (shape.keyDevelopments.length === 0 && shape.characterStates.length === 0 && !shape.playerTrajectory);
 }
 
-function llmSummaryPrompt(kind: "turn" | "compaction", input: string): Array<{ role: "system" | "user"; content: string }> {
+function llmSummaryPrompt(
+  kind: "turn" | "compaction",
+  input: string,
+  outputLevel?: NarrativeSummaryLevel
+): Array<{ role: "system" | "user"; content: string }> {
+  const compactionStyle = outputLevel === "episode"
+    ? [
+      "You are compressing several turn summaries into one episode summary.",
+      "Keep it brief.",
+      "In `scene.summary`, summarize only how this episode begins and how it ends.",
+      "Do not retell the middle beat-by-beat process.",
+      "Keep `keyDevelopments` to 1-2 short items.",
+      "Keep `characterStates` to 1-2 short items.",
+      "Keep `unresolvedThreads` to the most important 1 items.",
+      "Each string should be concise and abstract, ideally one short sentence or phrase."
+    ].join("\n")
+    : [
+      "Keep the summary concise and continuity-focused.",
+      "Prefer abstract state transitions over beat-by-beat retelling."
+    ].join("\n");
+
   const systemContent = kind === "turn"
     ? [
       "You summarize one completed story turn for long-context memory.",
       "Focus on durable continuity facts, emotional shifts, objectives, and what matters for future turns.",
       "Prefer abstract continuity notes over vivid sensory replay.",
       "Do not preserve verbatim dialogue unless needed for continuity.",
+      "Return exactly one JSON object with this top-level shape and no alternative keys:",
+      "{",
+      '  "scene": {',
+      '    "phase": "string",',
+      '    "location": "string",',
+      '    "tension": 0,',
+      '    "summary": "string"',
+      "  },",
+      '  "playerTrajectory": "string",',
+      '  "keyDevelopments": ["string"],',
+      '  "characterStates": ["string"],',
+      '  "unresolvedThreads": ["string"],',
+      '  "carryForward": "string"',
+      "}",
+      "The top-level key `scene` is required.",
+      "Do not invent other top-level keys such as `core_continuity`, `time_range`, `compression_notes`, `condition_reflex_summary`, or `source`.",
+      "Use concise Simplified Chinese string values.",
       "Return only JSON."
     ].join("\n")
     : [
@@ -270,6 +306,25 @@ function llmSummaryPrompt(kind: "turn" | "compaction", input: string): Array<{ r
       "Keep only durable continuity facts, emotional state, unresolved threads, and the best carry-forward guidance.",
       "Prefer abstract continuity notes over vivid sensory replay.",
       "Prefer compression over detail. Do not preserve verbatim dialogue.",
+      compactionStyle,
+      "Return exactly one JSON object with this top-level shape and no alternative keys:",
+      "{",
+      '  "scene": {',
+      '    "phase": "string",',
+      '    "location": "string",',
+      '    "tension": 0,',
+      '    "summary": "string"',
+      "  },",
+      '  "playerTrajectory": "string",',
+      '  "keyDevelopments": ["string"],',
+      '  "characterStates": ["string"],',
+      '  "unresolvedThreads": ["string"],',
+      '  "carryForward": "string"',
+      "}",
+      "The top-level key `scene` is required.",
+      "Do not invent other top-level keys such as `core_continuity`, `time_range`, `compression_notes`, `condition_reflex_summary`, or `source`.",
+      "For compaction, fold all important continuity into the required fields above instead of creating new sections.",
+      "Use concise Simplified Chinese string values.",
       "Return only JSON."
     ].join("\n");
 
@@ -425,7 +480,8 @@ export class MemoryService {
         modelConfig: summarizerConfig(config),
         messages: llmSummaryPrompt(
           "compaction",
-          summaries.map((summary) => JSON.stringify(summary, null, 2)).join("\n\n")
+          summaries.map((summary) => JSON.stringify(summary, null, 2)).join("\n\n"),
+          outputLevel
         ),
         schema: summaryShapeSchema,
         schemaName: `${outputLevel}_memory_summary`,

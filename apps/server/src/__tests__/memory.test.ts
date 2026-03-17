@@ -381,4 +381,62 @@ describe("MemoryContextAssembler", () => {
     expect(bundle.playerMessagesBlock).toContain("第一轮");
     expect(bundle.playerMessagesBlock).toContain("第三轮");
   });
+
+  it("always includes all episode summaries regardless of episode char budget", () => {
+    const assembler = new MemoryContextAssembler();
+    const session = createSession();
+    session.memoryState.policy.episodeCharBudget = 1;
+    session.memoryState.episodeSummaries = [
+      {
+        id: "episode_1",
+        level: "episode",
+        fromSeq: 1,
+        toSeq: 20,
+        turnStart: 1,
+        turnEnd: 20,
+        createdAt: new Date().toISOString(),
+        scene: {
+          phase: "opening",
+          location: "study",
+          tension: 4,
+          summary: "第一阶段摘要"
+        },
+        playerTrajectory: "玩家被带入局面。",
+        keyDevelopments: ["第一阶段发展"],
+        characterStates: ["导演维持引导"],
+        unresolvedThreads: ["继续试探"],
+        carryForward: "继续推进。",
+        source: "derived"
+      },
+      {
+        id: "episode_2",
+        level: "episode",
+        fromSeq: 21,
+        toSeq: 40,
+        turnStart: 21,
+        turnEnd: 40,
+        createdAt: new Date().toISOString(),
+        scene: {
+          phase: "teasing",
+          location: "study",
+          tension: 6,
+          summary: "第二阶段摘要"
+        },
+        playerTrajectory: "玩家继续配合。",
+        keyDevelopments: ["第二阶段发展"],
+        characterStates: ["导演继续逼近"],
+        unresolvedThreads: ["等待更明确回应"],
+        carryForward: "维持拉扯。",
+        source: "derived"
+      }
+    ];
+
+    const bundle = assembler.assemble(session, [], "debug_preview");
+
+    expect(bundle.episodeBlocks).toHaveLength(2);
+    expect(bundle.episodeBlocks[0]).toContain("第一阶段摘要");
+    expect(bundle.episodeBlocks[1]).toContain("第二阶段摘要");
+    expect(bundle.stats.droppedBlocks.some((item) => item.startsWith("episode:"))).toBe(false);
+    expect(bundle.stats.episodeCountIncluded).toBe(2);
+  });
 });

@@ -72,6 +72,17 @@ function selectNewestBlocks<T>(
   };
 }
 
+function selectAllBlocks<T>(
+  items: T[],
+  toBlock: (item: T) => string
+): { selected: T[]; blocks: string[]; dropped: string[] } {
+  return {
+    selected: [...items],
+    blocks: items.map((item) => toBlock(item)),
+    dropped: []
+  };
+}
+
 export class MemoryContextAssembler {
   assemble(
     session: Session,
@@ -87,11 +98,9 @@ export class MemoryContextAssembler {
       ? summaryToBlock(session.memoryState.archiveSummary, "Archive Summary")
       : "No archive summary yet.";
 
-    const selectedEpisodes = selectNewestBlocks(
+    const selectedEpisodes = selectAllBlocks(
       session.memoryState.episodeSummaries,
-      session.memoryState.policy.episodeCharBudget,
-      (summary) => summaryToBlock(summary, `Episode Summary ${summary.turnStart}-${summary.turnEnd}`),
-      (summary) => `episode:${summary.id}`
+      (summary) => summaryToBlock(summary, `Episode Summary ${summary.turnStart}-${summary.turnEnd}`)
     );
 
     const selectedTurnSummaries = selectNewestBlocks(
