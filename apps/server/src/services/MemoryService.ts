@@ -146,7 +146,7 @@ function extractSceneFromTurn(turn: ParsedTurn): SummaryShape["scene"] | null {
     phase: textOf(latestScene.payload.phase, "opening"),
     location: textOf(latestScene.payload.location, "未设定"),
     tension: Number(latestScene.payload.tension ?? 3),
-    summary: textOf(latestScene.payload.summary)
+    summary: textOf(latestScene.payload.memorySummary) || textOf(latestScene.payload.summary)
   };
 }
 
@@ -162,7 +162,33 @@ function ruleBasedTurnShape(session: Session, turn: ParsedTurn): SummaryShape {
     .filter((event) => event.type === "player.message")
     .map((event) => truncateText(textOf(event.payload.text), 100));
 
-  const keyDevelopments = uniqStrings([
+  const memoryKeyDevelopments = uniqStrings(
+    turn.events
+      .filter((event) => event.type === "scene.updated")
+      .flatMap((event) => Array.isArray(event.payload.memoryKeyDevelopments)
+        ? event.payload.memoryKeyDevelopments.map((item) => textOf(item)).filter(Boolean)
+        : []),
+    6
+  );
+
+  const memoryCharacterStates = uniqStrings(
+    turn.events
+      .filter((event) => event.type === "scene.updated")
+      .flatMap((event) => Array.isArray(event.payload.memoryCharacterStates)
+        ? event.payload.memoryCharacterStates.map((item) => textOf(item)).filter(Boolean)
+        : []),
+    6
+  );
+
+  const memorySummaries = uniqStrings(
+    turn.events
+      .filter((event) => event.type === "scene.updated")
+      .map((event) => textOf(event.payload.memorySummary))
+      .filter(Boolean),
+    3
+  );
+
+  const fallbackKeyDevelopments = uniqStrings([
     ...turn.events
       .filter((event) => event.type === "agent.story_effect")
       .map((event) => {
@@ -178,13 +204,29 @@ function ruleBasedTurnShape(session: Session, turn: ParsedTurn): SummaryShape {
       .map((event) => `故事收束：${truncateText(textOf(event.payload.summary), 90)}`)
   ], 6);
 
-  const characterStates = uniqStrings([
+  const keyDevelopments = memoryKeyDevelopments.length > 0
+    ? uniqStrings([
+      ...memoryKeyDevelopments,
+      ...turn.events
+        .filter((event) => event.type === "system.story_ended")
+        .map((event) => `故事收束：${truncateText(textOf(event.payload.summary), 90)}`)
+    ], 6)
+    : (memorySummaries.length > 0
+      ? uniqStrings([...memorySummaries, ...fallbackKeyDevelopments], 6)
+      : fallbackKeyDevelopments);
+
+  const fallbackCharacterStates = uniqStrings([
     ...turn.events
       .filter((event) => event.type === "agent.reasoning")
       .map((event) => `${textOf(event.payload.speaker, "角色")}：${truncateText(textOf(event.payload.summary), 90)}`),
     ...turn.events
       .filter((event) => event.type === "agent.speak_agent")
       .map((event) => `${textOf(event.payload.speaker, "角色")} 与 ${textOf(event.payload.targetAgentId, "其他角色")} 协调了下一拍节奏`)
+  ], 6);
+
+  const characterStates = uniqStrings([
+    ...memoryCharacterStates,
+    ...fallbackCharacterStates
   ], 6);
 
   const unresolvedThreads = uniqStrings(
@@ -219,12 +261,14 @@ function llmSummaryPrompt(kind: "turn" | "compaction", input: string): Array<{ r
     ? [
       "You summarize one completed story turn for long-context memory.",
       "Focus on durable continuity facts, emotional shifts, objectives, and what matters for future turns.",
+      "Prefer abstract continuity notes over vivid sensory replay.",
       "Do not preserve verbatim dialogue unless needed for continuity.",
       "Return only JSON."
     ].join("\n")
     : [
       "You compact older story memory summaries into a smaller long-context memory block.",
       "Keep only durable continuity facts, emotional state, unresolved threads, and the best carry-forward guidance.",
+      "Prefer abstract continuity notes over vivid sensory replay.",
       "Prefer compression over detail. Do not preserve verbatim dialogue.",
       "Return only JSON."
     ].join("\n");

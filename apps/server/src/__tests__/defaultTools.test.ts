@@ -246,6 +246,36 @@ describe("createDefaultToolRegistry", () => {
     });
   });
 
+  it("passes hidden memory hints through update_scene_state for later memory assembly", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<Record<string, unknown>> = [];
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event as Record<string, unknown>);
+      }
+    }, "update_scene_state", {
+      summary: "你能感觉到他正在一步步收紧掌控。",
+      memorySummary: "角色逐步收紧掌控，并逼玩家表态。",
+      memoryKeyDevelopments: ["角色通过靠近与停顿制造压力"],
+      memoryCharacterStates: ["角色维持从容主导"]
+    });
+
+    expect(events[0]).toMatchObject({
+      type: "scene.updated",
+      payload: {
+        summary: "你能感觉到他正在一步步收紧掌控。",
+        memorySummary: "角色逐步收紧掌控，并逼玩家表态。",
+        memoryKeyDevelopments: ["角色通过靠近与停顿制造压力"],
+        memoryCharacterStates: ["角色维持从容主导"]
+      }
+    });
+  });
+
   it("treats wait as an in-turn pause event instead of scheduling a future tick", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();

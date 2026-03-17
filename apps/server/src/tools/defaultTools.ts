@@ -281,7 +281,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
     },
     {
       id: "update_scene_state",
-      description: "Update the shared scene state for future turns, keeping any summary player-facing and second-person.",
+      description: "Update the shared scene state for future turns, with a player-facing summary plus optional hidden memory hints for long-context continuity.",
       visibility: "system",
       inputSchema: z.object({
         location: z.string().optional(),
@@ -293,11 +293,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
           return clampTension(value);
         }, z.number().min(0).max(10)).optional(),
         summary: z.string().optional(),
-        activeObjectives: z.array(z.string()).optional()
+        activeObjectives: z.array(z.string()).optional(),
+        memorySummary: z.string().optional(),
+        memoryKeyDevelopments: z.array(z.string()).max(6).optional(),
+        memoryCharacterStates: z.array(z.string()).max(6).optional()
       }).strict(),
       promptContract: {
-        argsShape: "{\"location\":\"...\",\"phase\":\"...\",\"tension\":4,\"summary\":\"...\",\"activeObjectives\":[\"...\"]}",
-        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"会客室\",\"phase\":\"teasing\",\"tension\":7,\"summary\":\"你已经被他不紧不慢的靠近和语气牵住心神，整场对话悄悄滑进暧昧的节奏里。\",\"activeObjectives\":[\"让你继续停留在这场对话里\",\"引出你更真实的回应\"]}}"
+        argsShape: "{\"location\":\"...\",\"phase\":\"...\",\"tension\":4,\"summary\":\"...\",\"activeObjectives\":[\"...\"],\"memorySummary\":\"...\",\"memoryKeyDevelopments\":[\"...\"],\"memoryCharacterStates\":[\"...\"]}",
+        example: "{\"tool\":\"update_scene_state\",\"args\":{\"location\":\"会客室\",\"phase\":\"teasing\",\"tension\":7,\"summary\":\"你已经被他不紧不慢的靠近和语气牵住心神，整场对话悄悄滑进暧昧的节奏里。\",\"activeObjectives\":[\"让你继续停留在这场对话里\",\"引出你更真实的回应\"],\"memorySummary\":\"角色通过靠近、言语试探与节奏控制，逐步把场面推入更明确的暧昧与掌控。\",\"memoryKeyDevelopments\":[\"角色用靠近与停顿制造压力\",\"角色引导玩家暴露更真实的回应\"],\"memoryCharacterStates\":[\"角色维持从容主导\",\"角色在试探玩家会如何继续配合\"]}}"
       },
       async execute(context, args: {
         location?: string;
@@ -305,6 +308,9 @@ export function createDefaultToolRegistry(): ToolRegistry {
         tension?: number;
         summary?: string;
         activeObjectives?: string[];
+        memorySummary?: string;
+        memoryKeyDevelopments?: string[];
+        memoryCharacterStates?: string[];
       }) {
         context.session.storyState = {
           ...context.session.storyState,

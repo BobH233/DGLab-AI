@@ -145,6 +145,68 @@ function createSuccessfulTurn(seqBase: number, playerText: string, sceneSummary:
   ];
 }
 
+function createSuccessfulTurnWithMemoryHints(seqBase: number): SessionEvent[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      sessionId: "session_memory",
+      seq: seqBase,
+      type: "system.tick_started",
+      source: "system",
+      createdAt: now,
+      payload: {
+        reason: "session_confirmed"
+      }
+    },
+    {
+      sessionId: "session_memory",
+      seq: seqBase + 1,
+      type: "agent.stage_direction",
+      source: "agent",
+      agentId: "director",
+      createdAt: now,
+      payload: {
+        speaker: "珊瑚宫心海",
+        direction: "她赤足走近你，指尖隔着丝带缓慢抚过你的尾巴根部，又拿黑绸停在你眼前不肯立刻覆下。"
+      }
+    },
+    {
+      sessionId: "session_memory",
+      seq: seqBase + 2,
+      type: "scene.updated",
+      source: "system",
+      agentId: "director",
+      createdAt: now,
+      payload: {
+        location: "珊瑚宫深处内室",
+        phase: "teasing_probe",
+        tension: 5,
+        summary: "她绕到你身后，用指尖和丝带缓慢撩拨你最敏感的尾巴根部，同时用黑绸在你眼前若即若离地试探。",
+        memorySummary: "珊瑚宫心海通过感官撩拨与蒙眼试探逐步收紧掌控，并逼玩家正面暴露羞耻与期待。",
+        memoryKeyDevelopments: [
+          "珊瑚宫心海持续进行感官撩拨与蒙眼试探",
+          "珊瑚宫心海逼玩家给出更明确的情绪表态"
+        ],
+        memoryCharacterStates: [
+          "珊瑚宫心海保持温柔但主导的试探姿态"
+        ],
+        activeObjectives: ["逼出你隐藏的依赖与渴望"]
+      }
+    },
+    {
+      sessionId: "session_memory",
+      seq: seqBase + 3,
+      type: "system.tick_completed",
+      source: "system",
+      createdAt: now,
+      payload: {
+        reason: "session_confirmed",
+        status: "active"
+      }
+    }
+  ];
+}
+
 class FakeSummaryProvider {
   constructor(private readonly summaryText = "合并后的摘要") {}
 
@@ -190,6 +252,26 @@ describe("MemoryService", () => {
     expect(session.memoryState.turnSummaries[0]?.scene.summary).toContain("牵进他的节奏");
     expect(session.memoryState.lastProcessedSeq).toBe(5);
     expect(session.memoryState.debug.lastRefreshStatus).toBe("success");
+  });
+
+  it("prefers model-authored memory hints from scene updates when present", async () => {
+    const service = new MemoryService(new FakeSummaryProvider() as never);
+    const session = createSession();
+
+    const changed = await service.refreshSessionMemory(session, createSuccessfulTurnWithMemoryHints(1), config);
+
+    expect(changed).toBe(true);
+    expect(session.memoryState.turnSummaries).toHaveLength(1);
+    expect(session.memoryState.turnSummaries[0]?.scene.summary).toBe(
+      "珊瑚宫心海通过感官撩拨与蒙眼试探逐步收紧掌控，并逼玩家正面暴露羞耻与期待。"
+    );
+    expect(session.memoryState.turnSummaries[0]?.keyDevelopments).toEqual([
+      "珊瑚宫心海持续进行感官撩拨与蒙眼试探",
+      "珊瑚宫心海逼玩家给出更明确的情绪表态"
+    ]);
+    expect(session.memoryState.turnSummaries[0]?.characterStates).toContain(
+      "珊瑚宫心海保持温柔但主导的试探姿态"
+    );
   });
 
   it("compacts old turn summaries into an episode summary once the threshold is exceeded", async () => {
