@@ -7,7 +7,7 @@
       :data-kind="item.kind"
       :data-compact="item.compact ? 'true' : undefined"
       :data-optional-tool="item.optionalTool ? 'true' : undefined"
-      :data-live="item.live ? 'true' : undefined"
+      :data-live="isLivePause(item) ? 'true' : undefined"
     >
       <div class="timeline-rail">
         <span class="timeline-dot" />
@@ -17,13 +17,13 @@
         <strong class="timeline-compact__title">{{ item.title }}</strong>
         <span v-if="item.main" class="timeline-compact__main">{{ item.main }}</span>
         <span v-if="item.meta" class="timeline-compact__meta">{{ item.meta }}</span>
-        <span v-if="item.liveLabel" class="timeline-compact__status">{{ item.liveLabel }}</span>
-        <span v-if="item.live" class="timeline-compact__dots" aria-hidden="true">
+        <span v-if="pauseLiveLabel(item)" class="timeline-compact__status">{{ pauseLiveLabel(item) }}</span>
+        <span v-if="isLivePause(item)" class="timeline-compact__dots" aria-hidden="true">
           <span />
           <span />
           <span />
         </span>
-        <span class="timeline-compact__time">{{ formatDate(item.createdAt) }}</span>
+        <span class="timeline-compact__time">{{ item.timeLabel }}</span>
       </div>
       <div v-else :class="cardClass(item)">
         <header class="event-header">
@@ -31,7 +31,7 @@
             <span class="event-kicker">{{ item.kicker }}</span>
             <strong>{{ item.title }}</strong>
           </div>
-          <span>#{{ item.seq }} · {{ formatDate(item.createdAt) }}</span>
+          <span>#{{ item.seq }} · {{ item.timeLabel }}</span>
         </header>
         <div class="event-body">
           <p v-if="item.main" class="event-main">{{ item.main }}</p>
@@ -72,10 +72,10 @@ type PresentationItem = {
   meta?: string;
   tags: string[];
   createdAt: string;
+  timeLabel: string;
   optionalTool?: boolean;
   compact?: boolean;
-  live?: boolean;
-  liveLabel?: string;
+  pauseId?: string;
 };
 
 type ActivePauseState = {
@@ -101,7 +101,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: "你说",
           main: textOf(event.payload.text),
           tags: ["玩家"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "agent.speak_player":
@@ -113,7 +114,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: String(event.payload.speaker ?? "角色"),
           main: textOf(event.payload.message),
           tags: ["对你说"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "agent.device_control":
@@ -130,6 +132,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
             ? ["可选工具", "工具调用", textOf(event.payload.status, "simulated")]
             : ["工具调用", textOf(event.payload.status, "simulated")],
           createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt),
           optionalTool
         });
         return items;
@@ -143,7 +146,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.message),
           meta: `目标角色：${textOf(event.payload.targetAgentId)}`,
           tags: ["角色间对话"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "agent.reasoning":
@@ -155,7 +159,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: `${textOf(event.payload.speaker)} 的判断`,
           main: textOf(event.payload.summary),
           tags: ["可见推理"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "agent.stage_direction":
@@ -167,7 +172,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: `${textOf(event.payload.speaker)} 的动作`,
           main: textOf(event.payload.direction),
           tags: ["动作"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "agent.story_effect":
@@ -180,7 +186,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.description),
           meta: event.payload.intensity !== undefined ? `强度：${textOf(event.payload.intensity)}` : undefined,
           tags: ["效果"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "scene.updated":
@@ -193,7 +200,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: "",
           details: buildSceneUpdateDetails(event.payload),
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "system.tick_started":
@@ -207,6 +215,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.reason ? `原因：${textOf(event.payload.reason)}` : undefined,
           tags: [],
           createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt),
           compact: true
         });
         return items;
@@ -221,6 +230,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.status ? `状态：${textOf(event.payload.status)}` : undefined,
           tags: [],
           createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt),
           compact: true
         });
         return items;
@@ -234,7 +244,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
           meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
           tags: textOf(event.payload.retryable) === "true" ? ["可重试"] : ["异常"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "system.timer_updated":
@@ -246,11 +257,12 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: textOf(event.payload.enabled) === "true" ? "自动推进已开启" : "自动推进已关闭",
           main: event.payload.intervalMs ? `当前触发间隔为 ${textOf(event.payload.intervalMs)} ms。` : "定时配置已更新。",
           tags: ["定时器"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "system.wait_scheduled":
-        items.push(buildPauseItem(event, itemId, props.activePause));
+        items.push(buildPauseItem(event, itemId));
         return items;
       case "system.story_ended":
         items.push({
@@ -262,7 +274,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           main: textOf(event.payload.summary),
           meta: event.payload.resolution ? `结局说明：${textOf(event.payload.resolution)}` : undefined,
           tags: ["结束"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "system.usage_recorded":
@@ -276,6 +289,7 @@ const presentationItems = computed<PresentationItem[]>(() => {
           meta: event.payload.model ? textOf(event.payload.model) : undefined,
           tags: [],
           createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt),
           compact: true
         });
         return items;
@@ -288,7 +302,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: "会话已创建",
           main: textOf(event.payload.title ?? "新的故事会话已建立。"),
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "draft.generated":
@@ -300,7 +315,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: "设定草案已生成",
           main: "系统已完成背景和角色补全，请在确认页检查细节。",
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "draft.updated":
@@ -312,7 +328,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: "设定草案已修改",
           main: "你对世界观或角色设定做了更新。",
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       case "session.confirmed":
@@ -324,7 +341,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: "故事正式开始",
           main: "设定已确认，系统将按当前背景持续推进剧情。",
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
       default:
@@ -336,7 +354,8 @@ const presentationItems = computed<PresentationItem[]>(() => {
           title: event.type,
           main: "系统记录了一条内部事件。",
           tags: ["系统"],
-          createdAt: event.createdAt
+          createdAt: event.createdAt,
+          timeLabel: formatDate(event.createdAt)
         });
         return items;
     }
@@ -351,6 +370,14 @@ function textOf(value: unknown, fallback = ""): string {
   }
   const normalized = stripInlineDelays(String(value));
   return normalized.trim() || fallback;
+}
+
+function isLivePause(item: PresentationItem): boolean {
+  return Boolean(item.pauseId) && item.pauseId === props.activePause?.id;
+}
+
+function pauseLiveLabel(item: PresentationItem): string | undefined {
+  return isLivePause(item) ? props.activePause?.countdownLabel : undefined;
 }
 
 function cardClass(item: PresentationItem): string[] {
@@ -436,7 +463,7 @@ function buildDeviceControlMeta(payload: Record<string, unknown>): string | unde
   return entries.length > 0 ? entries.join("；") : undefined;
 }
 
-function buildPauseItem(event: SessionEvent, itemId: string, activePause?: ActivePauseState | null): PresentationItem {
+function buildPauseItem(event: SessionEvent, itemId: string): PresentationItem {
   const pauseId = typeof event.payload.uiPauseId === "string" && event.payload.uiPauseId.trim()
     ? event.payload.uiPauseId
     : `pause:${event.seq}:${event.createdAt}`;
@@ -452,9 +479,9 @@ function buildPauseItem(event: SessionEvent, itemId: string, activePause?: Activ
     meta: explicitMeta || (reason ? `原因：${reason}` : undefined),
     tags: [],
     createdAt: event.createdAt,
+    timeLabel: formatDate(event.createdAt),
     compact: true,
-    live: activePause?.id === pauseId,
-    liveLabel: activePause?.id === pauseId ? activePause.countdownLabel : undefined
+    pauseId
   };
 }
 

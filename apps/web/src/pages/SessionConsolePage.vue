@@ -323,9 +323,10 @@ function sleep(ms: number): Promise<void> {
 
 function activatePause(event: SessionEvent, delayMs: number) {
   const startedAt = Date.now();
+  const initialLabel = `约 ${formatPauseMs(delayMs)} 后继续`;
   activePause.value = {
     id: pauseEventId(event),
-    countdownLabel: `约 ${formatPauseMs(delayMs)} 后继续`
+    countdownLabel: initialLabel
   };
   if (countdownTimer !== null) {
     window.clearInterval(countdownTimer);
@@ -335,17 +336,15 @@ function activatePause(event: SessionEvent, delayMs: number) {
   }
   countdownTimer = window.setInterval(() => {
     const remaining = Math.max(0, delayMs - (Date.now() - startedAt));
-    if (activePause.value) {
-      activePause.value = {
-        ...activePause.value,
-        countdownLabel: remaining > 0 ? `约 ${formatPauseMs(remaining)} 后继续` : "即将继续"
-      };
+    const nextLabel = remaining > 0 ? `约 ${formatPauseMs(remaining)} 后继续` : "即将继续";
+    if (activePause.value && activePause.value.countdownLabel !== nextLabel) {
+      activePause.value.countdownLabel = nextLabel;
     }
     if (remaining <= 0 && countdownTimer !== null) {
       window.clearInterval(countdownTimer);
       countdownTimer = null;
     }
-  }, 100);
+  }, 250);
 }
 
 function clearActivePause() {

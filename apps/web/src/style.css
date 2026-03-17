@@ -546,8 +546,11 @@ a {
   inset: 0;
   background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.4) 42%, transparent 62%);
   transform: translateX(-120%);
-  animation: optionalToolSheen 4.8s ease-in-out infinite;
   pointer-events: none;
+}
+
+.event-card--optional-tool:hover::after {
+  animation: optionalToolSheen 1.6s ease-out 1;
 }
 
 .timeline-item[data-optional-tool="true"] .event-kicker {
@@ -692,6 +695,7 @@ a {
   border-radius: 999px;
   background: rgba(159, 116, 71, 0.75);
   animation: pausePulse 1.1s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 .timeline-compact__dots span:nth-child(2) {
