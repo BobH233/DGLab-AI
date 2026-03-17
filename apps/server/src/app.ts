@@ -42,9 +42,8 @@ export async function createServerApp() {
     memoryService,
     memoryContextAssembler
   );
-  const scheduler = new SchedulerService(() => sessionService.listSchedulableSessions(), sessionService);
+  const scheduler = new SchedulerService(sessionService);
   sessionService.attachScheduler(scheduler);
-  await scheduler.bootstrap();
 
   const app = express();
   app.use(cors());

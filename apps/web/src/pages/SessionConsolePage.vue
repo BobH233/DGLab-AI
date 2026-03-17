@@ -5,6 +5,14 @@
         <span class="eyebrow">Session Console</span>
         <h2>{{ session.title }}</h2>
         <p class="console-summary">{{ session.storyState.summary }}</p>
+        <div v-if="isTickInFlight" class="thinking-indicator" role="status" aria-live="polite">
+          <strong>Thinking</strong>
+          <span class="thinking-indicator__dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
         <div v-if="latestTickFailure" class="inline-alert inline-alert--error">
           <strong>最近一次剧情推进失败</strong>
           <p>{{ latestTickFailure.message }}</p>
@@ -50,7 +58,7 @@
           </div>
           <span class="soft-pill">{{ displayedEventCount }} 条事件</span>
         </div>
-        <EventTimeline :events="events" :active-pause="activePause" />
+        <EventTimeline :events="events" :active-pause="activePause" :automation-status="automationTimelineStatus" />
       </section>
 
       <aside class="console-sidebar">
@@ -91,6 +99,10 @@
             <input v-model.number="intervalMs" class="field" type="number" min="1000" step="500" />
           </label>
           <button class="button secondary button-block" @click="saveTimer">保存定时设置</button>
+          <div v-if="session" class="timer-status-card" :data-busy="isTickInFlight ? 'true' : undefined">
+            <strong>{{ automationCountdownLabel }}</strong>
+            <p>{{ automationStatusNote }}</p>
+          </div>
         </section>
 
         <section class="panel stack">
@@ -180,9 +192,15 @@ const retrying = ref(false);
 const error = ref("");
 const timerEnabled = ref(false);
 const intervalMs = ref(10000);
+const automationNow = ref(Date.now());
+const requestingAutoTick = ref(false);
+const liveTickInFlight = ref(false);
+const pendingAutomationCooldown = ref(false);
+const playbackCooldownUntil = ref<number | null>(null);
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
+let automationClockTimer: number | null = null;
 let queueRunning = false;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
@@ -200,6 +218,61 @@ const agentCards = computed(() => {
 });
 
 const displayedEventCount = computed(() => events.value.length);
+const isTickInFlight = computed(() => liveTickInFlight.value);
+const automationDueAt = computed(() => {
+  if (!session.value || !session.value.timerState.enabled) {
+    return null;
+  }
+  const dueCandidates = [
+    session.value.timerState.nextTickAt ? Date.parse(session.value.timerState.nextTickAt) : Number.NaN,
+    playbackCooldownUntil.value ?? Number.NaN
+  ].filter((value) => Number.isFinite(value));
+  if (dueCandidates.length === 0) {
+    return null;
+  }
+  return Math.max(...dueCandidates);
+});
+const automationCountdownLabel = computed(() => {
+  if (!session.value || !session.value.timerState.enabled) {
+    return "自动推进未启用";
+  }
+  if (pendingAutomationCooldown.value) {
+    return "演出结束后开始计时";
+  }
+  if (automationDueAt.value === null) {
+    return `每 ${formatPauseMs(session.value.timerState.intervalMs)} 自动推进一次`;
+  }
+  const remaining = automationDueAt.value - automationNow.value;
+  if (remaining > 0) {
+    return `约 ${formatPauseMs(remaining)} 后自动推进`;
+  }
+  return isTickInFlight.value ? "模型推理中，自动推进已顺延" : "即将自动推进";
+});
+const automationStatusNote = computed(() => {
+  if (!session.value || !session.value.timerState.enabled) {
+    return "保存后会按固定时间间隔继续场景。";
+  }
+  if (isTickInFlight.value) {
+    return `当前轮还没结束；如果计时到点，会顺延 ${formatPauseMs(session.value.timerState.intervalMs)}，不会并发触发。`;
+  }
+  if (pendingAutomationCooldown.value) {
+    return "当前消息和停顿还在演出，全部演出结束后才开始自动推进倒计时。";
+  }
+  if (automationDueAt.value !== null) {
+    return `下一次计划触发时间：${formatClockTime(new Date(automationDueAt.value).toISOString())}`;
+  }
+  return `当前按 ${formatPauseMs(session.value.timerState.intervalMs)} 的间隔运行。`;
+});
+const automationTimelineStatus = computed(() => {
+  if (!session.value || !session.value.timerState.enabled) {
+    return null;
+  }
+  return {
+    title: automationCountdownLabel.value,
+    meta: pendingAutomationCooldown.value ? "自动推进" : undefined,
+    live: isTickInFlight.value || pendingAutomationCooldown.value
+  };
+});
 const latestTickFailure = computed(() => {
   for (let index = events.value.length - 1; index >= 0; index -= 1) {
     const event = events.value[index];
@@ -221,6 +294,39 @@ function syncSession(next: Session) {
   session.value = next;
   timerEnabled.value = next.timerState.enabled;
   intervalMs.value = next.timerState.intervalMs;
+  if (!next.timerState.enabled || next.status !== "active") {
+    pendingAutomationCooldown.value = false;
+    playbackCooldownUntil.value = null;
+  }
+}
+
+async function maybeRequestAutoTick() {
+  if (
+    !session.value ||
+    session.value.status !== "active" ||
+    !session.value.timerState.enabled ||
+    isTickInFlight.value ||
+    pendingAutomationCooldown.value ||
+    requestingAutoTick.value
+  ) {
+    return;
+  }
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return;
+  }
+
+  if (automationDueAt.value !== null && automationDueAt.value > automationNow.value) {
+    return;
+  }
+
+  requestingAutoTick.value = true;
+  try {
+    syncSession(await api.requestAutoTick(session.value.id));
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "自动推进触发失败";
+  } finally {
+    requestingAutoTick.value = false;
+  }
 }
 
 async function loadSession() {
@@ -228,6 +334,7 @@ async function loadSession() {
   clearLivePlayback();
   syncSession(await api.getSession(id));
   events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
+  liveTickInFlight.value = hasOpenTick(events.value);
   connectStream(id);
 }
 
@@ -240,6 +347,7 @@ function connectStream(sessionId: string) {
   });
   stream.addEventListener("event.appended", (event) => {
     const payload = JSON.parse((event as MessageEvent).data) as { event: SessionEvent };
+    trackLiveTick(payload.event);
     enqueueLiveEvent(payload.event);
   });
   stream.addEventListener("error", () => {
@@ -293,6 +401,7 @@ async function flushLiveQueue() {
     }
   } finally {
     queueRunning = false;
+    maybeStartAutomationCooldown();
     if (liveQueue.length > 0) {
       void flushLiveQueue();
     }
@@ -353,12 +462,16 @@ function clearActivePause() {
     window.clearInterval(countdownTimer);
     countdownTimer = null;
   }
+  maybeStartAutomationCooldown();
 }
 
 function clearLivePlayback() {
   playbackGeneration += 1;
   liveQueue.length = 0;
   queueRunning = false;
+  liveTickInFlight.value = false;
+  pendingAutomationCooldown.value = false;
+  playbackCooldownUntil.value = null;
   clearActivePause();
   if (playbackTimer !== null) {
     window.clearTimeout(playbackTimer);
@@ -366,6 +479,60 @@ function clearLivePlayback() {
   }
   pendingSleepResolve?.();
   pendingSleepResolve = null;
+}
+
+function hasOpenTick(sourceEvents: SessionEvent[]): boolean {
+  let running = false;
+  for (const event of sourceEvents) {
+    if (event.type === "system.tick_started") {
+      running = true;
+      continue;
+    }
+    if (
+      event.type === "system.tick_completed" ||
+      event.type === "system.tick_failed" ||
+      event.type === "system.story_ended"
+    ) {
+      running = false;
+    }
+  }
+  return running;
+}
+
+function trackLiveTick(event: SessionEvent) {
+  if (event.type === "system.tick_started") {
+    liveTickInFlight.value = true;
+    pendingAutomationCooldown.value = false;
+    playbackCooldownUntil.value = null;
+    return;
+  }
+  if (
+    event.type === "system.tick_completed" ||
+    event.type === "system.tick_failed" ||
+    event.type === "system.story_ended"
+  ) {
+    liveTickInFlight.value = false;
+    if (session.value?.timerState.enabled) {
+      pendingAutomationCooldown.value = true;
+      playbackCooldownUntil.value = null;
+      maybeStartAutomationCooldown();
+    }
+  }
+}
+
+function maybeStartAutomationCooldown() {
+  if (
+    !pendingAutomationCooldown.value ||
+    !session.value?.timerState.enabled ||
+    liveTickInFlight.value ||
+    queueRunning ||
+    liveQueue.length > 0 ||
+    activePause.value
+  ) {
+    return;
+  }
+  playbackCooldownUntil.value = Date.now() + session.value.timerState.intervalMs;
+  pendingAutomationCooldown.value = false;
 }
 
 function textOf(value: unknown): string {
@@ -381,6 +548,14 @@ function formatPauseMs(ms: number): string {
     return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`;
   }
   return `${Math.max(0, Math.round(ms))} ms`;
+}
+
+function formatClockTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
 }
 
 function expandPlaybackSteps(event: SessionEvent): PlaybackStep[] {
@@ -599,11 +774,19 @@ watch(() => route.params.id, () => {
 });
 
 onMounted(() => {
+  automationClockTimer = window.setInterval(() => {
+    automationNow.value = Date.now();
+    void maybeRequestAutoTick();
+  }, 250);
   void loadSession();
 });
 
 onBeforeUnmount(() => {
   stream?.close();
   clearLivePlayback();
+  if (automationClockTimer !== null) {
+    window.clearInterval(automationClockTimer);
+    automationClockTimer = null;
+  }
 });
 </script>

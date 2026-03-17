@@ -68,6 +68,26 @@ describe("EventTimeline", () => {
     expect(wrapper.find('.timeline-item[data-kind="pause"] .event-card').exists()).toBe(false);
   });
 
+  it("renders automation countdown inside the timeline", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        automationStatus: {
+          title: "约 8.0 秒后自动推进",
+          meta: "自动推进",
+          live: true
+        }
+      }
+    });
+
+    const automationItem = wrapper.find('.timeline-item[data-automation="true"] .timeline-compact');
+
+    expect(automationItem.exists()).toBe(true);
+    expect(wrapper.text()).toContain("自动推进");
+    expect(wrapper.text()).toContain("约 8.0 秒后自动推进");
+    expect(wrapper.find('.timeline-item[data-automation="true"] .timeline-compact__dots').exists()).toBe(true);
+  });
+
   it("renders character dialogue with a dedicated bubble style", () => {
     const wrapper = mount(EventTimeline, {
       props: {

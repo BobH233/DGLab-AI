@@ -42,6 +42,7 @@ function formatRuntimeError(error: unknown): string {
 
 export class SessionService {
   private readonly locks = new LockManager();
+  private readonly activeTicks = new Set<string>();
   private scheduler?: SchedulerLike;
 
   constructor(
@@ -62,15 +63,16 @@ export class SessionService {
   }
 
   async getSession(sessionId: string): Promise<Session> {
+    await this.reconcileStaleTick(sessionId);
+    return this.getSessionRecord(sessionId);
+  }
+
+  async getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]> {
+    await this.reconcileStaleTick(sessionId);
     const session = await this.store.getSession(sessionId);
     if (!session) {
       throw new HttpError(404, "Session not found");
     }
-    return session;
-  }
-
-  async getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]> {
-    await this.getSession(sessionId);
     return this.store.getEvents(sessionId, cursor, limit);
   }
 
@@ -158,7 +160,7 @@ export class SessionService {
 
   async updateDraft(sessionId: string, patch: UpdateDraftRequest): Promise<Session> {
     return this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
+      const session = await this.getSessionRecord(sessionId);
       if (session.status !== "draft") {
         throw new HttpError(400, "Only draft sessions can be edited");
       }
@@ -185,7 +187,7 @@ export class SessionService {
 
   async confirmSession(sessionId: string): Promise<Session> {
     return this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
+      const session = await this.getSessionRecord(sessionId);
       if (session.status !== "draft") {
         throw new HttpError(400, "Session is already confirmed");
       }
@@ -196,9 +198,9 @@ export class SessionService {
       session.llmConfigSnapshot = config;
       session.promptVersions = {
         ...defaultPromptVersions(),
-        sharedSafety: versions.shared_safety_preamble ?? "1.2.0",
+        sharedSafety: versions.shared_safety_preamble ?? "1.3.0",
         toolContract: versions.tool_contract ?? "2.3.0",
-        worldBuilder: versions.world_builder ?? "1.4.0",
+        worldBuilder: versions.world_builder ?? "1.5.0",
         directorAgent: versions.director_agent ?? "1.2.0",
         supportAgent: versions.support_agent ?? "1.2.0",
         ensembleTurn: versions.ensemble_turn ?? "1.3.0"
@@ -230,7 +232,7 @@ export class SessionService {
 
   async postPlayerMessage(sessionId: string, text: string): Promise<Session> {
     return this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
+      const session = await this.getSessionRecord(sessionId);
       if (session.status !== "active") {
         throw new HttpError(400, "Session is not active");
       }
@@ -260,7 +262,7 @@ export class SessionService {
   async updateTimer(sessionId: string, update: unknown): Promise<Session> {
     const patch = timerUpdateSchema.parse(update);
     return this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
+      const session = await this.getSessionRecord(sessionId);
       if (session.status !== "active") {
         throw new HttpError(400, "Session is not active");
       }
@@ -313,89 +315,186 @@ export class SessionService {
     return this.getSession(sessionId);
   }
 
+  async requestAutoTick(sessionId: string): Promise<Session> {
+    const reason = `timer_interval:frontend`;
+    let shouldProcessImmediately = false;
+    const session = await this.locks.runExclusive(sessionId, async () => {
+      const session = await this.getSessionRecord(sessionId);
+      if (session.status !== "active" || !session.timerState.enabled) {
+        return session;
+      }
+
+      const nextTickAt = session.timerState.nextTickAt ? Date.parse(session.timerState.nextTickAt) : Number.NaN;
+      if (!Number.isNaN(nextTickAt) && nextTickAt > Date.now()) {
+        return session;
+      }
+
+      session.timerState.nextTickAt = new Date(Date.now() + session.timerState.intervalMs).toISOString();
+      session.updatedAt = new Date().toISOString();
+      await this.store.replaceSession(session);
+      this.publishSession(session, []);
+      if (this.scheduler) {
+        this.scheduler.requestTick(sessionId, reason);
+      } else {
+        shouldProcessImmediately = true;
+      }
+      return session;
+    });
+
+    if (shouldProcessImmediately) {
+      await this.processTick(sessionId, reason);
+      return this.getSession(sessionId);
+    }
+
+    return session;
+  }
+
   async processTick(sessionId: string, reason: string): Promise<void> {
+    this.activeTicks.add(sessionId);
+    try {
+      await this.locks.runExclusive(sessionId, async () => {
+        const session = await this.getSessionRecord(sessionId);
+        if (session.status !== "active") {
+          return;
+        }
+        const config = session.llmConfigSnapshot ?? await this.store.getConfig();
+        const now = new Date().toISOString();
+        const queuedPlayerMessages = [...session.timerState.queuedPlayerMessages];
+        const queuedReasons = [...session.timerState.queuedReasons];
+        session.timerState.pendingWaits = [];
+        session.timerState.queuedReasons = queuedReasons;
+        session.timerState.queuedPlayerMessages = queuedPlayerMessages;
+        const tickStartEvent = {
+          type: "system.tick_started" as const,
+          source: "system" as const,
+          createdAt: now,
+          payload: {
+            reason
+          }
+        };
+        try {
+          const currentEvents = await this.getAllEvents(session);
+          const contextBundle = this.memoryContextAssembler.assemble(session, currentEvents, reason);
+          session.updatedAt = now;
+          const startEvents = await this.store.appendEvents(sessionId, session.lastSeq, [tickStartEvent]);
+          session.lastSeq += startEvents.length;
+          await this.store.replaceSession(session);
+          this.publishSession(session, startEvents);
+
+          const result = await this.orchestrator.runTick(session, reason, contextBundle, config);
+          session.timerState.queuedReasons = [];
+          session.timerState.queuedPlayerMessages = [];
+          const tickCompletedAt = new Date().toISOString();
+          const tickEndEvent = {
+            type: "system.tick_completed" as const,
+            source: "system" as const,
+            createdAt: tickCompletedAt,
+            payload: {
+              reason,
+              status: session.status as Session["status"]
+            }
+          };
+          session.timerState.nextTickAt = session.timerState.enabled
+            ? new Date(Date.parse(tickCompletedAt) + session.timerState.intervalMs).toISOString()
+            : undefined;
+          session.updatedAt = tickCompletedAt;
+          const events = await this.store.appendEvents(sessionId, session.lastSeq, [...result.events, tickEndEvent]);
+          session.lastSeq += events.length;
+          await this.store.replaceSession(session);
+          this.publishSession(session, events);
+          void this.refreshMemory(sessionId);
+          if (result.usageCalls.length > 0) {
+            this.channel.publish({
+              type: "usage.updated",
+              sessionId,
+              payload: {
+                usageTotals: session.usageTotals,
+                recentCalls: result.usageCalls
+              }
+            });
+          }
+        } catch (error) {
+          const failedAt = new Date().toISOString();
+          const message = formatRuntimeError(error);
+          console.error(`Tick failed for session ${sessionId}`, error);
+          session.timerState.nextTickAt = session.timerState.enabled
+            ? new Date(Date.parse(failedAt) + session.timerState.intervalMs).toISOString()
+            : undefined;
+          session.updatedAt = failedAt;
+          const events = await this.store.appendEvents(sessionId, session.lastSeq, [
+            {
+              type: "system.tick_failed",
+              source: "system",
+              createdAt: failedAt,
+              payload: {
+                reason,
+                message,
+                retryable: true
+              }
+            }
+          ]);
+          session.lastSeq += events.length;
+          await this.store.replaceSession(session);
+          this.publishSession(session, events);
+        }
+        this.scheduler?.syncSession(session);
+      });
+    } finally {
+      this.activeTicks.delete(sessionId);
+    }
+  }
+
+  private async reconcileStaleTick(sessionId: string): Promise<void> {
+    if (this.activeTicks.has(sessionId)) {
+      return;
+    }
     await this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
-      if (session.status !== "active") {
+      if (this.activeTicks.has(sessionId)) {
         return;
       }
-      const config = session.llmConfigSnapshot ?? await this.store.getConfig();
+      const session = await this.store.getSession(sessionId);
+      if (!session) {
+        return;
+      }
+      const events = await this.store.getEvents(sessionId, undefined, Math.max(200, session.lastSeq + 50));
+      let unfinishedTick: SessionEvent | null = null;
+      for (const event of events) {
+        if (event.type === "system.tick_started") {
+          unfinishedTick = event;
+          continue;
+        }
+        if (
+          event.type === "system.tick_completed" ||
+          event.type === "system.tick_failed" ||
+          event.type === "system.story_ended"
+        ) {
+          unfinishedTick = null;
+        }
+      }
+      if (!unfinishedTick) {
+        return;
+      }
+
       const now = new Date().toISOString();
-      const queuedPlayerMessages = [...session.timerState.queuedPlayerMessages];
-      const queuedReasons = [...session.timerState.queuedReasons];
-      session.timerState.pendingWaits = [];
-      session.timerState.queuedReasons = queuedReasons;
-      session.timerState.queuedPlayerMessages = queuedPlayerMessages;
       session.timerState.nextTickAt = session.timerState.enabled
         ? new Date(Date.now() + session.timerState.intervalMs).toISOString()
         : undefined;
-      const tickStartEvent = {
-        type: "system.tick_started" as const,
-        source: "system" as const,
-        createdAt: now,
-        payload: {
-          reason
-        }
-      };
-      try {
-        const currentEvents = await this.getAllEvents(session);
-        const contextBundle = this.memoryContextAssembler.assemble(session, currentEvents, reason);
-        const result = await this.orchestrator.runTick(session, reason, contextBundle, config);
-        session.timerState.queuedReasons = [];
-        session.timerState.queuedPlayerMessages = [];
-        const tickCompletedAt = new Date().toISOString();
-        const tickEndEvent = {
-          type: "system.tick_completed" as const,
-          source: "system" as const,
-          createdAt: tickCompletedAt,
+      session.updatedAt = now;
+      const recoveredEvents = await this.store.appendEvents(sessionId, session.lastSeq, [
+        {
+          type: "system.tick_failed",
+          source: "system",
+          createdAt: now,
           payload: {
-            reason,
-            status: session.status as Session["status"]
+            reason: typeof unfinishedTick.payload.reason === "string" ? unfinishedTick.payload.reason : "interrupted",
+            message: "上一次推演在服务中断后未完成，已标记为失败。",
+            retryable: true
           }
-        };
-        session.updatedAt = tickCompletedAt;
-        const events = await this.store.appendEvents(sessionId, session.lastSeq, [
-          tickStartEvent,
-          ...result.events,
-          tickEndEvent
-        ]);
-        session.lastSeq += events.length;
-        await this.store.replaceSession(session);
-        this.publishSession(session, events);
-        void this.refreshMemory(sessionId);
-        if (result.usageCalls.length > 0) {
-          this.channel.publish({
-            type: "usage.updated",
-            sessionId,
-            payload: {
-              usageTotals: session.usageTotals,
-              recentCalls: result.usageCalls
-            }
-          });
         }
-      } catch (error) {
-        const failedAt = new Date().toISOString();
-        const message = formatRuntimeError(error);
-        console.error(`Tick failed for session ${sessionId}`, error);
-        session.updatedAt = failedAt;
-        const events = await this.store.appendEvents(sessionId, session.lastSeq, [
-          tickStartEvent,
-          {
-            type: "system.tick_failed",
-            source: "system",
-            createdAt: failedAt,
-            payload: {
-              reason,
-              message,
-              retryable: true
-            }
-          }
-        ]);
-        session.lastSeq += events.length;
-        await this.store.replaceSession(session);
-        this.publishSession(session, events);
-      }
-      this.scheduler?.syncSession(session);
+      ]);
+      session.lastSeq += recoveredEvents.length;
+      await this.store.replaceSession(session);
+      this.publishSession(session, recoveredEvents);
     });
   }
 
@@ -422,9 +521,17 @@ export class SessionService {
     return this.store.getEvents(session.id, undefined, Math.max(200, session.lastSeq + 50));
   }
 
+  private async getSessionRecord(sessionId: string): Promise<Session> {
+    const session = await this.store.getSession(sessionId);
+    if (!session) {
+      throw new HttpError(404, "Session not found");
+    }
+    return session;
+  }
+
   private async refreshMemory(sessionId: string): Promise<void> {
     await this.locks.runExclusive(sessionId, async () => {
-      const session = await this.getSession(sessionId);
+      const session = await this.getSessionRecord(sessionId);
       if (session.status !== "active" && session.status !== "ended") {
         return;
       }

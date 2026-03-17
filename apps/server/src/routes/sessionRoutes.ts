@@ -70,6 +70,14 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
     }
   });
 
+  router.post("/:id/auto-tick", async (request, response, next) => {
+    try {
+      response.json(await sessionService.requestAutoTick(request.params.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/:id/timer", async (request, response, next) => {
     try {
       const body = timerUpdateSchema.parse(request.body);

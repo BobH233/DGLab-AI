@@ -460,8 +460,25 @@ a {
   color: #9b7b5d;
 }
 
+.timeline-item[data-automation="true"] .timeline-compact__kicker,
+.timeline-item[data-automation="true"] .timeline-compact__title {
+  color: #567787;
+}
+
+.timeline-item[data-automation="true"] .timeline-compact__meta {
+  color: #7f96a4;
+}
+
+.timeline-item[data-automation="true"] .timeline-compact__dots span {
+  background: rgba(86, 119, 135, 0.72);
+}
+
 .timeline-item[data-kind="pause"][data-live="true"] .timeline-rail::after {
   background: linear-gradient(180deg, rgba(159, 116, 71, 0.3), rgba(159, 116, 71, 0.08));
+}
+
+.timeline-item[data-automation="true"][data-live="true"] .timeline-rail::after {
+  background: linear-gradient(180deg, rgba(86, 119, 135, 0.28), rgba(86, 119, 135, 0.08));
 }
 
 .event-card--player {
@@ -699,6 +716,62 @@ a {
   }
   40% {
     transform: translateY(-3px) scale(1);
+    opacity: 1;
+  }
+}
+
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(113, 160, 201, 0.2);
+  background:
+    linear-gradient(180deg, rgba(245, 250, 253, 0.96), rgba(239, 246, 251, 0.96));
+  color: #587789;
+  width: fit-content;
+}
+
+.thinking-indicator strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.thinking-indicator__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.thinking-indicator__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.28;
+  animation: thinkingPulse 1.2s ease-in-out infinite;
+}
+
+.thinking-indicator__dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.thinking-indicator__dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes thinkingPulse {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0) scale(0.82);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-2px) scale(1);
     opacity: 1;
   }
 }
@@ -947,6 +1020,32 @@ a {
   margin: 6px 0 0;
   color: var(--text-soft);
   line-height: 1.5;
+}
+
+.timer-status-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  background:
+    linear-gradient(180deg, rgba(247, 251, 253, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.timer-status-card[data-busy="true"] {
+  background:
+    radial-gradient(circle at top right, rgba(113, 160, 201, 0.14), transparent 36%),
+    rgba(246, 250, 253, 0.98);
+}
+
+.timer-status-card strong {
+  font-size: 1rem;
+}
+
+.timer-status-card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.55;
 }
 
 .usage-grid {

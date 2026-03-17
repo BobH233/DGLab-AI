@@ -75,6 +75,11 @@ export const api = {
       method: "POST"
     });
   },
+  requestAutoTick(id: string): Promise<Session> {
+    return request<Session>(`/sessions/${id}/auto-tick`, {
+      method: "POST"
+    });
+  },
   updateTimer(id: string, body: TimerUpdate): Promise<Session> {
     return request<Session>(`/sessions/${id}/timer`, {
       method: "POST",

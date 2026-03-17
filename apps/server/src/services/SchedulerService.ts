@@ -1,41 +1,15 @@
-import type { Session } from "@dglab-ai/shared";
-import { createId } from "../lib/ids.js";
-
 type TickProcessor = {
   processTick(sessionId: string, reason: string): Promise<void>;
 };
 
 export class SchedulerService {
-  private readonly intervalHandles = new Map<string, NodeJS.Timeout>();
-  private readonly wakeHandles = new Map<string, NodeJS.Timeout>();
   private readonly pendingReasons = new Map<string, Set<string>>();
   private readonly inFlight = new Set<string>();
   private readonly scheduled = new Set<string>();
 
-  constructor(
-    private readonly listSessions: () => Promise<Session[]>,
-    private readonly processor: TickProcessor
-  ) {}
+  constructor(private readonly processor: TickProcessor) {}
 
-  async bootstrap(): Promise<void> {
-    const sessions = await this.listSessions();
-    for (const session of sessions) {
-      this.syncSession(session);
-    }
-  }
-
-  syncSession(session: Session): void {
-    this.clearSession(session.id);
-    if (session.status !== "active") {
-      return;
-    }
-    if (session.timerState.enabled) {
-      const handle = setInterval(() => {
-        this.requestTick(session.id, `timer_interval:${createId("interval")}`);
-      }, session.timerState.intervalMs);
-      this.intervalHandles.set(session.id, handle);
-    }
-  }
+  syncSession(): void {}
 
   requestTick(sessionId: string, reason: string): void {
     const set = this.pendingReasons.get(sessionId) ?? new Set<string>();
@@ -68,19 +42,6 @@ export class SchedulerService {
       }
     } finally {
       this.inFlight.delete(sessionId);
-    }
-  }
-
-  private clearSession(sessionId: string): void {
-    const interval = this.intervalHandles.get(sessionId);
-    if (interval) {
-      clearInterval(interval);
-      this.intervalHandles.delete(sessionId);
-    }
-    const wake = this.wakeHandles.get(sessionId);
-    if (wake) {
-      clearTimeout(wake);
-      this.wakeHandles.delete(sessionId);
     }
   }
 }

@@ -1,6 +1,28 @@
 <template>
   <section class="timeline">
     <article
+      v-if="automationStatus"
+      class="timeline-item"
+      data-kind="system"
+      data-compact="true"
+      data-automation="true"
+      :data-live="automationStatus.live ? 'true' : undefined"
+    >
+      <div class="timeline-rail">
+        <span class="timeline-dot" />
+      </div>
+      <div class="timeline-compact">
+        <span class="timeline-compact__kicker">自动推进</span>
+        <strong class="timeline-compact__title">{{ automationStatus.title }}</strong>
+        <span v-if="automationStatus.meta" class="timeline-compact__meta">{{ automationStatus.meta }}</span>
+        <span v-if="automationStatus.live" class="timeline-compact__dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      </div>
+    </article>
+    <article
       v-for="item in presentationItems"
       :key="item.id"
       class="timeline-item"
@@ -83,9 +105,16 @@ type ActivePauseState = {
   countdownLabel: string;
 };
 
+type AutomationStatusState = {
+  title: string;
+  meta?: string;
+  live?: boolean;
+};
+
 const props = defineProps<{
   events: SessionEvent[];
   activePause?: ActivePauseState | null;
+  automationStatus?: AutomationStatusState | null;
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
