@@ -91,6 +91,7 @@ const props = defineProps<{
 const presentationItems = computed<PresentationItem[]>(() => {
   const items = props.events.reduce<PresentationItem[]>((items, event, index) => {
     const itemId = `${event.seq}:${index}:${event.type}`;
+    const isLatestEvent = index === props.events.length - 1;
     switch (event.type) {
       case "player.message":
         items.push({
@@ -235,18 +236,34 @@ const presentationItems = computed<PresentationItem[]>(() => {
         });
         return items;
       case "system.tick_failed":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "error",
-          kicker: "系统异常",
-          title: "本轮推进失败",
-          main: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
-          meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
-          tags: textOf(event.payload.retryable) === "true" ? ["可重试"] : ["异常"],
-          createdAt: event.createdAt,
-          timeLabel: formatDate(event.createdAt)
-        });
+        items.push(
+          isLatestEvent
+            ? {
+              id: itemId,
+              seq: event.seq,
+              kind: "error",
+              kicker: "系统异常",
+              title: "本轮推进失败",
+              main: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
+              meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
+              tags: textOf(event.payload.retryable) === "true" ? ["可重试"] : ["异常"],
+              createdAt: event.createdAt,
+              timeLabel: formatDate(event.createdAt)
+            }
+            : {
+              id: itemId,
+              seq: event.seq,
+              kind: "error",
+              kicker: "系统",
+              title: "推进失败",
+              main: "",
+              meta: event.payload.reason ? `原因：${textOf(event.payload.reason)}` : "系统记录了一次推进失败。",
+              tags: [],
+              createdAt: event.createdAt,
+              timeLabel: formatDate(event.createdAt),
+              compact: true
+            }
+        );
         return items;
       case "system.timer_updated":
         items.push({

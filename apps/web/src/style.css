@@ -393,9 +393,7 @@ a {
 
 .timeline-item[data-optional-tool="true"] .timeline-dot {
   background: linear-gradient(135deg, #f09b4a 0%, #d05656 48%, #8b4cc7 100%);
-  box-shadow:
-    0 0 0 6px rgba(240, 155, 74, 0.14),
-    0 0 22px rgba(208, 86, 86, 0.2);
+  box-shadow: 0 0 0 6px rgba(240, 155, 74, 0.12);
 }
 
 .event-card {
@@ -518,7 +516,6 @@ a {
 
 .event-card--optional-tool {
   position: relative;
-  overflow: hidden;
   background:
     radial-gradient(circle at top right, rgba(255, 215, 149, 0.24), transparent 32%),
     radial-gradient(circle at bottom left, rgba(208, 86, 86, 0.14), transparent 34%),
@@ -538,19 +535,6 @@ a {
   font-weight: 800;
   letter-spacing: 0.16em;
   color: rgba(145, 79, 54, 0.72);
-}
-
-.event-card--optional-tool::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.4) 42%, transparent 62%);
-  transform: translateX(-120%);
-  pointer-events: none;
-}
-
-.event-card--optional-tool:hover::after {
-  animation: optionalToolSheen 1.6s ease-out 1;
 }
 
 .timeline-item[data-optional-tool="true"] .event-kicker {
@@ -719,20 +703,6 @@ a {
   }
 }
 
-@keyframes optionalToolSheen {
-  0%,
-  68%,
-  100% {
-    transform: translateX(-120%);
-    opacity: 0;
-  }
-  16%,
-  38% {
-    transform: translateX(120%);
-    opacity: 1;
-  }
-}
-
 .inline {
   display: flex;
   align-items: center;
@@ -755,6 +725,10 @@ a {
   max-width: 72ch;
   line-height: 1.7;
   color: var(--text-soft);
+}
+
+.console-hero__actions {
+  margin-top: 18px;
 }
 
 .console-hero__stats {
