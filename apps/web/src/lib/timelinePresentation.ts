@@ -1,0 +1,426 @@
+import { isToolRequired, type SessionEvent } from "@dglab-ai/shared";
+import { stripInlineDelays } from "./inlineDelays";
+
+export type PresentationDetail = {
+  label: string;
+  value: string;
+};
+
+export type PresentationItem = {
+  id: string;
+  seq: number;
+  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error" | "pause";
+  kicker: string;
+  title: string;
+  main: string;
+  details?: PresentationDetail[];
+  meta?: string;
+  tags: string[];
+  createdAt: string;
+  timeLabel: string;
+  optionalTool?: boolean;
+  compact?: boolean;
+  pauseId?: string;
+};
+
+export function buildTimelinePresentationItems(events: SessionEvent[]): PresentationItem[] {
+  return events.reduce<PresentationItem[]>((items, event, index) => {
+    const itemId = `${event.seq}:${index}:${event.type}`;
+    const isLatestEvent = index === events.length - 1;
+    switch (event.type) {
+      case "player.message":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "player",
+          kicker: "玩家输入",
+          title: "你说",
+          main: textOf(event.payload.text),
+          tags: ["玩家"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "agent.speak_player":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "dialogue",
+          kicker: "角色发言",
+          title: String(event.payload.speaker ?? "角色"),
+          main: textOf(event.payload.message),
+          tags: ["对你说"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "agent.device_control":
+        const optionalTool = isOptionalToolEvent(event);
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "action",
+          kicker: "设备控制",
+          title: `${textOf(event.payload.speaker)} 调用了 ${textOf(event.payload.deviceName || event.payload.deviceId || "设备")}`,
+          main: buildDeviceControlText(event.payload),
+          meta: buildDeviceControlMeta(event.payload),
+          tags: optionalTool
+            ? ["可选工具", "工具调用", textOf(event.payload.status, "simulated")]
+            : ["工具调用", textOf(event.payload.status, "simulated")],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt),
+          optionalTool
+        });
+        return items;
+      case "agent.speak_agent":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "dialogue",
+          kicker: "角色互动",
+          title: `${textOf(event.payload.speaker)} 与其他角色交流`,
+          main: textOf(event.payload.message),
+          meta: `目标角色：${textOf(event.payload.targetAgentId)}`,
+          tags: ["角色间对话"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "agent.reasoning":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "thought",
+          kicker: "意图摘要",
+          title: `${textOf(event.payload.speaker)} 的判断`,
+          main: textOf(event.payload.summary),
+          tags: ["可见推理"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "agent.stage_direction":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "action",
+          kicker: "舞台动作",
+          title: `${textOf(event.payload.speaker)} 的动作`,
+          main: textOf(event.payload.direction),
+          tags: ["动作"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "agent.story_effect":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "effect",
+          kicker: "剧情变化",
+          title: textOf(event.payload.label),
+          main: textOf(event.payload.description),
+          meta: event.payload.intensity !== undefined ? `强度：${textOf(event.payload.intensity)}` : undefined,
+          tags: ["效果"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "scene.updated":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "场景状态",
+          title: "场景已更新",
+          main: "",
+          details: buildSceneUpdateDetails(event.payload),
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "system.tick_started":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "系统",
+          title: "推演开始",
+          main: "",
+          meta: event.payload.reason ? `原因：${textOf(event.payload.reason)}` : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt),
+          compact: true
+        });
+        return items;
+      case "system.tick_completed":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "系统",
+          title: "推演完成",
+          main: "",
+          meta: event.payload.status ? `状态：${textOf(event.payload.status)}` : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt),
+          compact: true
+        });
+        return items;
+      case "system.tick_failed":
+        items.push(
+          isLatestEvent
+            ? {
+              id: itemId,
+              seq: event.seq,
+              kind: "error",
+              kicker: "系统异常",
+              title: "本轮推进失败",
+              main: textOf(event.payload.message) || "模型调用失败，当前轮次未能完成。",
+              meta: event.payload.reason ? `触发原因：${textOf(event.payload.reason)}` : undefined,
+              tags: textOf(event.payload.retryable) === "true" ? ["可重试"] : ["异常"],
+              createdAt: event.createdAt,
+              timeLabel: formatTime(event.createdAt)
+            }
+            : {
+              id: itemId,
+              seq: event.seq,
+              kind: "error",
+              kicker: "系统",
+              title: "推进失败",
+              main: "",
+              meta: event.payload.reason ? `原因：${textOf(event.payload.reason)}` : "系统记录了一次推进失败。",
+              tags: [],
+              createdAt: event.createdAt,
+              timeLabel: formatTime(event.createdAt),
+              compact: true
+            }
+        );
+        return items;
+      case "system.timer_updated":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "自动推进",
+          title: textOf(event.payload.enabled) === "true" ? "自动推进已开启" : "自动推进已关闭",
+          main: event.payload.intervalMs ? `当前触发间隔为 ${textOf(event.payload.intervalMs)} ms。` : "定时配置已更新。",
+          tags: ["定时器"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "system.wait_scheduled":
+        items.push(buildPauseItem(event, itemId));
+        return items;
+      case "system.story_ended":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "effect",
+          kicker: "结局",
+          title: "故事已收束",
+          main: textOf(event.payload.summary),
+          meta: event.payload.resolution ? `结局说明：${textOf(event.payload.resolution)}` : undefined,
+          tags: ["结束"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "system.usage_recorded":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "用量",
+          title: event.payload.totalTokens ? `${textOf(event.payload.totalTokens)} tokens` : "Token 统计已更新",
+          main: "",
+          meta: event.payload.model ? textOf(event.payload.model) : undefined,
+          tags: [],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt),
+          compact: true
+        });
+        return items;
+      case "session.created":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "会话",
+          title: "会话已创建",
+          main: textOf(event.payload.title ?? "新的故事会话已建立。"),
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "draft.generated":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "草案",
+          title: "设定草案已生成",
+          main: "系统已完成背景和角色补全，请在确认页检查细节。",
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "draft.updated":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "草案",
+          title: "设定草案已修改",
+          main: "你对世界观或角色设定做了更新。",
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      case "session.confirmed":
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "会话",
+          title: "故事正式开始",
+          main: "设定已确认，系统将按当前背景持续推进剧情。",
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+      default:
+        items.push({
+          id: itemId,
+          seq: event.seq,
+          kind: "system",
+          kicker: "系统",
+          title: event.type,
+          main: "系统记录了一条内部事件。",
+          tags: ["系统"],
+          createdAt: event.createdAt,
+          timeLabel: formatTime(event.createdAt)
+        });
+        return items;
+    }
+  }, []);
+}
+
+function textOf(value: unknown, fallback = ""): string {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  const normalized = stripInlineDelays(String(value));
+  return normalized.trim() || fallback;
+}
+
+function isOptionalToolEvent(event: SessionEvent): boolean {
+  const toolId = typeof event.payload.action === "string" ? event.payload.action : "";
+  return Boolean(toolId) && !isToolRequired(toolId);
+}
+
+function buildSceneUpdateDetails(payload: Record<string, unknown>): PresentationDetail[] {
+  const details: PresentationDetail[] = [];
+  if (payload.phase) {
+    details.push({
+      label: "阶段",
+      value: textOf(payload.phase)
+    });
+  }
+  if (payload.location) {
+    details.push({
+      label: "地点",
+      value: textOf(payload.location)
+    });
+  }
+  if (payload.tension !== undefined && payload.tension !== null && textOf(payload.tension)) {
+    details.push({
+      label: "张力",
+      value: textOf(payload.tension)
+    });
+  }
+  if (payload.summary) {
+    details.push({
+      label: "概要",
+      value: textOf(payload.summary)
+    });
+  }
+  if (Array.isArray(payload.activeObjectives) && payload.activeObjectives.length > 0) {
+    for (const objective of payload.activeObjectives) {
+      const text = textOf(objective);
+      if (!text) {
+        continue;
+      }
+      details.push({
+        label: "目标",
+        value: text
+      });
+    }
+  }
+  if (details.length === 0) {
+    details.push({
+      label: "状态",
+      value: "场景状态已同步更新"
+    });
+  }
+  return details;
+}
+
+function buildDeviceControlText(payload: Record<string, unknown>): string {
+  const changes: string[] = [];
+  if (payload.intensityPercent !== undefined) {
+    changes.push(`强度调整为 ${textOf(payload.intensityPercent)}%`);
+  }
+  if (payload.mode !== undefined) {
+    changes.push(`模式切换为 ${textOf(payload.mode)}`);
+  }
+  return changes.join("；") || "设备控制请求已发送。";
+}
+
+function buildDeviceControlMeta(payload: Record<string, unknown>): string | undefined {
+  const entries: string[] = [];
+  if (Array.isArray(payload.supportedModes) && payload.supportedModes.length > 0) {
+    entries.push(`支持模式：${payload.supportedModes.map((mode) => textOf(mode)).join(" / ")}`);
+  }
+  if (payload.status !== undefined) {
+    entries.push(`执行状态：${textOf(payload.status)}`);
+  }
+  return entries.length > 0 ? entries.join("；") : undefined;
+}
+
+function buildPauseItem(event: SessionEvent, itemId: string): PresentationItem {
+  const pauseId = typeof event.payload.uiPauseId === "string" && event.payload.uiPauseId.trim()
+    ? event.payload.uiPauseId
+    : `pause:${event.seq}:${event.createdAt}`;
+  const reason = textOf(event.payload.reason);
+  const explicitMeta = textOf(event.payload.meta);
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "pause",
+    kicker: "节奏控制",
+    title: textOf(event.payload.title) || `${textOf(event.payload.speaker, "对方")} 停了一下`,
+    main: "",
+    meta: explicitMeta || (reason ? `原因：${reason}` : undefined),
+    tags: [],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt),
+    compact: true,
+    pauseId
+  };
+}
+
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}

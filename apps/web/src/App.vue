@@ -1,5 +1,6 @@
 <template>
-  <div class="app-shell">
+  <RouterView v-if="isStandaloneRoute" />
+  <div v-else class="app-shell">
     <header class="topbar">
       <div class="brand-block">
         <span class="brand-chip">Narrative Control</span>
@@ -43,11 +44,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { useConfigStore } from "./configStore";
 
 const configStore = useConfigStore();
+const route = useRoute();
 const switching = ref(false);
 const appConfig = computed(() => configStore.appConfig.value);
+const isStandaloneRoute = computed(() => route.meta.standalone === true);
 
 async function handleBackendChange(event: Event) {
   const backendId = (event.target as HTMLSelectElement).value;

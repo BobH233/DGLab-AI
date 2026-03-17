@@ -1116,6 +1116,254 @@ a {
   color: #1b6c42;
 }
 
+.screen-only {
+  display: block;
+}
+
+.print-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+
+.print-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 24px;
+}
+
+.print-toolbar h2,
+.print-section h3,
+.print-cover h1,
+.print-info-card h4,
+.print-timeline-item h4 {
+  margin: 0;
+}
+
+.print-sheet {
+  display: grid;
+  gap: 22px;
+}
+
+.print-cover,
+.print-section {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(36, 92, 132, 0.12);
+  border-radius: 28px;
+  box-shadow: 0 20px 48px rgba(42, 78, 106, 0.08);
+}
+
+.print-cover {
+  padding: 32px;
+  background:
+    radial-gradient(circle at top right, rgba(113, 160, 201, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 251, 253, 0.98));
+}
+
+.print-cover__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: start;
+}
+
+.print-kicker,
+.print-section__kicker,
+.print-timeline-item__kicker {
+  display: inline-block;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #557487;
+}
+
+.print-cover h1 {
+  margin-top: 8px;
+  font-size: clamp(2rem, 3vw, 2.9rem);
+  line-height: 1.05;
+}
+
+.print-summary {
+  max-width: 760px;
+  margin: 14px 0 0;
+  color: #415c6c;
+  line-height: 1.75;
+  font-size: 1.02rem;
+}
+
+.print-badge {
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(36, 92, 132, 0.08);
+  color: #1f5276;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.print-meta-grid,
+.print-info-grid,
+.print-cast-list {
+  display: grid;
+  gap: 14px;
+}
+
+.print-meta-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.print-meta-card,
+.print-info-card,
+.print-cast-card,
+.print-timeline-item,
+.print-empty {
+  border-radius: 20px;
+  border: 1px solid rgba(36, 92, 132, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.print-meta-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+.print-meta-card span,
+.print-timeline-item__sub,
+.print-cast-card p,
+.print-info-card p,
+.print-empty {
+  color: #56707f;
+}
+
+.print-meta-card strong {
+  font-size: 1rem;
+}
+
+.print-section {
+  padding: 26px;
+}
+
+.print-section__head {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.print-info-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.print-info-card,
+.print-cast-card {
+  padding: 18px 20px;
+}
+
+.print-info-card p,
+.print-cast-card p,
+.print-timeline-item__main,
+.print-timeline-item__details p,
+.print-timeline-item__sub,
+.print-empty {
+  margin: 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.print-cast-card__head,
+.print-timeline-item__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.print-cast-card__head span,
+.print-timeline-item__meta {
+  color: #6b8392;
+  font-size: 0.88rem;
+}
+
+.print-timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.print-timeline-item {
+  padding: 18px 20px;
+  break-inside: avoid;
+}
+
+.print-timeline-item__head {
+  margin-bottom: 10px;
+}
+
+.print-timeline-item h4 {
+  margin-top: 4px;
+  color: #203f57;
+}
+
+.print-timeline-item__meta {
+  display: grid;
+  gap: 6px;
+  text-align: right;
+}
+
+.print-timeline-item__main {
+  color: #203645;
+  font-size: 0.98rem;
+}
+
+.print-timeline-item__details {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.print-timeline-item__sub {
+  margin-top: 10px;
+}
+
+.print-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.print-tag {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(36, 92, 132, 0.08);
+  color: #2a5e81;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.print-timeline-item[data-kind="player"] {
+  background: linear-gradient(180deg, rgba(242, 253, 248, 0.98), rgba(232, 247, 239, 0.98));
+}
+
+.print-timeline-item[data-kind="dialogue"] {
+  background: linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(252, 243, 233, 0.98));
+}
+
+.print-timeline-item[data-kind="effect"] {
+  background: linear-gradient(180deg, rgba(244, 249, 252, 0.98), rgba(235, 244, 249, 0.98));
+}
+
+.print-timeline-item[data-kind="error"] {
+  background: linear-gradient(180deg, rgba(255, 248, 248, 0.98), rgba(252, 240, 240, 0.98));
+}
+
+.print-empty {
+  padding: 18px 20px;
+}
+
 @media (max-width: 960px) {
   .two-col,
   .three-col,
@@ -1142,8 +1390,16 @@ a {
   }
 
   .console-hero__stats,
-  .usage-grid {
+  .usage-grid,
+  .print-meta-grid,
+  .print-info-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .print-toolbar,
+  .print-cover__head {
+    flex-direction: column;
+    align-items: start;
   }
 }
 
@@ -1162,12 +1418,119 @@ a {
   }
 
   .console-hero__stats,
-  .usage-grid {
+  .usage-grid,
+  .print-meta-grid,
+  .print-info-grid {
     grid-template-columns: 1fr;
   }
 
   .timeline-item {
     grid-template-columns: 14px minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .print-page {
+    padding: 18px 16px 36px;
+  }
+
+  .print-cover,
+  .print-section {
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+}
+
+@media print {
+  :root {
+    background: #fff;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  html,
+  body,
+  .print-page,
+  .print-sheet,
+  .print-cover,
+  .print-section,
+  .print-meta-card,
+  .print-info-card,
+  .print-cast-card,
+  .print-timeline-item,
+  .print-empty,
+  .print-tag {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .screen-only,
+  .topbar,
+  .topbar-actions,
+  .actions,
+  .button,
+  .backend-switch,
+  .topnav {
+    display: none !important;
+  }
+
+  .app-shell,
+  .page-shell,
+  .print-page {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .print-sheet {
+    gap: 16px;
+  }
+
+  .print-cover,
+  .print-section,
+  .print-meta-card,
+  .print-info-card,
+  .print-cast-card,
+  .print-timeline-item,
+  .print-empty {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: none;
+  }
+
+  .print-cover,
+  .print-section {
+    border-radius: 0;
+    padding: 18px 0;
+    break-inside: avoid;
+  }
+
+  .print-meta-grid,
+  .print-info-grid,
+  .print-cast-list,
+  .print-timeline {
+    gap: 10px;
+  }
+
+  .print-meta-card,
+  .print-info-card,
+  .print-cast-card,
+  .print-timeline-item,
+  .print-empty {
+    padding: 12px 14px;
+    border-radius: 12px;
+  }
+
+  .print-section__head {
+    margin-bottom: 12px;
+  }
+
+  .print-meta-grid {
+    margin-top: 16px;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
   }
 }

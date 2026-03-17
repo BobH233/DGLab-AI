@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import HomePage from "./pages/HomePage.vue";
 import DraftReviewPage from "./pages/DraftReviewPage.vue";
 import SessionConsolePage from "./pages/SessionConsolePage.vue";
+import SessionPrintPage from "./pages/SessionPrintPage.vue";
 import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 
@@ -19,6 +20,13 @@ export const router = createRouter({
     {
       path: "/sessions/:id",
       component: SessionConsolePage
+    },
+    {
+      path: "/sessions/:id/print",
+      component: SessionPrintPage,
+      meta: {
+        standalone: true
+      }
     },
     {
       path: "/sessions/:id/debug",
