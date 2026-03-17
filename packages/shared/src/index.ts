@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+function nullToUndefined<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((value) => value === null ? undefined : value, schema.optional());
+}
+
 export const toolCatalog = [
   {
     id: "control_vibe_toy",
@@ -219,8 +223,8 @@ export const usageEntrySchema = z.object({
   completionTokens: z.number().int().nonnegative().default(0),
   totalTokens: z.number().int().nonnegative().default(0),
   calls: z.number().int().nonnegative().default(0),
-  lastModel: z.string().optional(),
-  lastUpdatedAt: z.string().datetime().optional()
+  lastModel: nullToUndefined(z.string()),
+  lastUpdatedAt: nullToUndefined(z.string().datetime())
 });
 
 export type UsageEntry = z.infer<typeof usageEntrySchema>;
@@ -281,7 +285,7 @@ export const storyStateSchema = z.object({
   tension: z.number().min(0).max(10).default(3),
   summary: z.string().default(""),
   activeObjectives: z.array(z.string()).default([]),
-  lastPlayerMessageAt: z.string().datetime().optional()
+  lastPlayerMessageAt: nullToUndefined(z.string().datetime())
 });
 
 export type StoryState = z.infer<typeof storyStateSchema>;
@@ -289,7 +293,7 @@ export type StoryState = z.infer<typeof storyStateSchema>;
 export const agentRuntimeStateSchema = z.object({
   mood: z.string().default("focused"),
   intent: z.string().default("observe"),
-  lastActedAt: z.string().datetime().optional()
+  lastActedAt: nullToUndefined(z.string().datetime())
 });
 
 export type AgentRuntimeState = z.infer<typeof agentRuntimeStateSchema>;
@@ -306,7 +310,7 @@ export type WaitHandle = z.infer<typeof waitHandleSchema>;
 export const timerStateSchema = z.object({
   enabled: z.boolean().default(false),
   intervalMs: z.number().int().positive().default(10000),
-  nextTickAt: z.string().datetime().optional(),
+  nextTickAt: nullToUndefined(z.string().datetime()),
   queuedReasons: z.array(z.string()).default([]),
   queuedPlayerMessages: z.array(z.string()).default([]),
   pendingWaits: z.array(waitHandleSchema).default([])
@@ -421,9 +425,9 @@ export const promptVersionsSchema = z.object({
   sharedSafety: z.string(),
   toolContract: z.string(),
   worldBuilder: z.string(),
-  directorAgent: z.string().optional(),
-  supportAgent: z.string().optional(),
-  ensembleTurn: z.string().optional()
+  directorAgent: nullToUndefined(z.string()),
+  supportAgent: nullToUndefined(z.string()),
+  ensembleTurn: nullToUndefined(z.string())
 });
 
 export type PromptVersions = z.infer<typeof promptVersionsSchema>;
@@ -443,8 +447,8 @@ export const sessionSchema = z.object({
   memoryState: memoryStateSchema.default(createEmptyMemoryState()),
   timerState: timerStateSchema,
   usageTotals: usageStatsSchema,
-  llmConfigSnapshot: llmConfigSchema.optional(),
-  promptVersions: promptVersionsSchema.optional(),
+  llmConfigSnapshot: nullToUndefined(llmConfigSchema),
+  promptVersions: nullToUndefined(promptVersionsSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSeq: z.number().int().nonnegative().default(0)
@@ -500,7 +504,7 @@ export const sessionEventSchema = z.object({
   seq: z.number().int().nonnegative(),
   type: eventTypeSchema,
   source: z.enum(["player", "agent", "system"]),
-  agentId: z.string().optional(),
+  agentId: nullToUndefined(z.string()),
   createdAt: z.string().datetime(),
   payload: z.record(z.unknown())
 });
@@ -575,7 +579,7 @@ export const turnControlSchema = z.object({
   continue: z.boolean().default(true),
   endStory: z.boolean().default(false),
   needsHandoff: z.boolean().default(false),
-  handoffTo: z.string().optional()
+  handoffTo: nullToUndefined(z.string())
 });
 
 export type TurnControl = z.infer<typeof turnControlSchema>;
