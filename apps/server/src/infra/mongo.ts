@@ -7,6 +7,7 @@ import {
   llmConfigSchema,
   normalizeAppConfig,
   normalizeLlmConfig,
+  sessionSchema,
   type AppConfig,
   type LlmConfig,
   type Session,
@@ -117,16 +118,18 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async createSession(session: Session): Promise<Session> {
-    await this.sessions.insertOne(session);
-    return session;
+    const normalized = sessionSchema.parse(session);
+    await this.sessions.insertOne(normalized);
+    return normalized;
   }
 
   async getSession(sessionId: string): Promise<Session | null> {
-    return this.sessions.findOne({ id: sessionId }, { projection: { _id: 0 } });
+    const document = await this.sessions.findOne({ id: sessionId }, { projection: { _id: 0 } });
+    return document ? sessionSchema.parse(document) : null;
   }
 
   async replaceSession(session: Session): Promise<void> {
-    await this.sessions.replaceOne({ id: session.id }, session, { upsert: false });
+    await this.sessions.replaceOne({ id: session.id }, sessionSchema.parse(session), { upsert: false });
   }
 
   async appendEvents(
@@ -156,10 +159,11 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async listSchedulableSessions(): Promise<Session[]> {
-    return this.sessions
+    const documents = await this.sessions
       .find({
         status: "active"
       }, { projection: { _id: 0 } })
       .toArray();
+    return documents.map((document) => sessionSchema.parse(document));
   }
 }

@@ -15,6 +15,11 @@
             </button>
           </div>
         </div>
+        <div class="actions">
+          <RouterLink v-if="session" class="button secondary" :to="`/sessions/${session.id}/debug`">
+            记忆调试
+          </RouterLink>
+        </div>
       </div>
       <div class="console-hero__stats">
         <div class="metric-card">

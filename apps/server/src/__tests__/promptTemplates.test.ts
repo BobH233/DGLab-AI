@@ -16,7 +16,11 @@ describe("prompt templates", () => {
       agentRuntimeState: "{}",
       sessionDraft: "{}",
       sceneState: "{}",
-      recentEvents: "[]",
+      archiveMemory: "archive block",
+      episodeMemories: "episode block",
+      turnMemories: "turn block",
+      recentRawTurns: "recent raw turns",
+      playerMessagesHistory: "player messages history",
       tickContext: "{}"
     });
 
@@ -33,6 +37,12 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Keep the fiction close to the body and moment-by-moment");
     expect(prompt).toContain("Keep dialogue and action separate");
     expect(prompt).toContain("Do not hide motion, touching, prop handling, posture changes, or narration inside dialogue strings");
+    expect(prompt).toContain("Compressed long-term memory");
+    expect(prompt).toContain("Compressed mid-term memory");
+    expect(prompt).toContain("Recent raw turns");
+    expect(prompt).toContain("Persistent player utterances");
+    expect(prompt).toContain("trust recent raw turns");
+    expect(prompt).toContain("authoritative ledger");
   });
 
   it("keeps tool contract guidance aligned with player-facing second-person output", async () => {

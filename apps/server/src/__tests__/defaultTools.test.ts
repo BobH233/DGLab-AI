@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyUsageStats, type Session } from "@dglab-ai/shared";
+import { createEmptyMemoryState, createEmptyUsageStats, type Session } from "@dglab-ai/shared";
 import { createDefaultToolRegistry } from "../tools/defaultTools.js";
 
 function createSession(): Session {
@@ -46,6 +46,7 @@ function createSession(): Session {
         intent: "observe"
       }
     },
+    memoryState: createEmptyMemoryState(),
     timerState: {
       enabled: false,
       intervalMs: 10000,

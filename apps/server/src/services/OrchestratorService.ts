@@ -4,6 +4,7 @@ import {
   sessionDraftSchema,
   type AgentProfile,
   type LlmConfig,
+  type NarrativeContextBundle,
   type Session,
   type SessionDraft,
   type SessionEvent
@@ -131,10 +132,6 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
     sceneGoals: toStringList(source.sceneGoals),
     contentNotes: toStringList(source.contentNotes)
   });
-}
-
-function trimEvents(events: SessionEvent[], limit = 18): SessionEvent[] {
-  return events.slice(Math.max(0, events.length - limit));
 }
 
 function toolReferenceForPrompt(toolRegistry: ToolRegistry, toolStates?: Record<string, boolean>): string {
@@ -311,7 +308,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
   async runTick(
     session: Session,
     reason: string,
-    recentEvents: SessionEvent[],
+    contextBundle: NarrativeContextBundle,
     config: LlmConfig
   ): Promise<OrchestratorTurnResult> {
     const events: Array<Omit<SessionEvent, "seq" | "sessionId">> = [];
@@ -325,12 +322,6 @@ export class DefaultOrchestratorService implements OrchestratorService {
       toolReference,
       toolExamples
     });
-    const tickContext = {
-      reason,
-      queuedPlayerMessages: session.timerState.queuedPlayerMessages,
-      dueWaits: session.timerState.pendingWaits.filter((wait) => Date.parse(wait.runAt) <= Date.parse(now))
-    };
-    const visibleEvents = trimEvents(recentEvents);
     const hasEnded = (): boolean => session.status === "ended";
     const sharedSafety = await this.prompts.getTemplate("shared_safety_preamble");
     const r18Guidance = await this.prompts.getTemplate("r18_guidance");
@@ -339,11 +330,15 @@ export class DefaultOrchestratorService implements OrchestratorService {
       toolContract,
       r18Guidance,
       agentRoster: formatAgentRoster(agents),
-      agentRuntimeState: stringify(session.agentStates),
-      sessionDraft: stringify(session.confirmedSetup ?? session.draft),
-      sceneState: stringify(session.storyState),
-      recentEvents: stringify(visibleEvents),
-      tickContext: stringify(tickContext)
+      agentRuntimeState: contextBundle.coreState.agentStates,
+      sessionDraft: contextBundle.coreState.sessionDraft,
+      sceneState: contextBundle.coreState.storyState,
+      archiveMemory: contextBundle.archiveBlock,
+      episodeMemories: contextBundle.episodeBlocks.join("\n\n") || "No episode summaries yet.",
+      turnMemories: contextBundle.turnSummaryBlocks.join("\n\n") || "No turn summaries yet.",
+      recentRawTurns: contextBundle.recentRawTurnsBlock,
+      playerMessagesHistory: contextBundle.playerMessagesBlock,
+      tickContext: contextBundle.tickContextBlock
     });
     const response = await this.provider.completeJson({
       modelConfig: config,

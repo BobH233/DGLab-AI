@@ -11,6 +11,8 @@ import { createConfigRoutes } from "./routes/configRoutes.js";
 import { createSessionRoutes } from "./routes/sessionRoutes.js";
 import { ConfigService } from "./services/ConfigService.js";
 import { DefaultOrchestratorService } from "./services/OrchestratorService.js";
+import { MemoryContextAssembler } from "./services/MemoryContextAssembler.js";
+import { MemoryService } from "./services/MemoryService.js";
 import { SchedulerService } from "./services/SchedulerService.js";
 import { SessionService } from "./services/SessionService.js";
 import { createDefaultToolRegistry } from "./tools/defaultTools.js";
@@ -29,8 +31,17 @@ export async function createServerApp() {
   const channel = new WebChannelAdapter();
   const toolRegistry = createDefaultToolRegistry();
   const orchestrator = new DefaultOrchestratorService(provider, promptService, toolRegistry);
+  const memoryService = new MemoryService(provider);
+  const memoryContextAssembler = new MemoryContextAssembler();
   const configService = new ConfigService(store);
-  const sessionService = new SessionService(store, channel, orchestrator, promptService);
+  const sessionService = new SessionService(
+    store,
+    channel,
+    orchestrator,
+    promptService,
+    memoryService,
+    memoryContextAssembler
+  );
   const scheduler = new SchedulerService(() => sessionService.listSchedulableSessions(), sessionService);
   sessionService.attachScheduler(scheduler);
   await scheduler.bootstrap();

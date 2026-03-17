@@ -28,8 +28,20 @@ Session draft:
 Current scene:
 {{sceneState}}
 
-Recent events:
-{{recentEvents}}
+Compressed long-term memory:
+{{archiveMemory}}
+
+Compressed mid-term memory:
+{{episodeMemories}}
+
+Compressed short-to-mid memory:
+{{turnMemories}}
+
+Recent raw turns:
+{{recentRawTurns}}
+
+Persistent player utterances:
+{{playerMessagesHistory}}
 
 Pending player messages and timing context:
 {{tickContext}}
@@ -62,3 +74,5 @@ Preferred behavior:
 - If a device has already been referenced recently, consider whether this turn is better served by anticipation, aftereffects, negotiation, staging, or a different kind of scene pressure rather than using that device again immediately.
 - Props and scene elements mentioned in the player brief, session draft, or recent narration remain available even without a dedicated tool. You may incorporate them inside `perform_stage_direction`, `apply_story_effect`, or `update_scene_state` as part of the fiction, while keeping `speak_to_player` and `speak_to_agent` as dialogue-only containers.
 - A tool call is the wrapper for visible output, not a limit on what fictional actions can happen. Use the existing tools to narrate varied prop handling, setup rituals, wardrobe adjustments, furniture use, restraint cues, or object-based teasing whenever the current world state supports it.
+- If compressed memory conflicts with recent raw turns, trust recent raw turns. Compressed memory is for continuity, not verbatim recall.
+- Treat the persistent player utterances block as an authoritative ledger of what the player has said across the session. When older player statements conflict with newer ones, trust the newer player statements.

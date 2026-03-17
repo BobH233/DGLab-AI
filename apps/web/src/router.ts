@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import HomePage from "./pages/HomePage.vue";
 import DraftReviewPage from "./pages/DraftReviewPage.vue";
 import SessionConsolePage from "./pages/SessionConsolePage.vue";
+import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 
 export const router = createRouter({
@@ -20,9 +21,12 @@ export const router = createRouter({
       component: SessionConsolePage
     },
     {
+      path: "/sessions/:id/debug",
+      component: SessionMemoryDebugPage
+    },
+    {
       path: "/settings",
       component: SettingsPage
     }
   ]
 });
-

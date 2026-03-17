@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyUsageStats, defaultToolStates, type ActionBatch, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createEmptyMemoryState, createEmptyUsageStats, defaultToolStates, type ActionBatch, type LlmConfig, type NarrativeContextBundle, type Session } from "@dglab-ai/shared";
 import { DefaultOrchestratorService } from "../services/OrchestratorService.js";
 import { createDefaultToolRegistry } from "../tools/defaultTools.js";
 
@@ -108,6 +108,7 @@ function createSession(): Session {
         intent: "observe"
       }
     },
+    memoryState: createEmptyMemoryState(),
     timerState: {
       enabled: false,
       intervalMs: 10000,
@@ -214,7 +215,37 @@ describe("DefaultOrchestratorService", () => {
       createDefaultToolRegistry()
     );
     const session = createSession();
-    const result = await orchestrator.runTick(session, "player_message", [] as SessionEvent[], config);
+    const contextBundle: NarrativeContextBundle = {
+      coreState: {
+        sessionDraft: "{}",
+        storyState: "{}",
+        agentStates: "{}"
+      },
+      archiveBlock: "No archive summary yet.",
+      episodeBlocks: [],
+      turnSummaryBlocks: [],
+      recentRawTurns: [],
+      recentRawTurnsBlock: "No recent raw turns retained.",
+      playerMessagesBlock: "No player messages yet.",
+      tickContextBlock: "{\"reason\":\"player_message\"}",
+      stats: {
+        charCounts: {
+          archive: 0,
+          episodes: 0,
+          turns: 0,
+          rawTurns: 0,
+          playerMessages: 0,
+          tickContext: 0,
+          coreState: 0
+        },
+        droppedBlocks: [],
+        rawTurnsIncluded: 0,
+        episodeCountIncluded: 0,
+        turnSummaryCountIncluded: 0,
+        usedFallback: false
+      }
+    };
+    const result = await orchestrator.runTick(session, "player_message", contextBundle, config);
 
     expect(session.storyState.phase).toBe("teasing");
     expect(session.storyState.tension).toBe(6);

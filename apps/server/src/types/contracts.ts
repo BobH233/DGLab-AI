@@ -5,6 +5,8 @@ import type {
   AgentProfile,
   AppConfig,
   LlmConfig,
+  MemoryDebugResponse,
+  NarrativeContextBundle,
   Session,
   SessionDraft,
   SessionEvent,
@@ -138,7 +140,11 @@ export interface OrchestratorService {
   runTick(
     session: Session,
     reason: string,
-    recentEvents: SessionEvent[],
+    contextBundle: NarrativeContextBundle,
     config: LlmConfig
   ): Promise<OrchestratorTurnResult>;
+}
+
+export interface MemoryDebugService {
+  getMemoryDebug(sessionId: string): Promise<MemoryDebugResponse>;
 }

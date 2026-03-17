@@ -89,6 +89,14 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
     }
   });
 
+  router.get("/:id/memory-debug", async (request, response, next) => {
+    try {
+      response.json(await sessionService.getMemoryDebug(request.params.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/:id/stream", async (request, response, next) => {
     try {
       const session = await sessionService.getSession(request.params.id);

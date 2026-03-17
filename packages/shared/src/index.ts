@@ -314,6 +314,109 @@ export const timerStateSchema = z.object({
 
 export type TimerState = z.infer<typeof timerStateSchema>;
 
+export const narrativeSummaryLevelSchema = z.enum(["turn", "episode", "archive"]);
+export type NarrativeSummaryLevel = z.infer<typeof narrativeSummaryLevelSchema>;
+
+export const narrativeSummarySourceSchema = z.enum(["derived", "llm_compacted"]);
+export type NarrativeSummarySource = z.infer<typeof narrativeSummarySourceSchema>;
+
+export const narrativeSummarySceneSchema = z.object({
+  phase: z.string().default("opening"),
+  location: z.string().default("未设定"),
+  tension: z.number().min(0).max(10).default(3),
+  summary: z.string().default("")
+});
+
+export type NarrativeSummaryScene = z.infer<typeof narrativeSummarySceneSchema>;
+
+export const narrativeSummarySchema = z.object({
+  id: z.string().min(1),
+  level: narrativeSummaryLevelSchema,
+  fromSeq: z.number().int().nonnegative(),
+  toSeq: z.number().int().nonnegative(),
+  turnStart: z.number().int().nonnegative(),
+  turnEnd: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  scene: narrativeSummarySceneSchema,
+  playerTrajectory: z.string().default(""),
+  keyDevelopments: z.array(z.string().min(1)).default([]),
+  characterStates: z.array(z.string().min(1)).default([]),
+  unresolvedThreads: z.array(z.string().min(1)).default([]),
+  carryForward: z.string().default(""),
+  source: narrativeSummarySourceSchema.default("derived")
+});
+
+export type NarrativeSummary = z.infer<typeof narrativeSummarySchema>;
+
+export const memoryPolicySchema = z.object({
+  rawTurnsToKeep: z.number().int().positive().default(2),
+  turnsPerEpisode: z.number().int().positive().default(4),
+  maxTurnSummariesBeforeMerge: z.number().int().positive().default(6),
+  maxEpisodeSummaries: z.number().int().positive().default(6),
+  archiveCharBudget: z.number().int().positive().default(1200),
+  episodeCharBudget: z.number().int().positive().default(1800),
+  turnCharBudget: z.number().int().positive().default(1800),
+  rawEventCharBudget: z.number().int().positive().default(3500)
+});
+
+export type MemoryPolicy = z.infer<typeof memoryPolicySchema>;
+
+export const memoryRunKindSchema = z.enum(["turn_refresh", "turn_to_episode", "episode_to_archive"]);
+export type MemoryRunKind = z.infer<typeof memoryRunKindSchema>;
+
+export const memoryRunStatusSchema = z.enum(["success", "failed", "fallback"]);
+export type MemoryRunStatus = z.infer<typeof memoryRunStatusSchema>;
+
+export const memoryRunRecordSchema = z.object({
+  id: z.string().min(1),
+  kind: memoryRunKindSchema,
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime(),
+  durationMs: z.number().int().nonnegative(),
+  status: memoryRunStatusSchema,
+  inputRange: z.string().min(1),
+  outputLevel: narrativeSummaryLevelSchema,
+  sourceModel: z.string().nullable().default(null),
+  errorMessage: z.string().nullable().default(null)
+});
+
+export type MemoryRunRecord = z.infer<typeof memoryRunRecordSchema>;
+
+export const memoryDebugStateSchema = z.object({
+  lastRefreshAt: z.string().datetime().optional(),
+  lastRefreshStatus: z.enum(["idle", "success", "failed"]).default("idle"),
+  lastRefreshError: z.string().nullable().default(null),
+  lastCompactionAt: z.string().datetime().nullable().default(null),
+  lastCompactionMode: z.enum(["turn_to_episode", "episode_to_archive"]).nullable().default(null),
+  recentRuns: z.array(memoryRunRecordSchema).max(12).default([])
+});
+
+export type MemoryDebugState = z.infer<typeof memoryDebugStateSchema>;
+
+export function createDefaultMemoryPolicy(): MemoryPolicy {
+  return memoryPolicySchema.parse({});
+}
+
+export function createEmptyMemoryDebugState(): MemoryDebugState {
+  return memoryDebugStateSchema.parse({});
+}
+
+export const memoryStateSchema = z.object({
+  version: z.number().int().positive().default(1),
+  lastProcessedSeq: z.number().int().nonnegative().default(0),
+  policy: memoryPolicySchema.default(createDefaultMemoryPolicy()),
+  archiveSummary: narrativeSummarySchema.nullable().default(null),
+  episodeSummaries: z.array(narrativeSummarySchema).default([]),
+  turnSummaries: z.array(narrativeSummarySchema).default([]),
+  debug: memoryDebugStateSchema.default(createEmptyMemoryDebugState())
+});
+
+export type MemoryState = z.infer<typeof memoryStateSchema>;
+
+export function createEmptyMemoryState(): MemoryState {
+  return memoryStateSchema.parse({});
+}
+
 export const promptVersionsSchema = z.object({
   sharedSafety: z.string(),
   toolContract: z.string(),
@@ -337,6 +440,7 @@ export const sessionSchema = z.object({
   confirmedSetup: sessionDraftSchema.nullable(),
   storyState: storyStateSchema,
   agentStates: z.record(agentRuntimeStateSchema),
+  memoryState: memoryStateSchema.default(createEmptyMemoryState()),
   timerState: timerStateSchema,
   usageTotals: usageStatsSchema,
   llmConfigSnapshot: llmConfigSchema.optional(),
@@ -347,6 +451,25 @@ export const sessionSchema = z.object({
 });
 
 export type Session = z.infer<typeof sessionSchema>;
+
+export const memoryContextStatsSchema = z.object({
+  charCounts: z.object({
+    archive: z.number().int().nonnegative().default(0),
+    episodes: z.number().int().nonnegative().default(0),
+    turns: z.number().int().nonnegative().default(0),
+    rawTurns: z.number().int().nonnegative().default(0),
+    playerMessages: z.number().int().nonnegative().default(0),
+    tickContext: z.number().int().nonnegative().default(0),
+    coreState: z.number().int().nonnegative().default(0)
+  }),
+  droppedBlocks: z.array(z.string()).default([]),
+  rawTurnsIncluded: z.number().int().nonnegative().default(0),
+  episodeCountIncluded: z.number().int().nonnegative().default(0),
+  turnSummaryCountIncluded: z.number().int().nonnegative().default(0),
+  usedFallback: z.boolean().default(false)
+});
+
+export type MemoryContextStats = z.infer<typeof memoryContextStatsSchema>;
 
 export const eventTypeSchema = z.enum([
   "session.created",
@@ -383,6 +506,50 @@ export const sessionEventSchema = z.object({
 });
 
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
+
+export const recentRawTurnSchema = z.object({
+  id: z.string().min(1),
+  fromSeq: z.number().int().nonnegative(),
+  toSeq: z.number().int().nonnegative(),
+  turnStart: z.number().int().nonnegative(),
+  turnEnd: z.number().int().nonnegative(),
+  eventCount: z.number().int().nonnegative(),
+  events: z.array(sessionEventSchema)
+});
+
+export type RecentRawTurn = z.infer<typeof recentRawTurnSchema>;
+
+export const narrativeContextBundleSchema = z.object({
+  coreState: z.object({
+    sessionDraft: z.string(),
+    storyState: z.string(),
+    agentStates: z.string()
+  }),
+  archiveBlock: z.string(),
+  episodeBlocks: z.array(z.string()),
+  turnSummaryBlocks: z.array(z.string()),
+  recentRawTurns: z.array(recentRawTurnSchema),
+  recentRawTurnsBlock: z.string(),
+  playerMessagesBlock: z.string(),
+  tickContextBlock: z.string(),
+  stats: memoryContextStatsSchema
+});
+
+export type NarrativeContextBundle = z.infer<typeof narrativeContextBundleSchema>;
+
+export const memoryDebugResponseSchema = z.object({
+  sessionId: z.string(),
+  memoryState: memoryStateSchema,
+  recentRawTurns: z.array(recentRawTurnSchema),
+  assembledContext: narrativeContextBundleSchema,
+  storyStateSnapshot: storyStateSchema,
+  queueSnapshot: z.object({
+    queuedPlayerMessages: z.array(z.string()),
+    queuedReasons: z.array(z.string())
+  })
+});
+
+export type MemoryDebugResponse = z.infer<typeof memoryDebugResponseSchema>;
 
 export const channelMessageSchema = z.object({
   source: z.enum(["player", "system"]),

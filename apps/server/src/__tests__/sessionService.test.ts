@@ -1,4 +1,4 @@
-import { createEmptyUsageStats, defaultToolStates, normalizeAppConfig, type AppConfig, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createEmptyMemoryState, createEmptyUsageStats, defaultToolStates, normalizeAppConfig, type AppConfig, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { describe, expect, it, vi } from "vitest";
 import { SessionService } from "../services/SessionService.js";
 
@@ -58,6 +58,7 @@ function createSession(): Session {
         intent: "observe"
       }
     },
+    memoryState: createEmptyMemoryState(),
     timerState: {
       enabled: false,
       intervalMs: 10000,
@@ -125,7 +126,50 @@ describe("SessionService", () => {
       render: vi.fn(),
       versions: vi.fn(() => ({}))
     };
-    const service = new SessionService(store as never, channel as never, orchestrator as never, prompts as never);
+    const memoryService = {
+      refreshSessionMemory: vi.fn(),
+      markRefreshFailure: vi.fn()
+    };
+    const memoryContextAssembler = {
+      assemble: vi.fn(() => ({
+        coreState: {
+          sessionDraft: "{}",
+          storyState: "{}",
+          agentStates: "{}"
+        },
+        archiveBlock: "",
+        episodeBlocks: [],
+        turnSummaryBlocks: [],
+        recentRawTurns: [],
+        recentRawTurnsBlock: "",
+        playerMessagesBlock: "",
+        tickContextBlock: "{}",
+        stats: {
+          charCounts: {
+            archive: 0,
+            episodes: 0,
+            turns: 0,
+            rawTurns: 0,
+            playerMessages: 0,
+            tickContext: 0,
+            coreState: 0
+          },
+          droppedBlocks: [],
+          rawTurnsIncluded: 0,
+          episodeCountIncluded: 0,
+          turnSummaryCountIncluded: 0,
+          usedFallback: false
+        }
+      }))
+    };
+    const service = new SessionService(
+      store as never,
+      channel as never,
+      orchestrator as never,
+      prompts as never,
+      memoryService as never,
+      memoryContextAssembler as never
+    );
 
     await expect(service.processTick("session_test", "player_message")).resolves.toBeUndefined();
 
@@ -159,7 +203,21 @@ describe("SessionService", () => {
       render: vi.fn(),
       versions: vi.fn(() => ({}))
     };
-    const service = new SessionService(store as never, channel as never, orchestrator as never, prompts as never);
+    const memoryService = {
+      refreshSessionMemory: vi.fn(),
+      markRefreshFailure: vi.fn()
+    };
+    const memoryContextAssembler = {
+      assemble: vi.fn()
+    };
+    const service = new SessionService(
+      store as never,
+      channel as never,
+      orchestrator as never,
+      prompts as never,
+      memoryService as never,
+      memoryContextAssembler as never
+    );
     const scheduler = {
       syncSession: vi.fn(),
       requestTick: vi.fn()

@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  MemoryDebugResponse,
   Session,
   SessionEvent,
   SessionListItem,
@@ -83,6 +84,9 @@ export const api = {
   getEvents(id: string, cursor?: number): Promise<SessionEvent[]> {
     const query = cursor ? `?cursor=${cursor}` : "";
     return request<SessionEvent[]>(`/sessions/${id}/events${query}`);
+  },
+  getMemoryDebug(id: string): Promise<MemoryDebugResponse> {
+    return request<MemoryDebugResponse>(`/sessions/${id}/memory-debug`);
   },
   streamUrl(id: string): string {
     return `${API_BASE}/sessions/${id}/stream`;

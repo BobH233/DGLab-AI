@@ -1,10 +1,13 @@
 import {
+  createEmptyMemoryState,
   createEmptyUsageStats,
   defaultPromptVersions,
+  memoryDebugResponseSchema,
   sessionDraftSchema,
   storyStateSchema,
   timerUpdateSchema,
   type LlmConfig,
+  type MemoryDebugResponse,
   type Session,
   type SessionDraft,
   type SessionEvent,
@@ -13,6 +16,8 @@ import {
 import { HttpError } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { LockManager } from "../lib/locks.js";
+import { MemoryContextAssembler } from "./MemoryContextAssembler.js";
+import { MemoryService } from "./MemoryService.js";
 import type {
   ChannelAdapter,
   OrchestratorService,
@@ -43,7 +48,9 @@ export class SessionService {
     private readonly store: SessionStore,
     private readonly channel: ChannelAdapter,
     private readonly orchestrator: OrchestratorService,
-    private readonly prompts: PromptTemplateService
+    private readonly prompts: PromptTemplateService,
+    private readonly memoryService: MemoryService,
+    private readonly memoryContextAssembler: MemoryContextAssembler
   ) {}
 
   attachScheduler(scheduler: SchedulerLike): void {
@@ -65,6 +72,24 @@ export class SessionService {
   async getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]> {
     await this.getSession(sessionId);
     return this.store.getEvents(sessionId, cursor, limit);
+  }
+
+  async getMemoryDebug(sessionId: string): Promise<MemoryDebugResponse> {
+    const session = await this.getSession(sessionId);
+    const events = await this.getAllEvents(session);
+    const reason = session.timerState.queuedReasons.join(", ") || "debug_preview";
+    const assembledContext = this.memoryContextAssembler.assemble(session, events, reason);
+    return memoryDebugResponseSchema.parse({
+      sessionId,
+      memoryState: session.memoryState,
+      recentRawTurns: assembledContext.recentRawTurns,
+      assembledContext,
+      storyStateSnapshot: session.storyState,
+      queueSnapshot: {
+        queuedPlayerMessages: session.timerState.queuedPlayerMessages,
+        queuedReasons: session.timerState.queuedReasons
+      }
+    });
   }
 
   listSchedulableSessions(): Promise<Session[]> {
@@ -92,6 +117,7 @@ export class SessionService {
       agentStates: Object.fromEntries(
         draft.agents.map((agent) => [agent.id, { mood: "focused", intent: "observe" }])
       ),
+      memoryState: createEmptyMemoryState(),
       timerState: {
         enabled: false,
         intervalMs: 10000,
@@ -312,8 +338,9 @@ export class SessionService {
         }
       };
       try {
-        const currentEvents = await this.store.getEvents(sessionId, Math.max(0, session.lastSeq - 30), 40);
-        const result = await this.orchestrator.runTick(session, reason, currentEvents, config);
+        const currentEvents = await this.getAllEvents(session);
+        const contextBundle = this.memoryContextAssembler.assemble(session, currentEvents, reason);
+        const result = await this.orchestrator.runTick(session, reason, contextBundle, config);
         session.timerState.queuedReasons = [];
         session.timerState.queuedPlayerMessages = [];
         const tickCompletedAt = new Date().toISOString();
@@ -335,6 +362,7 @@ export class SessionService {
         session.lastSeq += events.length;
         await this.store.replaceSession(session);
         this.publishSession(session, events);
+        void this.refreshMemory(sessionId);
         if (result.usageCalls.length > 0) {
           this.channel.publish({
             type: "usage.updated",
@@ -388,5 +416,32 @@ export class SessionService {
         }
       });
     }
+  }
+
+  private async getAllEvents(session: Session): Promise<SessionEvent[]> {
+    return this.store.getEvents(session.id, undefined, Math.max(200, session.lastSeq + 50));
+  }
+
+  private async refreshMemory(sessionId: string): Promise<void> {
+    await this.locks.runExclusive(sessionId, async () => {
+      const session = await this.getSession(sessionId);
+      if (session.status !== "active" && session.status !== "ended") {
+        return;
+      }
+      const events = await this.getAllEvents(session);
+      const config = session.llmConfigSnapshot ?? await this.store.getConfig();
+      try {
+        const changed = await this.memoryService.refreshSessionMemory(session, events, config);
+        if (!changed) {
+          return;
+        }
+      } catch (error) {
+        console.error(`Memory refresh failed for session ${sessionId}`, error);
+        this.memoryService.markRefreshFailure(session, error);
+      }
+      session.updatedAt = new Date().toISOString();
+      await this.store.replaceSession(session);
+      this.publishSession(session, []);
+    });
   }
 }
