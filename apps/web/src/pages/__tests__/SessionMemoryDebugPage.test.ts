@@ -92,6 +92,7 @@ describe("SessionMemoryDebugPage", () => {
       timerState: {
         enabled: false,
         intervalMs: 10000,
+        inFlight: false,
         queuedReasons: [],
         queuedPlayerMessages: [],
         pendingWaits: []

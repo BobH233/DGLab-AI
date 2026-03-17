@@ -310,6 +310,7 @@ export type WaitHandle = z.infer<typeof waitHandleSchema>;
 export const timerStateSchema = z.object({
   enabled: z.boolean().default(false),
   intervalMs: z.number().int().positive().default(10000),
+  inFlight: z.boolean().default(false),
   nextTickAt: nullToUndefined(z.string().datetime()),
   queuedReasons: z.array(z.string()).default([]),
   queuedPlayerMessages: z.array(z.string()).default([]),

@@ -149,13 +149,25 @@ export class MongoSessionStore implements SessionStore {
     return documents;
   }
 
-  async getEvents(sessionId: string, cursor?: number, limit = 200): Promise<SessionEvent[]> {
-    const query = cursor ? { sessionId, seq: { $gt: cursor } } : { sessionId };
-    return this.events
-      .find(query, { projection: { _id: 0 } })
-      .sort({ seq: 1 })
-      .limit(limit)
-      .toArray();
+  async getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]> {
+    if (cursor !== undefined) {
+      const query = this.events
+        .find({ sessionId, seq: { $gt: cursor } }, { projection: { _id: 0 } })
+        .sort({ seq: 1 });
+      if (typeof limit === "number") {
+        query.limit(limit);
+      }
+      return query.toArray();
+    }
+
+    const query = this.events
+      .find({ sessionId }, { projection: { _id: 0 } })
+      .sort({ seq: 1 });
+    if (typeof limit === "number") {
+      query.limit(limit);
+    }
+
+    return query.toArray();
   }
 
   async listSchedulableSessions(): Promise<Session[]> {

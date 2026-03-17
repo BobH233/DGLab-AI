@@ -112,6 +112,7 @@ function createSession(): Session {
     timerState: {
       enabled: false,
       intervalMs: 10000,
+      inFlight: false,
       queuedReasons: ["player_message"],
       queuedPlayerMessages: ["你好"],
       pendingWaits: []

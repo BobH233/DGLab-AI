@@ -123,6 +123,7 @@ export class SessionService {
       timerState: {
         enabled: false,
         intervalMs: 10000,
+        inFlight: false,
         queuedReasons: [],
         queuedPlayerMessages: [],
         pendingWaits: []
@@ -320,7 +321,7 @@ export class SessionService {
     let shouldProcessImmediately = false;
     const session = await this.locks.runExclusive(sessionId, async () => {
       const session = await this.getSessionRecord(sessionId);
-      if (session.status !== "active" || !session.timerState.enabled) {
+      if (session.status !== "active" || !session.timerState.enabled || session.timerState.inFlight) {
         return session;
       }
 
@@ -362,6 +363,7 @@ export class SessionService {
         const queuedPlayerMessages = [...session.timerState.queuedPlayerMessages];
         const queuedReasons = [...session.timerState.queuedReasons];
         session.timerState.pendingWaits = [];
+        session.timerState.inFlight = true;
         session.timerState.queuedReasons = queuedReasons;
         session.timerState.queuedPlayerMessages = queuedPlayerMessages;
         const tickStartEvent = {
@@ -394,6 +396,7 @@ export class SessionService {
               status: session.status as Session["status"]
             }
           };
+          session.timerState.inFlight = false;
           session.timerState.nextTickAt = session.timerState.enabled
             ? new Date(Date.parse(tickCompletedAt) + session.timerState.intervalMs).toISOString()
             : undefined;
@@ -417,6 +420,7 @@ export class SessionService {
           const failedAt = new Date().toISOString();
           const message = formatRuntimeError(error);
           console.error(`Tick failed for session ${sessionId}`, error);
+          session.timerState.inFlight = false;
           session.timerState.nextTickAt = session.timerState.enabled
             ? new Date(Date.parse(failedAt) + session.timerState.intervalMs).toISOString()
             : undefined;
@@ -456,6 +460,9 @@ export class SessionService {
       if (!session) {
         return;
       }
+      if (!session.timerState.inFlight) {
+        return;
+      }
       const events = await this.store.getEvents(sessionId, undefined, Math.max(200, session.lastSeq + 50));
       let unfinishedTick: SessionEvent | null = null;
       for (const event of events) {
@@ -476,6 +483,7 @@ export class SessionService {
       }
 
       const now = new Date().toISOString();
+      session.timerState.inFlight = false;
       session.timerState.nextTickAt = session.timerState.enabled
         ? new Date(Date.now() + session.timerState.intervalMs).toISOString()
         : undefined;

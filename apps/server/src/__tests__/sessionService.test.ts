@@ -62,6 +62,7 @@ function createSession(): Session {
     timerState: {
       enabled: false,
       intervalMs: 10000,
+      inFlight: false,
       queuedReasons: ["player_message"],
       queuedPlayerMessages: ["你好"],
       pendingWaits: []
@@ -277,6 +278,7 @@ describe("SessionService", () => {
 
     const store = new InMemoryStore();
     store.session.timerState.enabled = true;
+    store.session.timerState.inFlight = true;
     store.session.timerState.intervalMs = 10000;
     const channel = {
       publish: vi.fn(),
@@ -357,6 +359,7 @@ describe("SessionService", () => {
 
     const store = new InMemoryStore();
     store.session.timerState.enabled = true;
+    store.session.timerState.inFlight = true;
     store.session.timerState.intervalMs = 10000;
     store.events = [
       {
@@ -523,6 +526,60 @@ describe("SessionService", () => {
       }
     }));
 
+    vi.useRealTimers();
+  });
+
+  it("does not queue another auto tick while the same session is already in flight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
+
+    const store = new InMemoryStore();
+    store.session.timerState.enabled = true;
+    store.session.timerState.inFlight = true;
+    store.session.timerState.intervalMs = 5000;
+    store.session.timerState.nextTickAt = "2026-03-17T11:59:59.000Z";
+    const channel = {
+      publish: vi.fn(),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      normalizeInbound: vi.fn()
+    };
+    const orchestrator = {
+      generateDraft: vi.fn(),
+      summarizeScene: vi.fn(),
+      runTick: vi.fn()
+    };
+    const prompts = {
+      getTemplate: vi.fn(),
+      render: vi.fn(),
+      versions: vi.fn(() => ({}))
+    };
+    const memoryService = {
+      refreshSessionMemory: vi.fn(),
+      markRefreshFailure: vi.fn()
+    };
+    const memoryContextAssembler = {
+      assemble: vi.fn()
+    };
+    const service = new SessionService(
+      store as never,
+      channel as never,
+      orchestrator as never,
+      prompts as never,
+      memoryService as never,
+      memoryContextAssembler as never
+    );
+    const scheduler = {
+      syncSession: vi.fn(),
+      requestTick: vi.fn()
+    };
+    service.attachScheduler(scheduler);
+
+    const session = await service.requestAutoTick("session_test");
+
+    expect(session.timerState.inFlight).toBe(true);
+    expect(scheduler.requestTick).not.toHaveBeenCalled();
+    expect(channel.publish).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

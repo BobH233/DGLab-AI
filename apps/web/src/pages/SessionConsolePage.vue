@@ -218,7 +218,7 @@ const agentCards = computed(() => {
 });
 
 const displayedEventCount = computed(() => events.value.length);
-const isTickInFlight = computed(() => liveTickInFlight.value);
+const isTickInFlight = computed(() => liveTickInFlight.value || Boolean(session.value?.timerState.inFlight));
 const automationDueAt = computed(() => {
   if (!session.value || !session.value.timerState.enabled) {
     return null;
@@ -298,6 +298,7 @@ function syncSession(next: Session) {
     pendingAutomationCooldown.value = false;
     playbackCooldownUntil.value = null;
   }
+  liveTickInFlight.value = next.timerState.inFlight;
 }
 
 async function maybeRequestAutoTick() {

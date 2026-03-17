@@ -93,6 +93,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
     timerState: {
       enabled: true,
       intervalMs: 5000,
+      inFlight: false,
       nextTickAt: "2026-03-17T12:00:05.000Z",
       queuedReasons: [],
       queuedPlayerMessages: [],
@@ -130,6 +131,7 @@ describe("SessionConsolePage", () => {
       timerState: {
         enabled: true,
         intervalMs: 5000,
+        inFlight: false,
         nextTickAt: "2026-03-17T12:00:05.000Z",
         queuedReasons: [],
         queuedPlayerMessages: [],
@@ -198,6 +200,7 @@ describe("SessionConsolePage", () => {
       timerState: {
         enabled: true,
         intervalMs: 5000,
+        inFlight: false,
         nextTickAt: "2026-03-17T11:59:59.000Z",
         queuedReasons: [],
         queuedPlayerMessages: [],
