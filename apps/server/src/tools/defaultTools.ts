@@ -17,6 +17,17 @@ type VibeToyRuntimeState = {
   lastUpdatedAt: string;
 };
 
+function toPercent(current: number | undefined, limit: number | undefined): string {
+  if (typeof current !== "number" || typeof limit !== "number" || limit <= 0) {
+    return "未提供";
+  }
+  return `${Math.round((current / limit) * 100)}%`;
+}
+
+function joinNonEmpty(parts: Array<string | undefined>): string {
+  return parts.filter((part): part is string => Boolean(part && part.trim())).join("；");
+}
+
 class DefaultToolRegistry implements ToolRegistry {
   constructor(private readonly tools: ToolDefinition[]) {}
 
@@ -162,6 +173,141 @@ export function createDefaultToolRegistry(): ToolRegistry {
             mode: args.mode,
             supportedModes: ["steady", "pulse", "wave", "tease"],
             status: "simulated"
+          }
+        });
+      }
+    },
+    {
+      id: "control_e_stim_toy",
+      description: "Control the player's local e-stim device by adjusting A/B channel strength percentages, switching pulse names, or triggering timed fire actions.",
+      visibility: "public",
+      inputSchema: z.discriminatedUnion("command", [
+        z.object({
+          command: z.literal("set"),
+          channels: z.object({
+            a: z.object({
+              intensityPercent: z.number().int().min(0).max(100).optional(),
+              pulseName: z.string().min(1).optional()
+            }).strict().refine((value) => value.intensityPercent !== undefined || value.pulseName !== undefined, {
+              message: "A channel requires intensityPercent or pulseName."
+            }).optional(),
+            b: z.object({
+              intensityPercent: z.number().int().min(0).max(100).optional(),
+              pulseName: z.string().min(1).optional()
+            }).strict().refine((value) => value.intensityPercent !== undefined || value.pulseName !== undefined, {
+              message: "B channel requires intensityPercent or pulseName."
+            }).optional()
+          }).strict().refine((value) => value.a !== undefined || value.b !== undefined, {
+            message: "At least one channel must be provided."
+          })
+        }).strict(),
+        z.object({
+          command: z.literal("fire"),
+          durationMs: z.number().int().min(100).max(30000),
+          override: z.boolean().default(true),
+          channels: z.object({
+            a: z.object({
+              enabled: z.boolean().optional(),
+              intensityPercent: z.number().int().min(0).max(100).optional(),
+              pulseName: z.string().min(1).optional()
+            }).strict().refine((value) => value.enabled !== undefined || value.intensityPercent !== undefined || value.pulseName !== undefined, {
+              message: "A channel fire config requires enabled, intensityPercent, or pulseName."
+            }).optional(),
+            b: z.object({
+              enabled: z.boolean().optional(),
+              intensityPercent: z.number().int().min(0).max(100).optional(),
+              pulseName: z.string().min(1).optional()
+            }).strict().refine((value) => value.enabled !== undefined || value.intensityPercent !== undefined || value.pulseName !== undefined, {
+              message: "B channel fire config requires enabled, intensityPercent, or pulseName."
+            }).optional()
+          }).strict().refine((value) => value.a !== undefined || value.b !== undefined, {
+            message: "At least one channel must be provided."
+          })
+        }).strict()
+      ]),
+      promptContract: {
+        argsShape: "{\"command\":\"set|fire\",\"channels\":{\"a\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"},\"b\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"}},\"durationMs\":100-30000,\"override\":true}",
+        example: "{\"tool\":\"control_e_stim_toy\",\"args\":{\"command\":\"fire\",\"durationMs\":5000,\"override\":true,\"channels\":{\"a\":{\"intensityPercent\":55,\"pulseName\":\"呼吸\"},\"b\":{\"enabled\":true,\"intensityPercent\":30,\"pulseName\":\"敲击\"}}}}"
+      },
+      buildWorldPrompt() {
+        return [
+          "在生成世界背景时，可以把情趣电击器视为一个可能存在的本地可控装置，但它同样只是众多可用元素之一，不应垄断整场互动。",
+          "如果你让角色提及或使用它，请保持成人、克制、非露骨的表达，重点放在控制感、期待感、试探与节奏变化，而不是直白生理描写。",
+          "后续角色可调用 `control_e_stim_toy` 工具，对 A / B 通道分别调节强度百分比、切换波形名，或触发带持续时间的一键开火。"
+        ].join("\n");
+      },
+      buildTurnPrompt(context) {
+        const eStim = context.session.toolContext?.eStim;
+        if (!eStim) {
+          return [
+            "当前没有来自前端的情趣电击器配置或运行态同步。",
+            "如果本轮调用 `control_e_stim_toy`，前端可能只能把它显示为模拟执行，而不是本地真实执行。"
+          ].join("\n");
+        }
+
+        const allowedPulseNames = eStim.allowedPulses.map((item: { name: string }) => item.name).filter(Boolean);
+        const channelALine = joinNonEmpty([
+          "A 通道",
+          eStim.channelPlacements.a ? `连接位置：${eStim.channelPlacements.a}` : undefined,
+          eStim.runtime?.a ? `当前强度：${eStim.runtime.a.strength}/${eStim.runtime.a.limit}（约 ${toPercent(eStim.runtime.a.strength, eStim.runtime.a.limit)}）` : "当前强度：未同步",
+          eStim.runtime?.a?.currentPulseName ? `当前波形：${eStim.runtime.a.currentPulseName}` : undefined,
+          eStim.runtime?.a?.fireStrengthLimit !== undefined ? `开火强度上限：${eStim.runtime.a.fireStrengthLimit}` : undefined
+        ]);
+        const channelBEnabled = eStim.bChannelEnabled;
+        const channelBLine = !channelBEnabled
+          ? "B 通道：当前未启用，除非后续配置改变，否则不要对 B 通道发出指令。"
+          : joinNonEmpty([
+            "B 通道",
+            eStim.channelPlacements.b ? `连接位置：${eStim.channelPlacements.b}` : undefined,
+            eStim.runtime?.b ? `当前强度：${eStim.runtime.b.strength}/${eStim.runtime.b.limit}（约 ${toPercent(eStim.runtime.b.strength, eStim.runtime.b.limit)}）` : "当前强度：未同步",
+            eStim.runtime?.b?.currentPulseName ? `当前波形：${eStim.runtime.b.currentPulseName}` : undefined,
+            eStim.runtime?.b?.fireStrengthLimit !== undefined ? `开火强度上限：${eStim.runtime.b.fireStrengthLimit}` : undefined
+          ]);
+
+        return [
+          "当前前端已为本会话同步情趣电击器配置。这个工具真正执行时依赖玩家本地前端去调用 localhost 上的接口。",
+          `游戏连接：${eStim.gameConnectionCodeLabel ?? "已配置"}`,
+          `允许调用的波形名：${allowedPulseNames.length > 0 ? allowedPulseNames.join("、") : "未选择，尽量不要切换波形"}`,
+          channelALine,
+          channelBLine,
+          eStim.lastSyncedAt ? `最近一次前端状态同步：${eStim.lastSyncedAt}` : "最近一次前端状态同步：未提供",
+          "调用 `control_e_stim_toy` 时请只使用波形名称 `pulseName`，不要输出底层 pulseId。前端会自行把名称映射到真实 id。",
+          "如果只是调节电击器强度、波形或开火，不要改动 `playerBodyItemState`。"
+        ].join("\n");
+      },
+      async execute(context, args: {
+        command: "set" | "fire";
+        durationMs?: number;
+        override?: boolean;
+        channels: {
+          a?: { enabled?: boolean; intensityPercent?: number; pulseName?: string };
+          b?: { enabled?: boolean; intensityPercent?: number; pulseName?: string };
+        };
+      }) {
+        const eStim = context.session.toolContext?.eStim;
+        context.session.agentStates[context.agent.id] = {
+          ...context.session.agentStates[context.agent.id],
+          intent: "control_e_stim_toy",
+          lastActedAt: context.now
+        };
+        context.addEvent({
+          type: "agent.device_control",
+          source: "agent",
+          agentId: context.agent.id,
+          createdAt: context.now,
+          payload: {
+            speaker: context.agent.name,
+            deviceId: "e_stim_toy",
+            deviceName: "情趣电击器",
+            action: "control_e_stim_toy",
+            command: args.command,
+            durationMs: args.command === "fire" ? args.durationMs : undefined,
+            override: args.command === "fire" ? args.override : undefined,
+            channels: args.channels,
+            allowedPulseNames: eStim?.allowedPulses.map((item: { name: string }) => item.name) ?? [],
+            channelPlacements: eStim?.channelPlacements ?? {},
+            bChannelEnabled: eStim?.bChannelEnabled ?? false,
+            status: "frontend_pending"
           }
         });
       }

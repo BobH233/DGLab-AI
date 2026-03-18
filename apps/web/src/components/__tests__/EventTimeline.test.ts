@@ -178,6 +178,68 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("执行状态：simulated");
   });
 
+  it("renders e-stim control events with channel details and local execution status", () => {
+    const createdAt = new Date().toISOString();
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 5,
+            type: "agent.device_control",
+            source: "agent",
+            agentId: "director",
+            createdAt,
+            payload: {
+              speaker: "钟离",
+              action: "control_e_stim_toy",
+              deviceId: "e_stim_toy",
+              deviceName: "情趣电击器",
+              command: "fire",
+              durationMs: 5000,
+              channels: {
+                a: {
+                  intensityPercent: 60,
+                  pulseName: "呼吸"
+                },
+                b: {
+                  enabled: true,
+                  intensityPercent: 35,
+                  pulseName: "敲击"
+                }
+              },
+              channelPlacements: {
+                a: "臀部",
+                b: "大腿两侧"
+              },
+              allowedPulseNames: ["呼吸", "敲击"],
+              status: "frontend_pending"
+            }
+          }
+        ],
+        deviceExecutionStates: {
+          [`5:agent.device_control:${createdAt}`]: {
+            status: "success",
+            detail: "已调用本地电击器接口。"
+          }
+        }
+      }
+    });
+
+    const card = wrapper.find('.timeline-item[data-kind="action"] .event-card--e-stim-control');
+
+    expect(card.exists()).toBe(true);
+    expect(wrapper.text()).toContain("电击器控制");
+    expect(wrapper.text()).toContain("钟离 调用了 情趣电击器");
+    expect(wrapper.text()).toContain("一键开火");
+    expect(wrapper.text()).toContain("A 通道");
+    expect(wrapper.text()).toContain("强度 60%");
+    expect(wrapper.text()).toContain("位置 臀部");
+    expect(wrapper.text()).toContain("B 通道");
+    expect(wrapper.text()).toContain("已调用本地 API");
+    expect(wrapper.text()).toContain("已调用本地电击器接口");
+  });
+
   it("renders tick failure events with retryable context", () => {
     const wrapper = mount(EventTimeline, {
       props: {

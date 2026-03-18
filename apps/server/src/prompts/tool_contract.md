@@ -35,6 +35,7 @@ Valid full JSON examples:
 {{toolExamples}}
 
 Use only the exact argument keys below:
+- `control_e_stim_toy`: `{"command":"set|fire","channels":{"a":{"intensityPercent":40,"pulseName":"呼吸"},"b":{"enabled":true,"intensityPercent":25,"pulseName":"敲击"}},"durationMs":5000,"override":true}`
 - `speak_to_player`: `{"message":"..."}`
 - `speak_to_agent`: `{"targetAgentId":"...","message":"..."}`
 - `emit_reasoning_summary`: `{"summary":"..."}`
@@ -67,6 +68,7 @@ Rules:
 - Do not fall into a rigid one-line-then-one-tool rhythm. It is fine for a character to speak in a fuller, more human cadence, to do several fictional things inside one narrated beat, or to chain a few coordinated actions in the same turn.
 - Use concise action batches, but not artificially tiny ones. Prefer roughly 1-8 actions when that gives the scene room to breathe.
 - The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
+- For `control_e_stim_toy`, only use wave names the runtime context explicitly says are allowed. If B 通道未启用，就不要给 B 通道发指令。
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
 - Do not stall waiting for the player to invent the next move. When the scene already contains enough context, let agents proactively choose the next pressure point, prop, instruction, or positional change.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.

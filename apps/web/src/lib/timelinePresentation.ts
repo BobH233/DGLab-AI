@@ -15,6 +15,7 @@ export type PresentationItem = {
   id: string;
   seq: number;
   kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error" | "pause" | "inventory";
+  variant?: "e-stim-control";
   kicker: string;
   title: string;
   main: string;
@@ -29,7 +30,19 @@ export type PresentationItem = {
   pauseId?: string;
 };
 
-export function buildTimelinePresentationItems(events: SessionEvent[]): PresentationItem[] {
+export type DeviceExecutionState = {
+  status: "pending" | "success" | "simulated" | "error";
+  detail: string;
+};
+
+export function executionKeyForEvent(event: SessionEvent): string {
+  return `${event.seq}:${event.type}:${event.createdAt}`;
+}
+
+export function buildTimelinePresentationItems(
+  events: SessionEvent[],
+  deviceExecutionStates: Record<string, DeviceExecutionState> = {}
+): PresentationItem[] {
   return events.reduce<PresentationItem[]>((items, event, index) => {
     const itemId = `${event.seq}:${index}:${event.type}`;
     const isLatestEvent = index === events.length - 1;
@@ -65,6 +78,10 @@ export function buildTimelinePresentationItems(events: SessionEvent[]): Presenta
         return items;
       case "agent.device_control":
         const optionalTool = isOptionalToolEvent(event);
+        if (event.payload.action === "control_e_stim_toy") {
+          items.push(buildEStimControlItem(event, itemId, optionalTool, deviceExecutionStates[executionKeyForEvent(event)]));
+          return items;
+        }
         items.push({
           id: itemId,
           seq: event.seq,
@@ -439,6 +456,94 @@ function buildDeviceControlMeta(payload: Record<string, unknown>): string | unde
   return entries.length > 0 ? entries.join("；") : undefined;
 }
 
+function buildEStimControlItem(
+  event: SessionEvent,
+  itemId: string,
+  optionalTool: boolean,
+  executionState?: DeviceExecutionState
+): PresentationItem {
+  const payload = event.payload;
+  const command = textOf(payload.command);
+  const channels = typeof payload.channels === "object" && payload.channels
+    ? payload.channels as Record<string, Record<string, unknown> | undefined>
+    : {};
+  const placements = typeof payload.channelPlacements === "object" && payload.channelPlacements
+    ? payload.channelPlacements as Record<string, unknown>
+    : {};
+  const detailRows: PresentationDetail[] = [{
+    label: "命令",
+    value: command === "fire" ? "一键开火" : "通道设置"
+  }];
+  const channelLines = ["a", "b"].flatMap((channelId) => {
+    const channel = channels[channelId];
+    if (!channel) {
+      return [];
+    }
+    const parts = [
+      typeof channel.enabled === "boolean" ? `启用：${channel.enabled ? "是" : "否"}` : undefined,
+      channel.intensityPercent !== undefined ? `强度 ${textOf(channel.intensityPercent)}%` : undefined,
+      channel.pulseName ? `波形 ${textOf(channel.pulseName)}` : undefined,
+      placements[channelId] ? `位置 ${textOf(placements[channelId])}` : undefined
+    ].filter(Boolean);
+    return [{
+      label: `${channelId.toUpperCase()} 通道`,
+      value: parts.join("；") || "本次未提供具体参数"
+    }];
+  });
+  detailRows.push(...channelLines);
+  if (payload.durationMs !== undefined) {
+    detailRows.push({
+      label: "持续时间",
+      value: `${textOf(payload.durationMs)} ms`
+    });
+  }
+  detailRows.push({
+    label: "本地执行",
+    value: executionState
+      ? executionState.status === "success"
+        ? "已调用本地 API"
+        : executionState.status === "simulated"
+          ? "模拟执行"
+          : executionState.status === "error"
+            ? "执行失败"
+            : "等待执行"
+      : textOf(payload.status, "等待前端执行")
+  });
+  if (executionState?.detail) {
+    detailRows.push({
+      label: "执行说明",
+      value: executionState.detail
+    });
+  }
+
+  const allowedPulseNames = Array.isArray(payload.allowedPulseNames)
+    ? payload.allowedPulseNames.map((item) => textOf(item)).filter(Boolean)
+    : [];
+
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "action",
+    variant: "e-stim-control",
+    kicker: "电击器控制",
+    title: `${textOf(payload.speaker)} 调用了 ${textOf(payload.deviceName || "情趣电击器")}`,
+    main: command === "fire"
+      ? "角色触发了一次带持续时间的一键开火。"
+      : "角色调整了电击器的通道强度或波形。",
+    details: detailRows,
+    meta: joinText([
+      allowedPulseNames.length > 0 ? `允许波形：${allowedPulseNames.join(" / ")}` : undefined,
+      payload.override !== undefined ? `覆盖模式：${textOf(payload.override)}` : undefined
+    ]),
+    tags: optionalTool
+      ? ["可选工具", "工具调用", "电击器"]
+      : ["工具调用", "电击器"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt),
+    optionalTool
+  };
+}
+
 function listOf(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -473,4 +578,9 @@ function formatTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function joinText(parts: Array<string | undefined>): string | undefined {
+  const normalized = parts.filter((part): part is string => Boolean(part && part.trim()));
+  return normalized.length > 0 ? normalized.join("；") : undefined;
 }

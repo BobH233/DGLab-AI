@@ -11,6 +11,7 @@ import {
   type Session,
   type SessionDraft,
   type SessionEvent,
+  type ToolContext,
   type UpdateDraftRequest
 } from "@dglab-ai/shared";
 import { HttpError } from "../lib/errors.js";
@@ -38,6 +39,16 @@ function formatRuntimeError(error: unknown): string {
     return error;
   }
   return "模型调用失败，请稍后重试。";
+}
+
+function mergeToolContext(base: ToolContext | undefined, next: ToolContext | undefined): ToolContext | undefined {
+  if (!base && !next) {
+    return undefined;
+  }
+  return {
+    ...(base ?? {}),
+    ...(next ?? {})
+  };
 }
 
 export class SessionService {
@@ -130,6 +141,7 @@ export class SessionService {
         pendingWaits: []
       },
       usageTotals: createEmptyUsageStats(),
+      toolContext: undefined,
       createdAt: now,
       updatedAt: now,
       lastSeq: 0
@@ -188,7 +200,7 @@ export class SessionService {
     });
   }
 
-  async confirmSession(sessionId: string): Promise<Session> {
+  async confirmSession(sessionId: string, toolContext?: ToolContext): Promise<Session> {
     return this.locks.runExclusive(sessionId, async () => {
       const session = await this.getSessionRecord(sessionId);
       if (session.status !== "draft") {
@@ -199,6 +211,7 @@ export class SessionService {
       session.status = "active";
       session.confirmedSetup = session.draft;
       session.playerBodyItemState = session.draft.initialPlayerBodyItemState;
+      session.toolContext = mergeToolContext(session.toolContext, toolContext);
       session.llmConfigSnapshot = config;
       session.promptVersions = {
         ...defaultPromptVersions(),
@@ -245,6 +258,10 @@ export class SessionService {
   }
 
   async postPlayerMessage(sessionId: string, text: string): Promise<Session> {
+    return this.postPlayerMessageWithContext(sessionId, text);
+  }
+
+  async postPlayerMessageWithContext(sessionId: string, text: string, toolContext?: ToolContext): Promise<Session> {
     return this.locks.runExclusive(sessionId, async () => {
       const session = await this.getSessionRecord(sessionId);
       if (session.status !== "active") {
@@ -252,6 +269,7 @@ export class SessionService {
       }
       const now = new Date().toISOString();
       session.storyState.lastPlayerMessageAt = now;
+      session.toolContext = mergeToolContext(session.toolContext, toolContext);
       session.timerState.queuedPlayerMessages.push(text);
       session.timerState.queuedReasons.push("player_message");
       session.updatedAt = now;
@@ -316,20 +334,29 @@ export class SessionService {
     });
   }
 
-  async retrySession(sessionId: string): Promise<Session> {
+  async retrySession(sessionId: string, toolContext?: ToolContext): Promise<Session> {
     const session = await this.getSession(sessionId);
     if (session.status !== "active") {
       throw new HttpError(400, "Session is not active");
     }
+    if (toolContext) {
+      await this.locks.runExclusive(sessionId, async () => {
+        const current = await this.getSessionRecord(sessionId);
+        current.toolContext = mergeToolContext(current.toolContext, toolContext);
+        current.updatedAt = new Date().toISOString();
+        await this.store.replaceSession(current);
+        this.publishSession(current, []);
+      });
+    }
     if (this.scheduler) {
       this.scheduler.requestTick(sessionId, "manual_retry");
-      return session;
+      return this.getSession(sessionId);
     }
     await this.processTick(sessionId, "manual_retry");
     return this.getSession(sessionId);
   }
 
-  async requestAutoTick(sessionId: string): Promise<Session> {
+  async requestAutoTick(sessionId: string, toolContext?: ToolContext): Promise<Session> {
     const reason = `timer_interval:frontend`;
     let shouldProcessImmediately = false;
     const session = await this.locks.runExclusive(sessionId, async () => {
@@ -337,6 +364,8 @@ export class SessionService {
       if (session.status !== "active" || !session.timerState.enabled || session.timerState.inFlight) {
         return session;
       }
+
+      session.toolContext = mergeToolContext(session.toolContext, toolContext);
 
       const nextTickAt = session.timerState.nextTickAt ? Date.parse(session.timerState.nextTickAt) : Number.NaN;
       if (!Number.isNaN(nextTickAt) && nextTickAt > Date.now()) {

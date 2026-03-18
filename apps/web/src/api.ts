@@ -5,6 +5,7 @@ import type {
   SessionEvent,
   SessionListItem,
   TimerUpdate,
+  ToolContext,
   UpdateDraftRequest
 } from "@dglab-ai/shared";
 
@@ -64,20 +65,31 @@ export const api = {
       method: "POST"
     });
   },
-  postMessage(id: string, text: string): Promise<Session> {
+  confirmSessionWithContext(id: string, toolContext?: ToolContext): Promise<Session> {
+    return request<Session>(`/sessions/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(toolContext ? { toolContext } : {})
+    });
+  },
+  postMessage(id: string, text: string, toolContext?: ToolContext): Promise<Session> {
     return request<Session>(`/sessions/${id}/messages`, {
       method: "POST",
-      body: JSON.stringify({ text })
+      body: JSON.stringify({
+        text,
+        ...(toolContext ? { toolContext } : {})
+      })
     });
   },
-  retrySession(id: string): Promise<Session> {
+  retrySession(id: string, toolContext?: ToolContext): Promise<Session> {
     return request<Session>(`/sessions/${id}/retry`, {
-      method: "POST"
+      method: "POST",
+      body: JSON.stringify(toolContext ? { toolContext } : {})
     });
   },
-  requestAutoTick(id: string): Promise<Session> {
+  requestAutoTick(id: string, toolContext?: ToolContext): Promise<Session> {
     return request<Session>(`/sessions/${id}/auto-tick`, {
-      method: "POST"
+      method: "POST",
+      body: JSON.stringify(toolContext ? { toolContext } : {})
     });
   },
   updateTimer(id: string, body: TimerUpdate): Promise<Session> {

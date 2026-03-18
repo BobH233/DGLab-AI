@@ -65,7 +65,12 @@
           </div>
           <span class="soft-pill">{{ displayedEventCount }} 条事件</span>
         </div>
-        <EventTimeline :events="events" :active-pause="activePause" :automation-status="automationTimelineStatus" />
+        <EventTimeline
+          :events="events"
+          :active-pause="activePause"
+          :automation-status="automationTimelineStatus"
+          :device-execution-states="deviceExecutionStates"
+        />
       </section>
 
       <aside class="console-sidebar">
@@ -186,11 +191,18 @@
 </template>
 
 <script setup lang="ts">
-import type { Session, SessionEvent } from "@dglab-ai/shared";
+import { isToolEnabled, type Session, type SessionEvent, type ToolContext } from "@dglab-ai/shared";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api";
 import EventTimeline from "../components/EventTimeline.vue";
+import {
+  applyElectroStimToolEvent,
+  buildElectroStimToolContext,
+  loadElectroStimLocalConfig,
+  parseGameConnectionCode,
+  syncElectroStimToolContext
+} from "../lib/eStim";
 import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
 
 type ActivePauseState = {
@@ -209,6 +221,11 @@ type PlaybackStep =
     event: SessionEvent;
   };
 
+type DeviceExecutionState = {
+  status: "pending" | "success" | "simulated" | "error";
+  detail: string;
+};
+
 const route = useRoute();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
@@ -224,6 +241,7 @@ const requestingAutoTick = ref(false);
 const liveTickInFlight = ref(false);
 const pendingAutomationCooldown = ref(false);
 const playbackCooldownUntil = ref<number | null>(null);
+const deviceExecutionStates = ref<Record<string, DeviceExecutionState>>({});
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
@@ -350,7 +368,7 @@ async function maybeRequestAutoTick() {
 
   requestingAutoTick.value = true;
   try {
-    syncSession(await api.requestAutoTick(session.value.id));
+    syncSession(await api.requestAutoTick(session.value.id, await buildLiveToolContext()));
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "自动推进触发失败";
   } finally {
@@ -363,6 +381,7 @@ async function loadSession() {
   clearLivePlayback();
   syncSession(await api.getSession(id));
   events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
+  deviceExecutionStates.value = {};
   liveTickInFlight.value = hasOpenTick(events.value);
   connectStream(id);
 }
@@ -426,6 +445,7 @@ async function flushLiveQueue() {
           continue;
         }
         events.value = [...events.value, step.event];
+        void maybeExecuteDeviceControl(step.event);
       }
     }
   } finally {
@@ -751,6 +771,76 @@ function pauseEventId(event: SessionEvent): string {
     : `pause:${event.seq}:${event.createdAt}`;
 }
 
+function deviceExecutionKey(event: SessionEvent): string {
+  return `${event.seq}:${event.type}:${event.createdAt}`;
+}
+
+function sessionUsesElectroStimTool(): boolean {
+  return Boolean(
+    session.value?.llmConfigSnapshot
+    && isToolEnabled("control_e_stim_toy", session.value.llmConfigSnapshot.toolStates)
+  );
+}
+
+function hasMeaningfulElectroStimConfig(): boolean {
+  const config = loadElectroStimLocalConfig();
+  return Boolean(
+    config.gameConnectionCode.trim()
+    || config.allowedPulseIds.length > 0
+    || config.channelPlacements.a.trim()
+    || config.channelPlacements.b.trim()
+  );
+}
+
+async function buildLiveToolContext(): Promise<ToolContext | undefined> {
+  if (!sessionUsesElectroStimTool() || !hasMeaningfulElectroStimConfig()) {
+    return undefined;
+  }
+  const localConfig = loadElectroStimLocalConfig();
+  try {
+    if (parseGameConnectionCode(localConfig.gameConnectionCode)) {
+      return await syncElectroStimToolContext(localConfig);
+    }
+  } catch {
+    return buildElectroStimToolContext(localConfig);
+  }
+  return buildElectroStimToolContext(localConfig);
+}
+
+async function maybeExecuteDeviceControl(event: SessionEvent) {
+  if (
+    event.type !== "agent.device_control"
+    || event.payload.action !== "control_e_stim_toy"
+  ) {
+    return;
+  }
+  const executionKey = deviceExecutionKey(event);
+  deviceExecutionStates.value = {
+    ...deviceExecutionStates.value,
+    [executionKey]: {
+      status: "pending",
+      detail: "等待本地前端执行。"
+    }
+  };
+  const result = await applyElectroStimToolEvent(loadElectroStimLocalConfig(), event.payload);
+  deviceExecutionStates.value = {
+    ...deviceExecutionStates.value,
+    [executionKey]: {
+      status: result.status,
+      detail: result.detail
+    }
+  };
+  if (result.toolContext && session.value) {
+    syncSession({
+      ...session.value,
+      toolContext: {
+        ...(session.value.toolContext ?? {}),
+        ...result.toolContext
+      }
+    });
+  }
+}
+
 async function sendMessage() {
   if (!session.value) {
     return;
@@ -758,7 +848,7 @@ async function sendMessage() {
   sending.value = true;
   error.value = "";
   try {
-    await api.postMessage(session.value.id, message.value.trim());
+    await api.postMessage(session.value.id, message.value.trim(), await buildLiveToolContext());
     message.value = "";
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "发送失败";
@@ -774,7 +864,7 @@ async function retryTick() {
   retrying.value = true;
   error.value = "";
   try {
-    syncSession(await api.retrySession(session.value.id));
+    syncSession(await api.retrySession(session.value.id, await buildLiveToolContext()));
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "重试失败";
   } finally {

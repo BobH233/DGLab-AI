@@ -13,6 +13,13 @@ export const toolCatalog = [
     defaultEnabled: true
   },
   {
+    id: "control_e_stim_toy",
+    name: "情趣电击器",
+    description: "允许角色调节前端本地连接的情趣电击器通道强度、波形，或触发一键开火。",
+    required: false,
+    defaultEnabled: false
+  },
+  {
     id: "speak_to_player",
     name: "角色对玩家说话",
     description: "角色向玩家输出对白。",
@@ -441,6 +448,48 @@ export type PromptVersions = z.infer<typeof promptVersionsSchema>;
 export const sessionStatusSchema = z.enum(["draft", "active", "ended"]);
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 
+export const eStimPulseSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1)
+});
+
+export type EStimPulse = z.infer<typeof eStimPulseSchema>;
+
+export const eStimChannelStateSchema = z.object({
+  enabled: z.boolean().default(true),
+  strength: z.number().int().nonnegative().default(0),
+  limit: z.number().int().nonnegative().default(0),
+  tempStrength: z.number().int().nonnegative().default(0),
+  currentPulseId: nullToUndefined(z.string().min(1)),
+  currentPulseName: nullToUndefined(z.string().min(1)),
+  fireStrengthLimit: z.number().int().nonnegative().optional()
+});
+
+export type EStimChannelState = z.infer<typeof eStimChannelStateSchema>;
+
+export const eStimToolContextSchema = z.object({
+  gameConnectionCodeLabel: nullToUndefined(z.string().min(1)),
+  bChannelEnabled: z.boolean().default(false),
+  channelPlacements: z.object({
+    a: nullToUndefined(z.string().min(1)),
+    b: nullToUndefined(z.string().min(1))
+  }).default({}),
+  allowedPulses: z.array(eStimPulseSchema).default([]),
+  lastSyncedAt: nullToUndefined(z.string().datetime()),
+  runtime: z.object({
+    a: eStimChannelStateSchema,
+    b: eStimChannelStateSchema.optional()
+  }).optional()
+});
+
+export type EStimToolContext = z.infer<typeof eStimToolContextSchema>;
+
+export const toolContextSchema = z.object({
+  eStim: nullToUndefined(eStimToolContextSchema)
+});
+
+export type ToolContext = z.infer<typeof toolContextSchema>;
+
 export const sessionSchema = z.object({
   id: z.string(),
   status: sessionStatusSchema,
@@ -454,6 +503,7 @@ export const sessionSchema = z.object({
   memoryState: memoryStateSchema.default(createEmptyMemoryState()),
   timerState: timerStateSchema,
   usageTotals: usageStatsSchema,
+  toolContext: nullToUndefined(toolContextSchema),
   llmConfigSnapshot: nullToUndefined(llmConfigSchema),
   promptVersions: nullToUndefined(promptVersionsSchema),
   createdAt: z.string().datetime(),
@@ -614,6 +664,12 @@ export const timerUpdateSchema = z.object({
 
 export type TimerUpdate = z.infer<typeof timerUpdateSchema>;
 
+export const sessionToolContextRequestSchema = z.object({
+  toolContext: nullToUndefined(toolContextSchema)
+});
+
+export type SessionToolContextRequest = z.infer<typeof sessionToolContextRequestSchema>;
+
 export const createDraftRequestSchema = z.object({
   playerBrief: z.string().min(1)
 });
@@ -636,7 +692,8 @@ export const updateDraftRequestSchema = z.object({
 export type UpdateDraftRequest = z.infer<typeof updateDraftRequestSchema>;
 
 export const postMessageRequestSchema = z.object({
-  text: z.string().min(1)
+  text: z.string().min(1),
+  toolContext: nullToUndefined(toolContextSchema)
 });
 
 export type PostMessageRequest = z.infer<typeof postMessageRequestSchema>;

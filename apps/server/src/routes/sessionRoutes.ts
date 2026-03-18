@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createDraftRequestSchema,
   postMessageRequestSchema,
+  sessionToolContextRequestSchema,
   timerUpdateSchema,
   updateDraftRequestSchema
 } from "@dglab-ai/shared";
@@ -39,7 +40,8 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
 
   router.post("/:id/confirm", async (request, response, next) => {
     try {
-      response.json(await sessionService.confirmSession(request.params.id));
+      const body = sessionToolContextRequestSchema.parse(request.body ?? {});
+      response.json(await sessionService.confirmSession(request.params.id, body.toolContext));
     } catch (error) {
       next(error);
     }
@@ -56,7 +58,7 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
   router.post("/:id/messages", async (request, response, next) => {
     try {
       const body = postMessageRequestSchema.parse(request.body);
-      response.json(await sessionService.postPlayerMessage(request.params.id, body.text));
+      response.json(await sessionService.postPlayerMessageWithContext(request.params.id, body.text, body.toolContext));
     } catch (error) {
       next(error);
     }
@@ -64,7 +66,8 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
 
   router.post("/:id/retry", async (request, response, next) => {
     try {
-      response.json(await sessionService.retrySession(request.params.id));
+      const body = sessionToolContextRequestSchema.parse(request.body ?? {});
+      response.json(await sessionService.retrySession(request.params.id, body.toolContext));
     } catch (error) {
       next(error);
     }
@@ -72,7 +75,8 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
 
   router.post("/:id/auto-tick", async (request, response, next) => {
     try {
-      response.json(await sessionService.requestAutoTick(request.params.id));
+      const body = sessionToolContextRequestSchema.parse(request.body ?? {});
+      response.json(await sessionService.requestAutoTick(request.params.id, body.toolContext));
     } catch (error) {
       next(error);
     }

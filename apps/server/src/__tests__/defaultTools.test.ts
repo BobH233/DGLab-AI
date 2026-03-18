@@ -70,10 +70,13 @@ describe("createDefaultToolRegistry", () => {
 
     const contributions = registry.getWorldPromptContributions({
       playerBrief: "想要被遥控玩具挑逗的暧昧剧情"
+    }, {
+      control_e_stim_toy: true
     });
 
     expect(contributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(true);
     expect(contributions.find((entry) => entry.toolId === "control_vibe_toy")?.prompt).toContain("震动小玩具");
+    expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
   });
 
   it("filters optional tools by global tool state while keeping required tools enabled", async () => {
@@ -153,11 +156,13 @@ describe("createDefaultToolRegistry", () => {
     const session = createSession();
     const events: Array<unknown> = [];
 
-    expect(await registry.getTurnPromptContributions({
+    const beforeContributions = await registry.getTurnPromptContributions({
       session,
       now: new Date().toISOString(),
       reason: "player_message"
-    })).toEqual([]);
+    });
+
+    expect(beforeContributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(false);
 
     await registry.execute({
       session,
@@ -175,16 +180,108 @@ describe("createDefaultToolRegistry", () => {
       session,
       now: new Date().toISOString(),
       reason: "player_message"
+    }, {
+      control_e_stim_toy: true
     });
+    const vibeContribution = contributions.find((entry) => entry.toolId === "control_vibe_toy");
 
     expect(events).toHaveLength(1);
-    expect(contributions).toHaveLength(1);
-    expect(contributions[0]).toMatchObject({
+    expect(vibeContribution).toMatchObject({
       toolId: "control_vibe_toy"
     });
-    expect(contributions[0]?.prompt).toContain("强度 72%");
-    expect(contributions[0]?.prompt).toContain("模式：pulse");
-    expect(contributions[0]?.prompt).toContain("状态来源：simulated");
+    expect(vibeContribution?.prompt).toContain("强度 72%");
+    expect(vibeContribution?.prompt).toContain("模式：pulse");
+    expect(vibeContribution?.prompt).toContain("状态来源：simulated");
+  });
+
+  it("exposes e-stim runtime context and emits a frontend-pending device event", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    session.toolContext = {
+      eStim: {
+        gameConnectionCodeLabel: "client@http://127.0.0.1:8920",
+        bChannelEnabled: true,
+        channelPlacements: {
+          a: "臀部",
+          b: "大腿两侧"
+        },
+        allowedPulses: [
+          { id: "pulse_1", name: "呼吸" },
+          { id: "pulse_2", name: "敲击" }
+        ],
+        lastSyncedAt: new Date().toISOString(),
+        runtime: {
+          a: {
+            enabled: true,
+            strength: 4,
+            limit: 20,
+            tempStrength: 0,
+            currentPulseId: "pulse_1",
+            currentPulseName: "呼吸",
+            fireStrengthLimit: 30
+          },
+          b: {
+            enabled: true,
+            strength: 6,
+            limit: 20,
+            tempStrength: 0,
+            currentPulseId: "pulse_2",
+            currentPulseName: "敲击",
+            fireStrengthLimit: 25
+          }
+        }
+      }
+    };
+    const events: Array<unknown> = [];
+
+    const contributions = await registry.getTurnPromptContributions({
+      session,
+      now: new Date().toISOString(),
+      reason: "player_message"
+    }, {
+      control_e_stim_toy: true
+    });
+
+    expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("允许调用的波形名：呼吸、敲击");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("B 通道");
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event);
+      }
+    }, "control_e_stim_toy", {
+      command: "fire",
+      durationMs: 4000,
+      override: true,
+      channels: {
+        a: {
+          intensityPercent: 60,
+          pulseName: "呼吸"
+        },
+        b: {
+          enabled: true,
+          intensityPercent: 35,
+          pulseName: "敲击"
+        }
+      }
+    }, {
+      control_e_stim_toy: true
+    });
+
+    expect(events[0]).toMatchObject({
+      type: "agent.device_control",
+      payload: {
+        action: "control_e_stim_toy",
+        command: "fire",
+        durationMs: 4000,
+        status: "frontend_pending"
+      }
+    });
+    expect(session.agentStates.director.intent).toBe("control_e_stim_toy");
   });
 
   it("rejects unknown tools", async () => {

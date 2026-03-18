@@ -258,6 +258,25 @@ a {
   align-items: start;
 }
 
+.e-stim-layout {
+  align-items: start;
+}
+
+.e-stim-connection-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.e-stim-summary-card {
+  padding: 16px 18px;
+  border: 1px solid rgba(53, 105, 122, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(125, 197, 220, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(245, 251, 254, 0.98), rgba(237, 247, 250, 0.96));
+}
+
 .backend-list {
   display: grid;
   gap: 12px;
@@ -589,6 +608,23 @@ a {
 .timeline-item[data-optional-tool="true"] .event-tag {
   background: rgba(179, 95, 47, 0.12);
   color: #8f4e2c;
+}
+
+.event-card--e-stim-control {
+  background:
+    radial-gradient(circle at top right, rgba(119, 219, 203, 0.18), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(246, 174, 94, 0.16), transparent 32%),
+    linear-gradient(135deg, rgba(244, 252, 251, 0.99), rgba(232, 247, 245, 0.97));
+  border-color: rgba(56, 129, 123, 0.26);
+  box-shadow:
+    0 18px 38px rgba(52, 114, 109, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.event-card--e-stim-control .event-detail-row {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .timeline-item[data-kind="dialogue"] .event-kicker {

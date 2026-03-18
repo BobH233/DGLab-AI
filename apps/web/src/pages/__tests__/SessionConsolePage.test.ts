@@ -225,6 +225,6 @@ describe("SessionConsolePage", () => {
     await flushPromises();
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(apiMocks.requestAutoTick).toHaveBeenCalledWith("session_1");
+    expect(apiMocks.requestAutoTick).toHaveBeenCalledWith("session_1", undefined);
   });
 });

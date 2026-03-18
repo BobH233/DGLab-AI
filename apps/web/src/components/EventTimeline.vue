@@ -87,7 +87,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { SessionEvent } from "@dglab-ai/shared";
-import { buildTimelinePresentationItems, type PresentationItem } from "../lib/timelinePresentation";
+import {
+  buildTimelinePresentationItems,
+  type DeviceExecutionState,
+  type PresentationItem
+} from "../lib/timelinePresentation";
 
 type ActivePauseState = {
   id: string;
@@ -104,10 +108,11 @@ const props = defineProps<{
   events: SessionEvent[];
   activePause?: ActivePauseState | null;
   automationStatus?: AutomationStatusState | null;
+  deviceExecutionStates?: Record<string, DeviceExecutionState>;
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
-  return buildTimelinePresentationItems(props.events).slice().reverse();
+  return buildTimelinePresentationItems(props.events, props.deviceExecutionStates ?? {}).slice().reverse();
 });
 
 function isLivePause(item: PresentationItem): boolean {
@@ -124,6 +129,7 @@ function cardClass(item: PresentationItem): string[] {
     ...(item.kind === "player" ? ["event-card--player"] : []),
     ...(item.kind === "dialogue" ? ["event-card--dialogue"] : []),
     ...(item.kind === "inventory" ? ["event-card--inventory"] : []),
+    ...(item.variant === "e-stim-control" ? ["event-card--e-stim-control"] : []),
     ...(item.optionalTool ? ["event-card--optional-tool"] : [])
   ];
 }

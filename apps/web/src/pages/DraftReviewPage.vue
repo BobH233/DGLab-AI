@@ -93,13 +93,21 @@
 </template>
 
 <script setup lang="ts">
-import type { AgentProfile, Session, UpdateDraftRequest } from "@dglab-ai/shared";
+import { isToolEnabled, type AgentProfile, type Session, type ToolContext, type UpdateDraftRequest } from "@dglab-ai/shared";
 import { onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
+import { useConfigStore } from "../configStore";
+import {
+  buildElectroStimToolContext,
+  initializeElectroStimToZero,
+  loadElectroStimLocalConfig,
+  parseGameConnectionCode
+} from "../lib/eStim";
 
 const route = useRoute();
 const router = useRouter();
+const configStore = useConfigStore();
 const session = ref<Session | null>(null);
 const draft = reactive<UpdateDraftRequest & { title: string; agents: AgentProfile[] }>({
   title: "",
@@ -186,7 +194,21 @@ async function confirmDraft() {
   error.value = "";
   try {
     await api.updateDraft(String(route.params.id), serializeDraft());
-    const next = await api.confirmSession(String(route.params.id));
+    const appConfig = await configStore.ensureConfigLoaded();
+    const activeBackend = appConfig.backends.find((backend) => backend.id === appConfig.activeBackendId);
+    let toolContext: ToolContext | undefined;
+    if (activeBackend && isToolEnabled("control_e_stim_toy", activeBackend.toolStates)) {
+      const localConfig = loadElectroStimLocalConfig();
+      toolContext = buildElectroStimToolContext(localConfig);
+      if (parseGameConnectionCode(localConfig.gameConnectionCode)) {
+        try {
+          toolContext = await initializeElectroStimToZero(localConfig);
+        } catch {
+          toolContext = buildElectroStimToolContext(localConfig);
+        }
+      }
+    }
+    const next = await api.confirmSessionWithContext(String(route.params.id), toolContext);
     await router.push(`/sessions/${next.id}`);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "确认失败";

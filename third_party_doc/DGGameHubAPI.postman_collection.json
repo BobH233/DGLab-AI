@@ -1,0 +1,300 @@
+{
+  "info": {
+    "_postman_id": "28552e55-8679-44a6-94cf-1ec281c5ac89",
+    "name": "DGGameHubAPI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "26178137"
+  },
+  "item": [
+    {
+      "name": "获取玩具信息",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5174/api/v2/game/b8dd3938-d7b0-47c9-ad6a-d106b1854af2",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5174",
+          "path": [
+            "api",
+            "v2",
+            "game",
+            "b8dd3938-d7b0-47c9-ad6a-d106b1854af2"
+          ]
+        }
+      },
+      "response": {
+        "status": 1,
+        "code": "OK",
+        "strengthConfig": {
+          "a": {
+            "strength": 10,
+            "randomStrength": 0
+          },
+          "b": {
+            "strength": 30,
+            "randomStrength": 0
+          }
+        },
+        "gameConfig": {
+          "channels": {
+            "a": {
+              "enabled": true,
+              "strengthChangeInterval": [
+                15,
+                30
+              ],
+              "fireStrengthLimit": 30,
+              "pulseId": "d6f83af0",
+              "firePulseId": null,
+              "pulseMode": "single",
+              "pulseChangeInterval": 60
+            },
+            "b": {
+              "enabled": false,
+              "strengthChangeInterval": [
+                15,
+                30
+              ],
+              "fireStrengthLimit": 30,
+              "pulseId": "d6f83af0",
+              "firePulseId": null,
+              "pulseMode": "single",
+              "pulseChangeInterval": 60
+            }
+          }
+        },
+        "clientStrength": {
+          "a": {
+            "strength": 10,
+            "limit": 90,
+            "tempStrength": 0
+          },
+          "b": {
+            "strength": 0,
+            "limit": 42,
+            "tempStrength": 0
+          }
+        },
+        "currentPulseId": {
+          "a": "d6f83af0",
+          "b": "d6f83af0"
+        }
+      }
+    },
+    {
+      "name": "设置玩具强度",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"channels\": {\n    \"a\": {\n      \"strength\": { \"set\": 10 },\n      \"randomStrength\": { \"set\": 0 }\n    },\n    \"b\": {\n      \"strength\": { \"set\": 20 },\n      \"randomStrength\": { \"set\": 0 }\n    }\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:5174/api/v2/game/a2ddd8c8-e730-4dd0-8559-024bb4b038ec/strength",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5174",
+          "path": [
+            "api",
+            "v2",
+            "game",
+            "a2ddd8c8-e730-4dd0-8559-024bb4b038ec",
+            "strength"
+          ]
+        }
+      },
+      "response": {
+        "status": 1,
+        "code": "OK",
+        "message": "成功设置了 1 个游戏的强度配置",
+        "successClientIds": [
+          "488b55d9-acb2-4e3f-bd36-b05547b30c10"
+        ]
+      }
+    },
+    {
+      "name": "获取玩具波形配置",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5174/api/v2/game/b8dd3938-d7b0-47c9-ad6a-d106b1854af2/pulse_list",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5174",
+          "path": [
+            "api",
+            "v2",
+            "game",
+            "b8dd3938-d7b0-47c9-ad6a-d106b1854af2",
+            "pulse_list"
+          ]
+        }
+      },
+      "response": {
+        "status": 1,
+        "code": "OK",
+        "pulseList": [
+          {
+            "id": "d6f83af0",
+            "name": "呼吸"
+          },
+          {
+            "id": "7eae1e5f",
+            "name": "潮汐"
+          },
+          {
+            "id": "eea0e4ce",
+            "name": "连击"
+          },
+          {
+            "id": "2cbd592e",
+            "name": "快速按捏"
+          },
+          {
+            "id": "d99221f6",
+            "name": "按捏渐强"
+          },
+          {
+            "id": "cd9868d3",
+            "name": "心跳节奏"
+          },
+          {
+            "id": "dc033dc1",
+            "name": "压缩"
+          },
+          {
+            "id": "9be2ec50",
+            "name": "节奏步伐"
+          },
+          {
+            "id": "ec8c5e88",
+            "name": "颗粒摩擦"
+          },
+          {
+            "id": "00337ed4",
+            "name": "渐变弹跳"
+          },
+          {
+            "id": "bd272001",
+            "name": "波浪涟漪"
+          },
+          {
+            "id": "526fb051",
+            "name": "雨水冲刷"
+          },
+          {
+            "id": "32656da9",
+            "name": "变速敲击"
+          },
+          {
+            "id": "c93b68ec",
+            "name": "信号灯"
+          },
+          {
+            "id": "ec329704",
+            "name": "挑逗1"
+          },
+          {
+            "id": "f2679890",
+            "name": "挑逗2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "设置某个通道的波形",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"channels\": {\n    \"b\": {\n      \"pulseId\": \"d6f83af0\"\n    }\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:5174/api/v2/game/b8dd3938-d7b0-47c9-ad6a-d106b1854af2/pulse",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5174",
+          "path": [
+            "api",
+            "v2",
+            "game",
+            "b8dd3938-d7b0-47c9-ad6a-d106b1854af2",
+            "pulse"
+          ]
+        }
+      },
+      "response": {
+        "status": 1,
+        "code": "OK",
+        "message": "成功设置了 1 个游戏的波形ID",
+        "successClientIds": [
+          "488b55d9-acb2-4e3f-bd36-b05547b30c10"
+        ]
+      }
+    },
+    {
+      "name": "一键开火设置",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"time\": 5000,\n  \"channels\": {\n    \"a\": {\n      \"strength\": 18,\n      \"pulseId\": \"d6f83af0\",\n      \"enabled\": true\n    },\n    \"b\": {\n      \"strength\": 18,\n      \"pulseId\": \"c93b68ec\",\n      \"enabled\": true\n    }\n  }\n}\n",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:5174/api/v2/game/488b55d9-acb2-4e3f-bd36-b05547b30c10/action/fire",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5174",
+          "path": [
+            "api",
+            "v2",
+            "game",
+            "488b55d9-acb2-4e3f-bd36-b05547b30c10",
+            "action",
+            "fire"
+          ]
+        }
+      },
+      "response": {
+        "status": 1,
+        "code": "OK",
+        "message": "成功向 1 个游戏发送了一键开火指令",
+        "successClientIds": [
+          "488b55d9-acb2-4e3f-bd36-b05547b30c10"
+        ],
+        "warnings": []
+      }
+    }
+  ]
+}
