@@ -40,8 +40,9 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api";
-import type { SessionListItem } from "@dglab-ai/shared";
+import { isToolEnabled, type ToolContext, type SessionListItem } from "@dglab-ai/shared";
 import { useConfigStore } from "../configStore";
+import { buildElectroStimToolContext, loadElectroStimLocalConfig } from "../lib/eStim";
 
 const router = useRouter();
 const configStore = useConfigStore();
@@ -63,7 +64,13 @@ async function createDraft() {
   loading.value = true;
   error.value = "";
   try {
-    const session = await api.createDraft(playerBrief.value.trim());
+    const appConfig = await configStore.ensureConfigLoaded();
+    const activeBackend = appConfig.backends.find((backend) => backend.id === appConfig.activeBackendId);
+    let toolContext: ToolContext | undefined;
+    if (activeBackend && isToolEnabled("control_e_stim_toy", activeBackend.toolStates)) {
+      toolContext = buildElectroStimToolContext(loadElectroStimLocalConfig());
+    }
+    const session = await api.createDraft(playerBrief.value.trim(), toolContext);
     await router.push(`/sessions/${session.id}/draft`);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "创建失败";

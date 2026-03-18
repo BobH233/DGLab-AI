@@ -7,7 +7,8 @@ import {
   type NarrativeContextBundle,
   type Session,
   type SessionDraft,
-  type SessionEvent
+  type SessionEvent,
+  type ToolContext
 } from "@dglab-ai/shared";
 import { z } from "zod";
 import { createId } from "../lib/ids.js";
@@ -269,9 +270,10 @@ function sameStringList(left: string[], right: string[]): boolean {
 function worldBuilderToolHooksForPrompt(
   toolRegistry: ToolRegistry,
   playerBrief: string,
+  toolContext: ToolContext | undefined,
   toolStates?: Record<string, boolean>
 ): string {
-  const contributions = toolRegistry.getWorldPromptContributions({ playerBrief }, toolStates);
+  const contributions = toolRegistry.getWorldPromptContributions({ playerBrief, toolContext }, toolStates);
   if (contributions.length === 0) {
     return "No additional tool-specific world constraints.";
   }
@@ -329,11 +331,11 @@ export class DefaultOrchestratorService implements OrchestratorService {
     private readonly tools: ToolRegistry
   ) {}
 
-  async generateDraft(playerBrief: string, config: LlmConfig): Promise<SessionDraft> {
+  async generateDraft(playerBrief: string, config: LlmConfig, toolContext?: ToolContext): Promise<SessionDraft> {
     const prompt = await this.prompts.render("world_builder", {
       sharedSafety: await this.prompts.getTemplate("shared_safety_preamble"),
       playerBrief,
-      toolWorldHooks: worldBuilderToolHooksForPrompt(this.tools, playerBrief, config.toolStates)
+      toolWorldHooks: worldBuilderToolHooksForPrompt(this.tools, playerBrief, toolContext, config.toolStates)
     });
     const response = await this.provider.completeJson({
       modelConfig: config,

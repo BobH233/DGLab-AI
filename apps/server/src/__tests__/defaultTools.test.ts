@@ -69,7 +69,31 @@ describe("createDefaultToolRegistry", () => {
     const registry = createDefaultToolRegistry();
 
     const contributions = registry.getWorldPromptContributions({
-      playerBrief: "想要被遥控玩具挑逗的暧昧剧情"
+      playerBrief: "想要被遥控玩具挑逗的暧昧剧情",
+      toolContext: {
+        eStim: {
+          bChannelEnabled: true,
+          channelPlacements: {
+            a: "臀部",
+            b: "大腿两侧"
+          },
+          allowedPulses: [],
+          runtime: {
+            a: {
+              enabled: true,
+              strength: 0,
+              limit: 20,
+              tempStrength: 0
+            },
+            b: {
+              enabled: true,
+              strength: 0,
+              limit: 20,
+              tempStrength: 0
+            }
+          }
+        }
+      }
     }, {
       control_e_stim_toy: true
     });
@@ -77,6 +101,9 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(true);
     expect(contributions.find((entry) => entry.toolId === "control_vibe_toy")?.prompt).toContain("震动小玩具");
     expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("已经提前贴好");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("A 通道输出已经连接在：臀部。");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("B 通道输出已经连接在：大腿两侧。");
   });
 
   it("filters optional tools by global tool state while keeping required tools enabled", async () => {
@@ -245,6 +272,8 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("允许调用的波形名：呼吸、敲击");
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("B 通道");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("连接位置：臀部");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("连接位置：大腿两侧");
 
     await registry.execute({
       session,

@@ -23,7 +23,7 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
   router.post("/draft", async (request, response, next) => {
     try {
       const body = createDraftRequestSchema.parse(request.body);
-      response.status(201).json(await sessionService.createDraft(body.playerBrief));
+      response.status(201).json(await sessionService.createDraft(body.playerBrief, body.toolContext));
     } catch (error) {
       next(error);
     }

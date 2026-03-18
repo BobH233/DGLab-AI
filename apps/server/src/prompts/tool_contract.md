@@ -69,6 +69,9 @@ Rules:
 - Use concise action batches, but not artificially tiny ones. Prefer roughly 1-8 actions when that gives the scene room to breathe.
 - The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
 - For `control_e_stim_toy`, only use wave names the runtime context explicitly says are allowed. If B 通道未启用，就不要给 B 通道发指令。
+- For `control_e_stim_toy`, treat `command:"set"` and `command:"fire"` differently. `set` is for sustained adjustment: keeping pressure steady, gradually increasing it, or changing wave shape as part of ongoing control.
+- `command:"fire"` is a timed burst: it rapidly jumps to the requested strength, holds the requested wave for `durationMs`, and is better for sudden punishment, sharper control, interruption, forced compliance, or moments where you want the player to feel a more volatile and uncertain loss of control.
+- Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing.
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
 - Do not stall waiting for the player to invent the next move. When the scene already contains enough context, let agents proactively choose the next pressure point, prop, instruction, or positional change.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.

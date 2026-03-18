@@ -671,7 +671,8 @@ export const sessionToolContextRequestSchema = z.object({
 export type SessionToolContextRequest = z.infer<typeof sessionToolContextRequestSchema>;
 
 export const createDraftRequestSchema = z.object({
-  playerBrief: z.string().min(1)
+  playerBrief: z.string().min(1),
+  toolContext: nullToUndefined(toolContextSchema)
 });
 
 export type CreateDraftRequest = z.infer<typeof createDraftRequestSchema>;

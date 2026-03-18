@@ -109,9 +109,9 @@ export class SessionService {
     return this.store.listSchedulableSessions();
   }
 
-  async createDraft(playerBrief: string): Promise<Session> {
+  async createDraft(playerBrief: string, toolContext?: ToolContext): Promise<Session> {
     const config = await this.store.getConfig();
-    const draft = sessionDraftSchema.parse(await this.orchestrator.generateDraft(playerBrief, config));
+    const draft = sessionDraftSchema.parse(await this.orchestrator.generateDraft(playerBrief, config, toolContext));
     const now = new Date().toISOString();
     const session: Session = {
       id: createId("session"),
@@ -141,7 +141,7 @@ export class SessionService {
         pendingWaits: []
       },
       usageTotals: createEmptyUsageStats(),
-      toolContext: undefined,
+      toolContext,
       createdAt: now,
       updatedAt: now,
       lastSeq: 0

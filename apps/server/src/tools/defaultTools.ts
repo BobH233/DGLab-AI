@@ -229,10 +229,19 @@ export function createDefaultToolRegistry(): ToolRegistry {
         argsShape: "{\"command\":\"set|fire\",\"channels\":{\"a\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"},\"b\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"}},\"durationMs\":100-30000,\"override\":true}",
         example: "{\"tool\":\"control_e_stim_toy\",\"args\":{\"command\":\"fire\",\"durationMs\":5000,\"override\":true,\"channels\":{\"a\":{\"intensityPercent\":55,\"pulseName\":\"呼吸\"},\"b\":{\"enabled\":true,\"intensityPercent\":30,\"pulseName\":\"敲击\"}}}}"
       },
-      buildWorldPrompt() {
+      buildWorldPrompt(context) {
+        const eStim = context.toolContext?.eStim;
+        const channelALocation = eStim?.channelPlacements.a?.trim() || "玩家预先设置好的 A 通道位置";
+        const channelBEnabled = eStim?.bChannelEnabled ?? false;
+        const channelBLocation = eStim?.channelPlacements.b?.trim() || "玩家预先设置好的 B 通道位置";
         return [
-          "在生成世界背景时，可以把情趣电击器视为一个可能存在的本地可控装置，但它同样只是众多可用元素之一，不应垄断整场互动。",
-          "如果你让角色提及或使用它，请保持成人、克制、非露骨的表达，重点放在控制感、期待感、试探与节奏变化，而不是直白生理描写。",
+          "在生成世界背景时，默认视为玩家“你”身上已经提前贴好并接入了一个可由前端本地接口驱动的情趣电击器，不需要再把它写成尚未安装或尚未贴上的状态。",
+          `A 通道输出已经连接在：${channelALocation}。`,
+          channelBEnabled
+            ? `B 通道输出已经连接在：${channelBLocation}。`
+            : "B 通道当前默认未启用，不要把它写成已经在运行中的第二路通道。",
+          "请让这个装置的已安装状态自然体现在 `worldSummary`、`openingSituation`、`playerState` 以及 `initialPlayerBodyItemState` 里，让角色从一开始就能合理感知、提及或操控它。",
+          "如果你让角色提及或使用它，请保持成人、克制的表达，重点放在控制感、期待感、试探与节奏变化，而不是直白生理描写。",
           "后续角色可调用 `control_e_stim_toy` 工具，对 A / B 通道分别调节强度百分比、切换波形名，或触发带持续时间的一键开火。"
         ].join("\n");
       },
@@ -272,6 +281,10 @@ export function createDefaultToolRegistry(): ToolRegistry {
           channelBLine,
           eStim.lastSyncedAt ? `最近一次前端状态同步：${eStim.lastSyncedAt}` : "最近一次前端状态同步：未提供",
           "调用 `control_e_stim_toy` 时请只使用波形名称 `pulseName`，不要输出底层 pulseId。前端会自行把名称映射到真实 id。",
+          "`command: \"set\"` 适合做持续性的强度调整或常规波形切换，让压力慢慢抬升、维持或细致变化。",
+          "`command: \"fire\"` 是一种限时爆发控制：它会在触发后迅速把目标通道拉到你指定的强度，并在 `durationMs` 这段时间里维持指定波形，然后再结束这次爆发。",
+          "因此 `fire` 更适合用于短时强化、突然打断、明确惩罚、迫使服从、放大不确定感，或在玩家刚放松、犹豫、嘴硬、挑衅、违抗时制造更强的掌控感。",
+          "不要把 `fire` 当成每轮都要使用的常规动作。只有在你需要一个更突发、更强制、更具有掌控或惩罚意味的节奏节点时再使用它；其余情况下优先用 `set` 做细腻控制。",
           "如果只是调节电击器强度、波形或开火，不要改动 `playerBodyItemState`。"
         ].join("\n");
       },

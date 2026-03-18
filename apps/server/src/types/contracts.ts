@@ -11,6 +11,7 @@ import type {
   SessionDraft,
   SessionEvent,
   SseEvent,
+  ToolContext,
   UsageEntry
 } from "@dglab-ai/shared";
 
@@ -63,6 +64,7 @@ export type ToolExecutionContext = {
 
 export type ToolWorldPromptContext = {
   playerBrief: string;
+  toolContext?: ToolContext;
 };
 
 export interface ToolWorldPromptContribution {
@@ -152,7 +154,7 @@ export interface OrchestratorTurnResult {
 }
 
 export interface OrchestratorService {
-  generateDraft(playerBrief: string, config: LlmConfig): Promise<SessionDraft>;
+  generateDraft(playerBrief: string, config: LlmConfig, toolContext?: ToolContext): Promise<SessionDraft>;
   runTick(
     session: Session,
     reason: string,

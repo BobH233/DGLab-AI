@@ -45,10 +45,13 @@ export const api = {
   listSessions(): Promise<SessionListItem[]> {
     return request<SessionListItem[]>("/sessions");
   },
-  createDraft(playerBrief: string): Promise<Session> {
+  createDraft(playerBrief: string, toolContext?: ToolContext): Promise<Session> {
     return request<Session>("/sessions/draft", {
       method: "POST",
-      body: JSON.stringify({ playerBrief })
+      body: JSON.stringify({
+        playerBrief,
+        ...(toolContext ? { toolContext } : {})
+      })
     });
   },
   getSession(id: string): Promise<Session> {
