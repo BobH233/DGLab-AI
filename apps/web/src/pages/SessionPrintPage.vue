@@ -1,14 +1,27 @@
 <template>
-  <section v-if="session" class="print-page">
+  <section v-if="session" class="print-page" :data-orientation="orientation">
     <header class="print-toolbar screen-only">
-      <div>
+      <div class="print-toolbar__intro">
         <span class="eyebrow">Print Preview</span>
         <h2>导出当前会话为 PDF</h2>
-        <p class="soft-note">建议使用浏览器打印中的“另存为 PDF”。</p>
+        <p class="soft-note">当前打印模式为{{ orientationLabel }}；网页预览不会大幅变化，方向主要作用在最终 PDF 上。</p>
       </div>
-      <div class="actions">
+      <div class="print-toolbar__actions">
+        <button
+          class="button primary"
+          type="button"
+          @click="printWithOrientation('portrait')"
+        >
+          打印竖版
+        </button>
+        <button
+          class="button primary"
+          type="button"
+          @click="printWithOrientation('landscape')"
+        >
+          打印横版
+        </button>
         <RouterLink class="button secondary" :to="`/sessions/${session.id}`">返回会话</RouterLink>
-        <button class="button primary" type="button" @click="printDocument">打印 / 导出 PDF</button>
       </div>
     </header>
 
@@ -85,6 +98,29 @@
 
       <section class="print-section">
         <div class="print-section__head">
+          <span class="print-section__kicker">LLM</span>
+          <h3>会话使用的后端模型</h3>
+        </div>
+        <div class="print-model-grid">
+          <article class="print-info-card">
+            <h4>提供方</h4>
+            <p>{{ providerLabel }}</p>
+          </article>
+          <article class="print-info-card">
+            <h4>接口地址</h4>
+            <p>{{ baseUrlLabel }}</p>
+          </article>
+        </div>
+        <div v-if="usedModels.length" class="print-tags print-tags--dense">
+          <span v-for="model in usedModels" :key="model" class="print-tag">{{ model }}</span>
+        </div>
+        <div v-else class="print-empty">
+          当前会话没有记录到模型调用信息。
+        </div>
+      </section>
+
+      <section class="print-section">
+        <div class="print-section__head">
           <span class="print-section__kicker">Timeline</span>
           <h3>剧情时间线</h3>
         </div>
@@ -133,15 +169,18 @@
 
 <script setup lang="ts">
 import type { AgentProfile, Session, SessionEvent, SessionDraft } from "@dglab-ai/shared";
-import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
 import { buildTimelinePresentationItems } from "../lib/timelinePresentation";
 
 const route = useRoute();
+const router = useRouter();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
 const error = ref("");
+let printPageStyleElement: HTMLStyleElement | null = null;
+let autoPrintTriggered = false;
 
 const setupSource = computed<SessionDraft>(() => session.value?.confirmedSetup ?? session.value?.draft ?? {
   title: "",
@@ -156,7 +195,21 @@ const setupSource = computed<SessionDraft>(() => session.value?.confirmedSetup ?
   contentNotes: []
 });
 
-const timelineItems = computed(() => buildTimelinePresentationItems(events.value));
+const timelineItems = computed(() => {
+  const printableEvents = events.value.filter((event) => !isHiddenInPrint(event.type));
+  return buildTimelinePresentationItems(printableEvents);
+});
+const orientation = computed<"portrait" | "landscape">(() => {
+  const queryValue = route.query.orientation;
+  const value = Array.isArray(queryValue) ? queryValue[0] : queryValue;
+  return value === "landscape" ? "landscape" : "portrait";
+});
+const shouldAutoPrint = computed(() => {
+  const queryValue = route.query.autoprint;
+  const value = Array.isArray(queryValue) ? queryValue[0] : queryValue;
+  return value === "1";
+});
+const orientationLabel = computed(() => orientation.value === "landscape" ? "横版" : "竖版");
 const exportTimestamp = computed(() => formatDateTime(new Date().toISOString()));
 const statusLabel = computed(() => {
   if (!session.value) {
@@ -170,6 +223,25 @@ const statusLabel = computed(() => {
   }
   return "草案";
 });
+const usedModels = computed(() => {
+  const models = new Set<string>();
+  for (const call of session.value?.usageTotals.byCall ?? []) {
+    if (typeof call.model === "string" && call.model.trim()) {
+      models.add(call.model.trim());
+    }
+  }
+  const lastModel = session.value?.usageTotals.session.lastModel;
+  if (typeof lastModel === "string" && lastModel.trim()) {
+    models.add(lastModel.trim());
+  }
+  const snapshotModel = session.value?.llmConfigSnapshot?.model;
+  if (typeof snapshotModel === "string" && snapshotModel.trim()) {
+    models.add(snapshotModel.trim());
+  }
+  return Array.from(models);
+});
+const providerLabel = computed(() => session.value?.llmConfigSnapshot?.provider ?? "未记录");
+const baseUrlLabel = computed(() => session.value?.llmConfigSnapshot?.baseUrl ?? "未记录");
 const agentCards = computed(() => {
   return setupSource.value.agents.map((agent: AgentProfile) => ({
     id: agent.id,
@@ -192,6 +264,7 @@ async function loadPrintView() {
     if (typeof document !== "undefined") {
       document.title = `${nextSession.title} · 打印预览`;
     }
+    await maybeAutoPrint();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "打印预览加载失败";
   }
@@ -203,11 +276,62 @@ function printDocument() {
   }
 }
 
+async function printWithOrientation(nextOrientation: "portrait" | "landscape") {
+  if (orientation.value !== nextOrientation) {
+    await router.replace({
+      query: {
+        ...route.query,
+        orientation: nextOrientation
+      }
+    });
+    await nextTick();
+  }
+  applyPrintPageOrientation();
+  await nextTick();
+  printDocument();
+}
+
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function isHiddenInPrint(type: SessionEvent["type"]): boolean {
+  return type === "system.timer_updated" || type === "system.usage_recorded" || type === "system.tick_failed";
+}
+
+async function maybeAutoPrint() {
+  if (!shouldAutoPrint.value || autoPrintTriggered || !session.value || typeof window === "undefined") {
+    return;
+  }
+  autoPrintTriggered = true;
+  await nextTick();
+  window.print();
+}
+
+function applyPrintPageOrientation() {
+  if (typeof document === "undefined") {
+    return;
+  }
+  if (!printPageStyleElement) {
+    printPageStyleElement = document.createElement("style");
+    printPageStyleElement.setAttribute("data-print-orientation", "session-print");
+    document.head.appendChild(printPageStyleElement);
+  }
+  printPageStyleElement.textContent = `@media print { @page { size: A4 ${orientation.value}; margin: 8mm; } }`;
+}
+
 onMounted(() => {
   void loadPrintView();
+});
+
+watch(orientation, () => {
+  applyPrintPageOrientation();
+}, {
+  immediate: true
+});
+
+onBeforeUnmount(() => {
+  printPageStyleElement?.remove();
+  printPageStyleElement = null;
 });
 </script>
