@@ -627,6 +627,10 @@ a {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.event-card--e-stim-control .event-detail-list + .event-meta {
+  margin-top: 14px;
+}
+
 .timeline-item[data-kind="dialogue"] .event-kicker {
   color: #8a5d3f;
 }

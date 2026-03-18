@@ -86,6 +86,7 @@ export interface ToolTurnPromptContribution {
 export interface ToolPromptContract {
   argsShape: string;
   example: string;
+  guidance?: string[];
 }
 
 export interface ToolDefinition<TArgs = unknown> {

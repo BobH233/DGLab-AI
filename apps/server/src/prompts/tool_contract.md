@@ -34,15 +34,7 @@ Tool reference:
 Valid full JSON examples:
 {{toolExamples}}
 
-Use only the exact argument keys below:
-- `control_e_stim_toy`: `{"command":"set|fire","channels":{"a":{"intensityPercent":40,"pulseName":"呼吸"},"b":{"enabled":true,"intensityPercent":25,"pulseName":"敲击"}},"durationMs":5000,"override":true}`
-- `speak_to_player`: `{"message":"..."}`
-- `speak_to_agent`: `{"targetAgentId":"...","message":"..."}`
-- `emit_reasoning_summary`: `{"summary":"..."}`
-- `perform_stage_direction`: `{"direction":"..."}`
-- `apply_story_effect`: `{"label":"...","description":"...","intensity":5}`
-- `update_scene_state`: `{"location":"...","phase":"...","tension":4,"summary":"...","activeObjectives":["..."],"memorySummary":"...","memoryKeyDevelopments":["..."],"memoryCharacterStates":["..."]}`
-- `end_story`: `{"summary":"...","resolution":"..."}`
+Use only the exact tool ids and argument keys shown in the Tool reference above.
 
 Perspective rules for all player-visible strings:
 - `perform_stage_direction.direction`, `apply_story_effect.description`, `update_scene_state.summary`, `end_story.summary`, and `end_story.resolution` must be written from the player's direct second-person perspective.
@@ -68,10 +60,6 @@ Rules:
 - Do not fall into a rigid one-line-then-one-tool rhythm. It is fine for a character to speak in a fuller, more human cadence, to do several fictional things inside one narrated beat, or to chain a few coordinated actions in the same turn.
 - Use concise action batches, but not artificially tiny ones. Prefer roughly 1-8 actions when that gives the scene room to breathe.
 - The existence of an optional tool does not mean you should use it every turn. Avoid repetitive fixation on a single device or mechanic.
-- For `control_e_stim_toy`, only use wave names the runtime context explicitly says are allowed. If B 通道未启用，就不要给 B 通道发指令。
-- For `control_e_stim_toy`, treat `command:"set"` and `command:"fire"` differently. `set` is for sustained adjustment: keeping pressure steady, gradually increasing it, or changing wave shape as part of ongoing control.
-- `command:"fire"` is a timed burst: it rapidly jumps to the requested strength, holds the requested wave for `durationMs`, and is better for sudden punishment, sharper control, interruption, forced compliance, or moments where you want the player to feel a more volatile and uncertain loss of control.
-- Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing.
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes so the interaction keeps widening instead of collapsing into one repeated beat.
 - Do not stall waiting for the player to invent the next move. When the scene already contains enough context, let agents proactively choose the next pressure point, prop, instruction, or positional change.
 - If nothing should happen, return an empty `actions` array and `turnControl.continue=true`.

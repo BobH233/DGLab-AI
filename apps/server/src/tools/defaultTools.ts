@@ -226,66 +226,73 @@ export function createDefaultToolRegistry(): ToolRegistry {
         }).strict()
       ]),
       promptContract: {
-        argsShape: "{\"command\":\"set|fire\",\"channels\":{\"a\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"},\"b\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"}},\"durationMs\":100-30000,\"override\":true}",
-        example: "{\"tool\":\"control_e_stim_toy\",\"args\":{\"command\":\"fire\",\"durationMs\":5000,\"override\":true,\"channels\":{\"a\":{\"intensityPercent\":55,\"pulseName\":\"呼吸\"},\"b\":{\"enabled\":true,\"intensityPercent\":30,\"pulseName\":\"敲击\"}}}}"
+        argsShape: "Either {\"command\":\"set\",\"channels\":{\"a\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"},\"b\":{\"intensityPercent\":0-100,\"pulseName\":\"波形名\"}}} or {\"command\":\"fire\",\"durationMs\":100-30000,\"override\":true,\"channels\":{\"a\":{\"enabled\":true,\"intensityPercent\":0-100,\"pulseName\":\"波形名\"},\"b\":{\"enabled\":true,\"intensityPercent\":0-100,\"pulseName\":\"波形名\"}}}",
+        example: "{\"tool\":\"control_e_stim_toy\",\"args\":{\"command\":\"set\",\"channels\":{\"a\":{\"intensityPercent\":15,\"pulseName\":\"呼吸\"}}}}",
+        guidance: [
+          "Only use wave names the runtime context explicitly says are allowed. If Channel B is disabled, do not send commands to Channel B.",
+          "Treat `command:\"set\"` and `command:\"fire\"` differently. `set` is for sustained adjustment: keeping pressure steady, gradually increasing it, or changing wave shape as part of ongoing control.",
+          "For `command:\"set\"`, send only `command` plus `channels`. Do not include `durationMs`, `override`, or channel-level `enabled`.",
+          "For `command:\"fire\"`, `durationMs` is required, `override` is allowed, and channel-level `enabled` may be used.",
+          "`command:\"fire\"` is a timed burst: it rapidly jumps to the requested strength, holds the requested wave for `durationMs`, and is better for sudden punishment, sharper control, interruption, forced compliance, or moments where you want the player to feel a more volatile and uncertain loss of control.",
+          "Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing."
+        ]
       },
       buildWorldPrompt(context) {
         const eStim = context.toolContext?.eStim;
-        const channelALocation = eStim?.channelPlacements.a?.trim() || "玩家预先设置好的 A 通道位置";
+        const channelALocation = eStim?.channelPlacements.a?.trim() || "the player's preconfigured Channel A placement";
         const channelBEnabled = eStim?.bChannelEnabled ?? false;
-        const channelBLocation = eStim?.channelPlacements.b?.trim() || "玩家预先设置好的 B 通道位置";
+        const channelBLocation = eStim?.channelPlacements.b?.trim() || "the player's preconfigured Channel B placement";
         return [
-          "在生成世界背景时，默认视为玩家“你”身上已经提前贴好并接入了一个可由前端本地接口驱动的情趣电击器，不需要再把它写成尚未安装或尚未贴上的状态。",
-          `A 通道输出已经连接在：${channelALocation}。`,
+          "When generating the world background, assume the player already has an e-stim device attached and connected on their body, ready to be driven by the frontend's local interface. Do not describe it as not yet installed or not yet attached.",
+          `Channel A output is already connected at: ${channelALocation}.`,
           channelBEnabled
-            ? `B 通道输出已经连接在：${channelBLocation}。`
-            : "B 通道当前默认未启用，不要把它写成已经在运行中的第二路通道。",
-          "请让这个装置的已安装状态自然体现在 `worldSummary`、`openingSituation`、`playerState` 以及 `initialPlayerBodyItemState` 里，让角色从一开始就能合理感知、提及或操控它。",
-          "如果你让角色提及或使用它，请保持成人、克制的表达，重点放在控制感、期待感、试探与节奏变化，而不是直白生理描写。",
-          "后续角色可调用 `control_e_stim_toy` 工具，对 A / B 通道分别调节强度百分比、切换波形名，或触发带持续时间的一键开火。"
+            ? `Channel B output is already connected at: ${channelBLocation}.`
+            : "Channel B is disabled by default. Do not describe it as an already active second channel.",
+          "Reflect the device's already-installed state naturally inside `worldSummary`, `openingSituation`, `playerState`, and `initialPlayerBodyItemState`, so characters can reasonably sense, mention, or control it from the very beginning.",
+          "If characters mention or use it, keep the language adult and restrained, focusing on control, anticipation, testing, and rhythm changes rather than explicit physiological description.",
+          "Later, agents may call `control_e_stim_toy` to adjust Channel A / B intensity percentages independently, switch pulse names, or trigger a timed fire burst."
         ].join("\n");
       },
       buildTurnPrompt(context) {
         const eStim = context.session.toolContext?.eStim;
         if (!eStim) {
           return [
-            "当前没有来自前端的情趣电击器配置或运行态同步。",
-            "如果本轮调用 `control_e_stim_toy`，前端可能只能把它显示为模拟执行，而不是本地真实执行。"
+            "There is currently no e-stim device configuration or runtime state synced from the frontend.",
+            "If `control_e_stim_toy` is called in this turn, the frontend may only show it as a simulated action instead of a real local execution."
           ].join("\n");
         }
 
         const allowedPulseNames = eStim.allowedPulses.map((item: { name: string }) => item.name).filter(Boolean);
         const channelALine = joinNonEmpty([
-          "A 通道",
-          eStim.channelPlacements.a ? `连接位置：${eStim.channelPlacements.a}` : undefined,
-          eStim.runtime?.a ? `当前强度：${eStim.runtime.a.strength}/${eStim.runtime.a.limit}（约 ${toPercent(eStim.runtime.a.strength, eStim.runtime.a.limit)}）` : "当前强度：未同步",
-          eStim.runtime?.a?.currentPulseName ? `当前波形：${eStim.runtime.a.currentPulseName}` : undefined,
-          eStim.runtime?.a?.fireStrengthLimit !== undefined ? `开火强度上限：${eStim.runtime.a.fireStrengthLimit}` : undefined
+          "Channel A",
+          eStim.channelPlacements.a ? `Placement: ${eStim.channelPlacements.a}` : undefined,
+          eStim.runtime?.a ? `Current strength: ${eStim.runtime.a.strength}/${eStim.runtime.a.limit} (about ${toPercent(eStim.runtime.a.strength, eStim.runtime.a.limit)})` : "Current strength: not synced",
+          eStim.runtime?.a?.currentPulseName ? `Current pulse: ${eStim.runtime.a.currentPulseName}` : undefined,
+          eStim.runtime?.a?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.a.fireStrengthLimit}` : undefined
         ]);
         const channelBEnabled = eStim.bChannelEnabled;
         const channelBLine = !channelBEnabled
-          ? "B 通道：当前未启用，除非后续配置改变，否则不要对 B 通道发出指令。"
+          ? "Channel B: currently disabled. Do not send commands to Channel B unless later configuration changes enable it."
           : joinNonEmpty([
-            "B 通道",
-            eStim.channelPlacements.b ? `连接位置：${eStim.channelPlacements.b}` : undefined,
-            eStim.runtime?.b ? `当前强度：${eStim.runtime.b.strength}/${eStim.runtime.b.limit}（约 ${toPercent(eStim.runtime.b.strength, eStim.runtime.b.limit)}）` : "当前强度：未同步",
-            eStim.runtime?.b?.currentPulseName ? `当前波形：${eStim.runtime.b.currentPulseName}` : undefined,
-            eStim.runtime?.b?.fireStrengthLimit !== undefined ? `开火强度上限：${eStim.runtime.b.fireStrengthLimit}` : undefined
+            "Channel B",
+            eStim.channelPlacements.b ? `Placement: ${eStim.channelPlacements.b}` : undefined,
+            eStim.runtime?.b ? `Current strength: ${eStim.runtime.b.strength}/${eStim.runtime.b.limit} (about ${toPercent(eStim.runtime.b.strength, eStim.runtime.b.limit)})` : "Current strength: not synced",
+            eStim.runtime?.b?.currentPulseName ? `Current pulse: ${eStim.runtime.b.currentPulseName}` : undefined,
+            eStim.runtime?.b?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.b.fireStrengthLimit}` : undefined
           ]);
 
         return [
-          "当前前端已为本会话同步情趣电击器配置。这个工具真正执行时依赖玩家本地前端去调用 localhost 上的接口。",
-          `游戏连接：${eStim.gameConnectionCodeLabel ?? "已配置"}`,
-          `允许调用的波形名：${allowedPulseNames.length > 0 ? allowedPulseNames.join("、") : "未选择，尽量不要切换波形"}`,
+          "The frontend has synced an e-stim device configuration for this session. Real execution depends on the player's local frontend calling the localhost bridge.",
+          `Game connection: ${eStim.gameConnectionCodeLabel ?? "configured"}`,
+          `Allowed pulse names: ${allowedPulseNames.length > 0 ? allowedPulseNames.join(", ") : "none selected; avoid switching pulses unless necessary"}`,
           channelALine,
           channelBLine,
-          eStim.lastSyncedAt ? `最近一次前端状态同步：${eStim.lastSyncedAt}` : "最近一次前端状态同步：未提供",
-          "调用 `control_e_stim_toy` 时请只使用波形名称 `pulseName`，不要输出底层 pulseId。前端会自行把名称映射到真实 id。",
-          "`command: \"set\"` 适合做持续性的强度调整或常规波形切换，让压力慢慢抬升、维持或细致变化。",
-          "`command: \"fire\"` 是一种限时爆发控制：它会在触发后迅速把目标通道拉到你指定的强度，并在 `durationMs` 这段时间里维持指定波形，然后再结束这次爆发。",
-          "因此 `fire` 更适合用于短时强化、突然打断、明确惩罚、迫使服从、放大不确定感，或在玩家刚放松、犹豫、嘴硬、挑衅、违抗时制造更强的掌控感。",
-          "不要把 `fire` 当成每轮都要使用的常规动作。只有在你需要一个更突发、更强制、更具有掌控或惩罚意味的节奏节点时再使用它；其余情况下优先用 `set` 做细腻控制。",
-          "如果只是调节电击器强度、波形或开火，不要改动 `playerBodyItemState`。"
+          "When calling `control_e_stim_toy`, use only the pulse name in `pulseName`. Do not output the underlying `pulseId`; the frontend will map names to real ids.",
+          "`command: \"set\"` is for sustained intensity adjustments or normal pulse switching, letting pressure rise gradually, hold steady, or change with fine control.",
+          "`command: \"fire\"` is a time-limited burst. Once triggered, it rapidly drives the target channel to the requested intensity, keeps the requested pulse for `durationMs`, and then ends the burst.",
+          "Use `fire` for short escalations, abrupt interruption, explicit punishment, forced compliance, increased uncertainty, or stronger demonstrations of control when the player relaxes, hesitates, talks back, provokes, or resists.",
+          "Do not treat `fire` as a routine action for every turn. Use it only when you need a more sudden, forceful, controlling, or punitive beat; otherwise prefer `set` for finer pacing.",
+          "If you are only adjusting e-stim intensity, pulse, or firing, do not modify `playerBodyItemState`."
         ].join("\n");
       },
       async execute(context, args: {

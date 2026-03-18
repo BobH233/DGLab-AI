@@ -155,10 +155,17 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
 
 function toolReferenceForPrompt(toolRegistry: ToolRegistry, toolStates?: Record<string, boolean>): string {
   return toolRegistry.list(toolStates).filter((tool) => tool.id !== "wait").map((tool) => {
+    const guidance = tool.promptContract.guidance?.length
+      ? [
+        "  Tool-specific rules:",
+        ...tool.promptContract.guidance.map((rule) => `  - ${rule}`)
+      ]
+      : [];
     return [
       `- ${tool.id} (${tool.visibility}): ${tool.description}`,
       `  Exact args object: ${tool.promptContract.argsShape}`,
-      `  Valid call example: ${tool.promptContract.example}`
+      `  Valid call example: ${tool.promptContract.example}`,
+      ...guidance
     ].join("\n");
   }).join("\n");
 }

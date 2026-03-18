@@ -70,6 +70,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Favor concrete sensory progression over abstract summaries");
     expect(prompt).toContain("must contain only the words spoken to the player");
     expect(prompt).toContain("split it across tools");
+    expect(prompt).toContain("Use only the exact tool ids and argument keys shown in the Tool reference above.");
+    expect(prompt).not.toContain("control_e_stim_toy");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {

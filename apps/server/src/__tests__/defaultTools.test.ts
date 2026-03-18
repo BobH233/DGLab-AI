@@ -101,9 +101,9 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.some((entry) => entry.toolId === "control_vibe_toy")).toBe(true);
     expect(contributions.find((entry) => entry.toolId === "control_vibe_toy")?.prompt).toContain("震动小玩具");
     expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("已经提前贴好");
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("A 通道输出已经连接在：臀部。");
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("B 通道输出已经连接在：大腿两侧。");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("already has an e-stim device attached and connected");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Channel A output is already connected at: 臀部.");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Channel B output is already connected at: 大腿两侧.");
   });
 
   it("filters optional tools by global tool state while keeping required tools enabled", async () => {
@@ -270,10 +270,10 @@ describe("createDefaultToolRegistry", () => {
     });
 
     expect(contributions.some((entry) => entry.toolId === "control_e_stim_toy")).toBe(true);
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("允许调用的波形名：呼吸、敲击");
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("B 通道");
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("连接位置：臀部");
-    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("连接位置：大腿两侧");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Allowed pulse names: 呼吸, 敲击");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Channel B");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 臀部");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 大腿两侧");
 
     await registry.execute({
       session,
@@ -311,6 +311,30 @@ describe("createDefaultToolRegistry", () => {
       }
     });
     expect(session.agentStates.director.intent).toBe("control_e_stim_toy");
+  });
+
+  it("rejects e-stim set commands that include fire-only keys", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+
+    await expect(registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: () => undefined
+    }, "control_e_stim_toy", {
+      command: "set",
+      durationMs: 1000,
+      override: true,
+      channels: {
+        a: {
+          intensityPercent: 20,
+          pulseName: "呼吸"
+        }
+      }
+    }, {
+      control_e_stim_toy: true
+    })).rejects.toThrow("Unrecognized key(s) in object: 'durationMs', 'override'");
   });
 
   it("rejects unknown tools", async () => {
