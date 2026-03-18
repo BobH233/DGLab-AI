@@ -24,22 +24,13 @@
           </div>
         </div>
         <div class="actions console-hero__actions">
-          <button
+          <RouterLink
             v-if="session"
             class="button secondary"
-            type="button"
-            @click="openPrintWindow('portrait')"
+            :to="`/sessions/${session.id}/print`"
           >
-            打印竖版 PDF
-          </button>
-          <button
-            v-if="session"
-            class="button secondary"
-            type="button"
-            @click="openPrintWindow('landscape')"
-          >
-            打印横版 PDF
-          </button>
+            打印预览 / 导出 PDF
+          </RouterLink>
           <RouterLink v-if="session" class="button secondary" :to="`/sessions/${session.id}/debug`">
             记忆调试
           </RouterLink>
@@ -315,17 +306,6 @@ function syncSession(next: Session) {
     playbackCooldownUntil.value = null;
   }
   liveTickInFlight.value = next.timerState.inFlight;
-}
-
-function openPrintWindow(orientation: "portrait" | "landscape") {
-  if (!session.value || typeof window === "undefined") {
-    return;
-  }
-  const printUrl = `/sessions/${session.value.id}/print?orientation=${orientation}&autoprint=1`;
-  const printWindow = window.open(printUrl, "_blank", "noopener");
-  if (!printWindow) {
-    window.location.href = printUrl;
-  }
 }
 
 async function maybeRequestAutoTick() {

@@ -223,30 +223,4 @@ describe("SessionConsolePage", () => {
 
     expect(apiMocks.requestAutoTick).toHaveBeenCalledWith("session_1");
   });
-
-  it("opens the print page and requests autoprint from a single click", async () => {
-    apiMocks.getSession.mockResolvedValue(createSession());
-    const openSpy = vi.spyOn(window, "open").mockReturnValue({} as Window);
-
-    const wrapper = mount(SessionConsolePage, {
-      global: {
-        stubs: {
-          RouterLink: {
-            template: "<a><slot /></a>"
-          }
-        }
-      }
-    });
-
-    await flushPromises();
-    await wrapper.get('button.button.secondary[type="button"]').trigger("click");
-
-    expect(openSpy).toHaveBeenCalledWith(
-      "/sessions/session_1/print?orientation=portrait&autoprint=1",
-      "_blank",
-      "noopener"
-    );
-
-    openSpy.mockRestore();
-  });
 });
