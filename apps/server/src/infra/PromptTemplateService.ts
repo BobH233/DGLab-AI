@@ -9,7 +9,7 @@ const TEMPLATE_VERSIONS: Record<string, string> = {
   "world_builder": "1.6.0",
   "director_agent": "1.2.0",
   "support_agent": "1.2.0",
-  "ensemble_turn": "1.4.0"
+  "ensemble_turn": "1.5.0"
 };
 
 export class FilePromptTemplateService implements PromptTemplateService {

@@ -31,6 +31,9 @@ Current scene:
 Current player body item state:
 {{playerBodyItemState}}
 
+Current live tool runtime state for this turn only:
+{{toolRuntimeContext}}
+
 Compressed long-term memory:
 {{archiveMemory}}
 
@@ -61,6 +64,8 @@ Preferred behavior:
 - In every response, you must return a complete `playerBodyItemState` array representing the new authoritative post-turn state.
 - If nothing about the physical items on the player's body changed this turn, return the same `playerBodyItemState` array with the same entries.
 - Only include physical item presence, attachment, removal, swapping, or body-position changes. Do not add entries for vibration strength, toy mode, intensity, emotional effects, or other non-physical parameter adjustments.
+- Treat the live tool runtime state block as ephemeral turn-only context. It should inform planning for this turn, but it is not itself a timeline event or memory record.
+- If a tool does not appear in the live runtime state block, do not invent exact live values like battery percentage, current intensity, or current mode for it.
 - If a small toy remains on the same body position and only its strength or mode changes, `playerBodyItemState` must stay unchanged.
 - If a toy or prop is newly attached, removed, moved to a different body position, replaced, tightened onto the body, or taken off, reflect that in `playerBodyItemState`.
 - If multiple agents act, make the ordering feel intentional.

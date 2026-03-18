@@ -8,6 +8,15 @@ function clampTension(value: number): number {
   return Math.max(0, Math.min(10, value));
 }
 
+type VibeToyRuntimeState = {
+  intensityPercent?: number;
+  mode?: string;
+  batteryPercent?: number;
+  supportedModes: string[];
+  status: "simulated" | "live";
+  lastUpdatedAt: string;
+};
+
 class DefaultToolRegistry implements ToolRegistry {
   constructor(private readonly tools: ToolDefinition[]) {}
 
@@ -44,6 +53,27 @@ class DefaultToolRegistry implements ToolRegistry {
     });
   }
 
+  async getTurnPromptContributions(
+    context: Parameters<NonNullable<ToolDefinition["buildTurnPrompt"]>>[0],
+    toolStates?: Record<string, boolean>
+  ) {
+    const prompts = await Promise.all(
+      this.tools
+        .filter((tool) => isToolEnabled(tool.id, toolStates))
+        .map(async (tool) => {
+          const prompt = (await tool.buildTurnPrompt?.(context))?.trim();
+          if (!prompt) {
+            return null;
+          }
+          return {
+            toolId: tool.id,
+            prompt
+          };
+        })
+    );
+    return prompts.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }
+
   async execute(
     context: Parameters<ToolDefinition["execute"]>[0],
     toolId: string,
@@ -63,6 +93,7 @@ class DefaultToolRegistry implements ToolRegistry {
 }
 
 export function createDefaultToolRegistry(): ToolRegistry {
+  const vibeToyStateBySession = new Map<string, VibeToyRuntimeState>();
   const tools: ToolDefinition[] = [
     {
       id: "control_vibe_toy",
@@ -87,7 +118,31 @@ export function createDefaultToolRegistry(): ToolRegistry {
           "当前可用的占位震动模式可以写成：`steady`（持续）、`pulse`（脉冲）、`wave`（波浪）、`tease`（挑逗式断续）。"
         ].join("\n");
       },
+      buildTurnPrompt(context) {
+        const state = vibeToyStateBySession.get(context.session.id);
+        if (!state) {
+          return null;
+        }
+        const parts = [
+          `当前读取到穿戴式震动小玩具的运行时状态：强度 ${state.intensityPercent ?? "未提供"}${typeof state.intensityPercent === "number" ? "%" : ""}。`,
+          `模式：${state.mode ?? "未提供"}。`,
+          `电量：${state.batteryPercent ?? "未提供"}${typeof state.batteryPercent === "number" ? "%" : ""}。`,
+          `状态来源：${state.status}。`,
+          `可用模式：${state.supportedModes.join("、")}。`,
+          "这是一份仅针对本轮推演的运行态参考；如果本轮只是调节强度、模式或电量认知，不要改动 `playerBodyItemState`。"
+        ];
+        return parts.join("\n");
+      },
       async execute(context, args: { intensityPercent?: number; mode?: string }) {
+        const previousState = vibeToyStateBySession.get(context.session.id);
+        vibeToyStateBySession.set(context.session.id, {
+          intensityPercent: args.intensityPercent ?? previousState?.intensityPercent,
+          mode: args.mode ?? previousState?.mode,
+          batteryPercent: previousState?.batteryPercent,
+          supportedModes: ["steady", "pulse", "wave", "tease"],
+          status: previousState?.status ?? "simulated",
+          lastUpdatedAt: context.now
+        });
         context.session.agentStates[context.agent.id] = {
           ...context.session.agentStates[context.agent.id],
           intent: "control_vibe_toy",

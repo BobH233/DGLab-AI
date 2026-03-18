@@ -70,6 +70,17 @@ export interface ToolWorldPromptContribution {
   prompt: string;
 }
 
+export type ToolTurnPromptContext = {
+  session: Session;
+  now: string;
+  reason: string;
+};
+
+export interface ToolTurnPromptContribution {
+  toolId: string;
+  prompt: string;
+}
+
 export interface ToolPromptContract {
   argsShape: string;
   example: string;
@@ -82,6 +93,7 @@ export interface ToolDefinition<TArgs = unknown> {
   inputSchema: ZodTypeAny;
   promptContract: ToolPromptContract;
   buildWorldPrompt?(context: ToolWorldPromptContext): string | null | undefined;
+  buildTurnPrompt?(context: ToolTurnPromptContext): Promise<string | null | undefined> | string | null | undefined;
   execute(context: ToolExecutionContext, args: TArgs): Promise<ToolExecutionResult | void>;
 }
 
@@ -89,6 +101,10 @@ export interface ToolRegistry {
   get(toolId: string): ToolDefinition | undefined;
   list(toolStates?: Record<string, boolean>): Array<Pick<ToolDefinition, "id" | "description" | "visibility" | "promptContract">>;
   getWorldPromptContributions(context: ToolWorldPromptContext, toolStates?: Record<string, boolean>): ToolWorldPromptContribution[];
+  getTurnPromptContributions(
+    context: ToolTurnPromptContext,
+    toolStates?: Record<string, boolean>
+  ): Promise<ToolTurnPromptContribution[]>;
   execute(
     context: ToolExecutionContext,
     toolId: string,

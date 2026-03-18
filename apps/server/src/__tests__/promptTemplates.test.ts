@@ -17,6 +17,7 @@ describe("prompt templates", () => {
       sessionDraft: "{}",
       sceneState: "{}",
       playerBodyItemState: "[]",
+      toolRuntimeContext: "- Tool: control_vibe_toy\n当前读取到穿戴式震动小玩具的运行时状态：强度 72%。",
       archiveMemory: "archive block",
       episodeMemories: "episode block",
       turnMemories: "turn block",
@@ -43,6 +44,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Recent raw turns");
     expect(prompt).toContain("Persistent player utterances");
     expect(prompt).toContain("Current player body item state");
+    expect(prompt).toContain("Current live tool runtime state for this turn only");
+    expect(prompt).toContain("ephemeral turn-only context");
     expect(prompt).toContain("must return a complete `playerBodyItemState` array");
     expect(prompt).toContain("trust recent raw turns");
     expect(prompt).toContain("authoritative ledger");

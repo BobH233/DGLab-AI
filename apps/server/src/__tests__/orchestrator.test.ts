@@ -137,11 +137,14 @@ function createSession(): Session {
 }
 
 class FakePromptService {
+  public renders: Array<{ name: string; data: Record<string, unknown> }> = [];
+
   async getTemplate(name: string): Promise<string> {
     return `template:${name}`;
   }
 
-  async render(name: string): Promise<string> {
+  async render(name: string, data: Record<string, unknown> = {}): Promise<string> {
+    this.renders.push({ name, data });
     return `rendered:${name}`;
   }
 
@@ -269,5 +272,76 @@ describe("DefaultOrchestratorService", () => {
     expect(session.usageTotals.session.totalTokens).toBe(30);
     expect(provider.calls).toBe(1);
     expect(result.usageCalls).toHaveLength(1);
+  });
+
+  it("injects live tool runtime state into the ensemble prompt when a tool provides it", async () => {
+    const provider = new FakeProvider({
+      actions: [],
+      turnControl: {
+        continue: true,
+        endStory: false,
+        needsHandoff: false
+      },
+      playerBodyItemState: ["你现在戴着一副遮光眼罩"]
+    });
+    const promptService = new FakePromptService();
+    const toolRegistry = createDefaultToolRegistry();
+    const session = createSession();
+    const now = new Date().toISOString();
+
+    await toolRegistry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now,
+      addEvent: () => undefined
+    }, "control_vibe_toy", {
+      intensityPercent: 72,
+      mode: "pulse"
+    });
+
+    const orchestrator = new DefaultOrchestratorService(
+      provider,
+      promptService,
+      toolRegistry
+    );
+    const contextBundle: NarrativeContextBundle = {
+      coreState: {
+        sessionDraft: "{}",
+        storyState: "{}",
+        agentStates: "{}",
+        playerBodyItemState: "[]"
+      },
+      archiveBlock: "No archive summary yet.",
+      episodeBlocks: [],
+      turnSummaryBlocks: [],
+      recentRawTurns: [],
+      recentRawTurnsBlock: "No recent raw turns retained.",
+      playerMessagesBlock: "No player messages yet.",
+      tickContextBlock: "{\"reason\":\"player_message\"}",
+      stats: {
+        charCounts: {
+          archive: 0,
+          episodes: 0,
+          turns: 0,
+          rawTurns: 0,
+          playerMessages: 0,
+          tickContext: 0,
+          coreState: 0
+        },
+        droppedBlocks: [],
+        rawTurnsIncluded: 0,
+        episodeCountIncluded: 0,
+        turnSummaryCountIncluded: 0,
+        usedFallback: false
+      }
+    };
+
+    await orchestrator.runTick(session, "player_message", contextBundle, config);
+
+    const ensembleRender = promptService.renders.find((entry) => entry.name === "ensemble_turn");
+
+    expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("control_vibe_toy");
+    expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("强度 72%");
+    expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("模式：pulse");
   });
 });

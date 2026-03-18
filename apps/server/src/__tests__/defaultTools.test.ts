@@ -148,6 +148,45 @@ describe("createDefaultToolRegistry", () => {
     expect(session.agentStates.director.intent).toBe("control_vibe_toy");
   });
 
+  it("exposes live turn prompt state for control_vibe_toy without writing extra history", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<unknown> = [];
+
+    expect(await registry.getTurnPromptContributions({
+      session,
+      now: new Date().toISOString(),
+      reason: "player_message"
+    })).toEqual([]);
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event);
+      }
+    }, "control_vibe_toy", {
+      intensityPercent: 72,
+      mode: "pulse"
+    });
+
+    const contributions = await registry.getTurnPromptContributions({
+      session,
+      now: new Date().toISOString(),
+      reason: "player_message"
+    });
+
+    expect(events).toHaveLength(1);
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0]).toMatchObject({
+      toolId: "control_vibe_toy"
+    });
+    expect(contributions[0]?.prompt).toContain("强度 72%");
+    expect(contributions[0]?.prompt).toContain("模式：pulse");
+    expect(contributions[0]?.prompt).toContain("状态来源：simulated");
+  });
+
   it("rejects unknown tools", async () => {
     const registry = createDefaultToolRegistry();
     await expect(registry.execute({

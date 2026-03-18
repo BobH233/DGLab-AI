@@ -280,6 +280,26 @@ function worldBuilderToolHooksForPrompt(
   }).join("\n\n");
 }
 
+async function toolTurnHooksForPrompt(
+  toolRegistry: ToolRegistry,
+  session: Session,
+  now: string,
+  reason: string,
+  toolStates?: Record<string, boolean>
+): Promise<string> {
+  const contributions = await toolRegistry.getTurnPromptContributions({
+    session,
+    now,
+    reason
+  }, toolStates);
+  if (contributions.length === 0) {
+    return "No additional live tool runtime state is available for this turn.";
+  }
+  return contributions.map((entry) => {
+    return [`- Tool: ${entry.toolId}`, entry.prompt].join("\n");
+  }).join("\n\n");
+}
+
 function sortAgents(session: Session): AgentProfile[] {
   const agents = session.confirmedSetup?.agents ?? session.draft.agents;
   return [...agents].sort((left, right) => {
@@ -349,6 +369,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
     const agentById = new Map(agents.map((agent) => [agent.id, agent]));
     const toolReference = toolReferenceForPrompt(this.tools, config.toolStates);
     const toolExamples = toolExamplesForPrompt();
+    const toolRuntimeContext = await toolTurnHooksForPrompt(this.tools, session, now, reason, config.toolStates);
     const toolContract = await this.prompts.render("tool_contract", {
       toolReference,
       toolExamples
@@ -365,6 +386,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
       sessionDraft: contextBundle.coreState.sessionDraft,
       sceneState: contextBundle.coreState.storyState,
       playerBodyItemState: contextBundle.coreState.playerBodyItemState,
+      toolRuntimeContext,
       archiveMemory: contextBundle.archiveBlock,
       episodeMemories: contextBundle.episodeBlocks.join("\n\n") || "No episode summaries yet.",
       turnMemories: contextBundle.turnSummaryBlocks.join("\n\n") || "No turn summaries yet.",
