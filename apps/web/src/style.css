@@ -1175,9 +1175,7 @@ a {
 
 .print-cover {
   padding: 32px;
-  background:
-    radial-gradient(circle at top right, rgba(113, 160, 201, 0.18), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 251, 253, 0.98));
+  background: #f7fbfe;
 }
 
 .print-cover__head {
@@ -1372,19 +1370,19 @@ a {
 }
 
 .print-timeline-item[data-kind="player"] {
-  background: linear-gradient(180deg, rgba(242, 253, 248, 0.98), rgba(232, 247, 239, 0.98));
+  background: #edf8f2;
 }
 
 .print-timeline-item[data-kind="dialogue"] {
-  background: linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(252, 243, 233, 0.98));
+  background: #fbf2e9;
 }
 
 .print-timeline-item[data-kind="effect"] {
-  background: linear-gradient(180deg, rgba(244, 249, 252, 0.98), rgba(235, 244, 249, 0.98));
+  background: #edf5f9;
 }
 
 .print-timeline-item[data-kind="action"] {
-  background: linear-gradient(180deg, rgba(250, 245, 255, 0.98), rgba(243, 236, 252, 0.98));
+  background: #f2ebfa;
 }
 
 .print-timeline-item[data-kind="action"] .print-timeline-item__kicker {
@@ -1392,7 +1390,7 @@ a {
 }
 
 .print-timeline-item[data-kind="error"] {
-  background: linear-gradient(180deg, rgba(255, 248, 248, 0.98), rgba(252, 240, 240, 0.98));
+  background: #fbeeee;
 }
 
 .print-empty {
@@ -1606,7 +1604,7 @@ a {
   }
 
   .print-timeline-item {
-    border: 1px solid rgba(0, 0, 0, 0.07);
+    border: 1px solid rgba(32, 52, 69, 0.16);
   }
 
   .print-meta-card,
@@ -1614,6 +1612,6 @@ a {
   .print-cast-card,
   .print-empty,
   .print-tag {
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(32, 52, 69, 0.14);
   }
 }
