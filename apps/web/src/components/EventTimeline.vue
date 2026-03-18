@@ -57,6 +57,17 @@
         </header>
         <div class="event-body">
           <p v-if="item.main" class="event-main">{{ item.main }}</p>
+          <div v-if="item.diffLines?.length" class="event-diff" aria-label="状态差异">
+            <p
+              v-for="line in item.diffLines"
+              :key="`${line.prefix}-${line.value}`"
+              class="event-diff__line"
+              :data-prefix="line.prefix"
+            >
+              <span class="event-diff__prefix">{{ line.prefix }}</span>
+              <span class="event-diff__value">{{ line.value }}</span>
+            </p>
+          </div>
           <div v-if="item.details?.length" class="event-detail-list">
             <p v-for="detail in item.details" :key="`${detail.label}-${detail.value}`" class="event-detail-row">
               <strong class="event-detail-label">{{ detail.label }}：</strong>
@@ -112,6 +123,7 @@ function cardClass(item: PresentationItem): string[] {
     "event-card",
     ...(item.kind === "player" ? ["event-card--player"] : []),
     ...(item.kind === "dialogue" ? ["event-card--dialogue"] : []),
+    ...(item.kind === "inventory" ? ["event-card--inventory"] : []),
     ...(item.optionalTool ? ["event-card--optional-tool"] : [])
   ];
 }

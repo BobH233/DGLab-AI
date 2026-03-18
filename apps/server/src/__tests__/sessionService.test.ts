@@ -26,6 +26,7 @@ function createSession(): Session {
       worldSummary: "world",
       openingSituation: "opening",
       playerState: "player state",
+      initialPlayerBodyItemState: [],
       suggestedPace: "slow burn",
       safetyFrame: "fiction only",
       agents: [
@@ -45,6 +46,7 @@ function createSession(): Session {
       contentNotes: []
     },
     confirmedSetup: null,
+    playerBodyItemState: [],
     storyState: {
       location: "room",
       phase: "opening",
@@ -137,7 +139,8 @@ describe("SessionService", () => {
         coreState: {
           sessionDraft: "{}",
           storyState: "{}",
-          agentStates: "{}"
+          agentStates: "{}",
+          playerBodyItemState: "[]"
         },
         archiveBlock: "",
         episodeBlocks: [],
@@ -222,7 +225,8 @@ describe("SessionService", () => {
         coreState: {
           sessionDraft: "{}",
           storyState: "{}",
-          agentStates: "{}"
+          agentStates: "{}",
+          playerBodyItemState: "[]"
         },
         archiveBlock: "",
         episodeBlocks: [],
@@ -311,7 +315,8 @@ describe("SessionService", () => {
         coreState: {
           sessionDraft: "{}",
           storyState: "{}",
-          agentStates: "{}"
+          agentStates: "{}",
+          playerBodyItemState: "[]"
         },
         archiveBlock: "",
         episodeBlocks: [],

@@ -34,6 +34,7 @@ function createSession(): Session {
       worldSummary: "world",
       openingSituation: "opening",
       playerState: "player state",
+      initialPlayerBodyItemState: [],
       suggestedPace: "pace",
       safetyFrame: "fiction only",
       agents: [
@@ -53,6 +54,7 @@ function createSession(): Session {
       contentNotes: []
     },
     confirmedSetup: null,
+    playerBodyItemState: [],
     storyState: {
       location: "study",
       phase: "opening",

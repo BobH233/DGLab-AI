@@ -6,10 +6,10 @@ const TEMPLATE_VERSIONS: Record<string, string> = {
   "shared_safety_preamble": "1.3.0",
   "r18_guidance": "1.0.0",
   "tool_contract": "2.3.0",
-  "world_builder": "1.5.0",
+  "world_builder": "1.6.0",
   "director_agent": "1.2.0",
   "support_agent": "1.2.0",
-  "ensemble_turn": "1.3.0"
+  "ensemble_turn": "1.4.0"
 };
 
 export class FilePromptTemplateService implements PromptTemplateService {

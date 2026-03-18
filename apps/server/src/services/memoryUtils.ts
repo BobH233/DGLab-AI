@@ -114,6 +114,22 @@ export function uniqStrings(values: string[], limit = 6): string[] {
 
 export function formatEventLine(event: SessionEvent): string {
   switch (event.type) {
+    case "player.body_item_state_updated": {
+      const nextItems = Array.isArray(event.payload.playerBodyItemState)
+        ? event.payload.playerBodyItemState.map((item) => textOf(item)).filter(Boolean)
+        : [];
+      const previousItems = Array.isArray(event.payload.previousPlayerBodyItemState)
+        ? event.payload.previousPlayerBodyItemState.map((item) => textOf(item)).filter(Boolean)
+        : [];
+      const added = nextItems.filter((item) => !previousItems.includes(item));
+      const removed = previousItems.filter((item) => !nextItems.includes(item));
+      const parts = [
+        added.length > 0 ? `新增=${truncateText(added.join("；"), 120)}` : "",
+        removed.length > 0 ? `移除=${truncateText(removed.join("；"), 120)}` : "",
+        added.length === 0 && removed.length === 0 ? `当前=${truncateText(nextItems.join("；") || "无", 120)}` : ""
+      ].filter(Boolean);
+      return `[${event.seq}] 玩家身体道具状态更新: ${parts.join(" | ")}`;
+    }
     case "player.message":
       return `[${event.seq}] 玩家: ${truncateText(textOf(event.payload.text), 180)}`;
     case "agent.speak_player":

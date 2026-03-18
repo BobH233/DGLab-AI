@@ -51,6 +51,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
       worldSummary: "world",
       openingSituation: "opening",
       playerState: "player",
+      initialPlayerBodyItemState: ["你现在戴着一副眼罩"],
       suggestedPace: "slow",
       safetyFrame: "fiction",
       agents: [],
@@ -58,6 +59,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
       contentNotes: []
     },
     confirmedSetup: null,
+    playerBodyItemState: ["你现在戴着一副眼罩"],
     storyState: {
       location: "study",
       phase: "teasing",
@@ -161,6 +163,8 @@ describe("SessionConsolePage", () => {
 
     expect(normalizedText(wrapper)).toContain("约 5.0 秒 后自动推进");
     expect(normalizedText(wrapper)).toContain("下一次计划触发时间");
+    expect(normalizedText(wrapper)).toContain("玩家身体道具");
+    expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
   });
 
   it("explains that auto-advance will defer while the current tick is still running", async () => {

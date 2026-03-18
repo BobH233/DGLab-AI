@@ -16,6 +16,7 @@ describe("prompt templates", () => {
       agentRuntimeState: "{}",
       sessionDraft: "{}",
       sceneState: "{}",
+      playerBodyItemState: "[]",
       archiveMemory: "archive block",
       episodeMemories: "episode block",
       turnMemories: "turn block",
@@ -41,6 +42,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Compressed mid-term memory");
     expect(prompt).toContain("Recent raw turns");
     expect(prompt).toContain("Persistent player utterances");
+    expect(prompt).toContain("Current player body item state");
+    expect(prompt).toContain("must return a complete `playerBodyItemState` array");
     expect(prompt).toContain("trust recent raw turns");
     expect(prompt).toContain("authoritative ledger");
   });
@@ -92,6 +95,7 @@ describe("prompt templates", () => {
     expect(prompt).toContain("state the rough order or timing");
     expect(prompt).toContain("Use `suggestedPace` to pre-commit to a varied sequence");
     expect(prompt).toContain("Make the `sceneGoals` and agent goals proactive");
+    expect(prompt).toContain("initialPlayerBodyItemState");
   });
 
   it("loads the standalone r18 guidance template", async () => {

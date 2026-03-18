@@ -60,6 +60,7 @@ describe("world builder normalization", () => {
         worldSummary: "世界",
         openingSituation: "开场",
         playerState: "状态",
+        initialPlayerBodyItemState: ["你现在戴着一副眼罩"],
         suggestedPace: "节奏",
         safetyFrame: "虚构",
         sceneGoals: ["目标一"],
@@ -80,6 +81,7 @@ describe("world builder normalization", () => {
 
     expect(draft.playerBrief).toBe("玩家简介");
     expect(draft.contentNotes).toEqual(["备注一", "备注二"]);
+    expect(draft.initialPlayerBodyItemState).toEqual(["你现在戴着一副眼罩"]);
     expect(draft.agents[0].role).toBe("director");
     expect(draft.agents[0].persona).toBe("冷酷主导者");
     expect(draft.agents[0].style).toEqual(["慵懒", "暧昧"]);
@@ -98,6 +100,7 @@ describe("world builder normalization", () => {
     expect(draft.worldSummary).toContain("你的输入");
     expect(draft.openingSituation).toContain("暧昧对峙");
     expect(draft.playerState).toContain("你正被卷入一场充满试探");
+    expect(draft.initialPlayerBodyItemState).toEqual([]);
     expect(draft.suggestedPace).toContain("整体会先用试探与拉近距离让你进入状态");
     expect(draft.suggestedPace).toContain("每一段都会提前埋好道具、动作与掌控方式");
   });

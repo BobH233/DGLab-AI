@@ -27,6 +27,7 @@ function createSession(): Session {
       worldSummary: "world",
       openingSituation: "opening",
       playerState: "player state",
+      initialPlayerBodyItemState: ["你现在戴着一副遮光眼罩"],
       suggestedPace: "slow burn",
       safetyFrame: "fiction only",
       agents: [
@@ -62,6 +63,7 @@ function createSession(): Session {
       worldSummary: "world",
       openingSituation: "opening",
       playerState: "player state",
+      initialPlayerBodyItemState: ["你现在戴着一副遮光眼罩"],
       suggestedPace: "slow burn",
       safetyFrame: "fiction only",
       agents: [
@@ -91,6 +93,7 @@ function createSession(): Session {
       sceneGoals: ["goal"],
       contentNotes: []
     },
+    playerBodyItemState: ["你现在戴着一副遮光眼罩"],
     storyState: {
       location: "cell",
       phase: "opening",
@@ -208,7 +211,11 @@ describe("DefaultOrchestratorService", () => {
         continue: true,
         endStory: false,
         needsHandoff: false
-      }
+      },
+      playerBodyItemState: [
+        "你现在戴着一副遮光眼罩",
+        "你现在双手被红色绳子捆在身后"
+      ]
     });
     const orchestrator = new DefaultOrchestratorService(
       provider,
@@ -220,7 +227,8 @@ describe("DefaultOrchestratorService", () => {
       coreState: {
         sessionDraft: "{}",
         storyState: "{}",
-        agentStates: "{}"
+        agentStates: "{}",
+        playerBodyItemState: "[]"
       },
       archiveBlock: "No archive summary yet.",
       episodeBlocks: [],
@@ -250,7 +258,12 @@ describe("DefaultOrchestratorService", () => {
 
     expect(session.storyState.phase).toBe("teasing");
     expect(session.storyState.tension).toBe(6);
+    expect(session.playerBodyItemState).toEqual([
+      "你现在戴着一副遮光眼罩",
+      "你现在双手被红色绳子捆在身后"
+    ]);
     expect(result.events.some((event) => event.type === "scene.updated")).toBe(true);
+    expect(result.events.some((event) => event.type === "player.body_item_state_updated")).toBe(true);
     expect(result.events.some((event) => event.type === "agent.stage_direction")).toBe(true);
     expect(result.events.some((event) => event.type === "agent.speak_player")).toBe(true);
     expect(session.usageTotals.session.totalTokens).toBe(30);

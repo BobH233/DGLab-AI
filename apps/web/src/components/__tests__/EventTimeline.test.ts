@@ -370,4 +370,33 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("目标");
     expect(wrapper.text()).not.toContain("阶段变更为");
   });
+
+  it("renders player body item state updates as a diff-style block", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 12,
+            type: "player.body_item_state_updated",
+            source: "system",
+            createdAt: new Date().toISOString(),
+            payload: {
+              previousPlayerBodyItemState: ["你现在戴着一副遮光眼罩"],
+              playerBodyItemState: [
+                "你现在戴着一副遮光眼罩",
+                "你现在双手被红色绳子捆在身后"
+              ]
+            }
+          }
+        ]
+      }
+    });
+
+    expect(wrapper.text()).toContain("玩家身体道具状态已更新");
+    expect(wrapper.text()).toContain("当前");
+    expect(wrapper.text()).toContain("你现在双手被红色绳子捆在身后");
+    expect(wrapper.find('.event-diff .event-diff__line[data-prefix="+"]').exists()).toBe(true);
+    expect(wrapper.find('.event-card--inventory').exists()).toBe(true);
+  });
 });

@@ -43,6 +43,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
       worldSummary: "这里是世界背景",
       openingSituation: "这里是开场局势",
       playerState: "这里是玩家处境",
+      initialPlayerBodyItemState: ["你现在戴着一副眼罩"],
       suggestedPace: "slow",
       safetyFrame: "fiction",
       agents: [
@@ -62,6 +63,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
       contentNotes: []
     },
     confirmedSetup: null,
+    playerBodyItemState: ["你现在戴着一副眼罩"],
     storyState: {
       location: "studio",
       phase: "opening",
@@ -225,6 +227,8 @@ describe("SessionPrintPage", () => {
     expect(wrapper.text()).toContain("打印测试会话");
     expect(wrapper.text()).toContain("当前打印模式为竖版");
     expect(wrapper.text()).toContain("世界背景");
+    expect(wrapper.text()).toContain("当前玩家身体道具");
+    expect(wrapper.text()).toContain("你现在戴着一副眼罩");
     expect(wrapper.text()).toContain("Alice");
     expect(wrapper.text()).toContain("欢迎来到新的场景。");
     expect(wrapper.text()).toContain("会话使用的后端模型");

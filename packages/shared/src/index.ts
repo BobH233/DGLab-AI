@@ -264,12 +264,17 @@ export const agentProfileSchema = z.object({
 
 export type AgentProfile = z.infer<typeof agentProfileSchema>;
 
+export const requiredPlayerBodyItemStateSchema = z.array(z.string().min(1));
+export const playerBodyItemStateSchema = requiredPlayerBodyItemStateSchema.default([]);
+export type PlayerBodyItemState = z.infer<typeof playerBodyItemStateSchema>;
+
 export const sessionDraftSchema = z.object({
   title: z.string().min(1),
   playerBrief: z.string().min(1),
   worldSummary: z.string().min(1),
   openingSituation: z.string().min(1),
   playerState: z.string().min(1),
+  initialPlayerBodyItemState: playerBodyItemStateSchema,
   suggestedPace: z.string().min(1),
   safetyFrame: z.string().min(1),
   agents: z.array(agentProfileSchema).min(1),
@@ -443,6 +448,7 @@ export const sessionSchema = z.object({
   initialPrompt: z.string().min(1),
   draft: sessionDraftSchema,
   confirmedSetup: sessionDraftSchema.nullable(),
+  playerBodyItemState: playerBodyItemStateSchema,
   storyState: storyStateSchema,
   agentStates: z.record(agentRuntimeStateSchema),
   memoryState: memoryStateSchema.default(createEmptyMemoryState()),
@@ -481,6 +487,7 @@ export const eventTypeSchema = z.enum([
   "draft.generated",
   "draft.updated",
   "session.confirmed",
+  "player.body_item_state_updated",
   "player.message",
   "agent.device_control",
   "agent.speak_player",
@@ -528,7 +535,8 @@ export const narrativeContextBundleSchema = z.object({
   coreState: z.object({
     sessionDraft: z.string(),
     storyState: z.string(),
-    agentStates: z.string()
+    agentStates: z.string(),
+    playerBodyItemState: z.string()
   }),
   archiveBlock: z.string(),
   episodeBlocks: z.array(z.string()),
@@ -587,7 +595,8 @@ export type TurnControl = z.infer<typeof turnControlSchema>;
 
 export const actionBatchSchema = z.object({
   actions: z.array(toolCallSchema).max(24),
-  turnControl: turnControlSchema
+  turnControl: turnControlSchema,
+  playerBodyItemState: requiredPlayerBodyItemStateSchema
 });
 
 export type ActionBatch = z.infer<typeof actionBatchSchema>;
@@ -616,6 +625,7 @@ export const updateDraftRequestSchema = z.object({
   worldSummary: z.string().optional(),
   openingSituation: z.string().optional(),
   playerState: z.string().optional(),
+  initialPlayerBodyItemState: playerBodyItemStateSchema.optional(),
   suggestedPace: z.string().optional(),
   safetyFrame: z.string().optional(),
   sceneGoals: z.array(z.string()).optional(),
@@ -680,9 +690,9 @@ export function defaultPromptVersions(): PromptVersions {
   return {
     sharedSafety: "1.3.0",
     toolContract: "2.3.0",
-    worldBuilder: "1.5.0",
+    worldBuilder: "1.6.0",
     directorAgent: "1.2.0",
     supportAgent: "1.2.0",
-    ensembleTurn: "1.3.0"
+    ensembleTurn: "1.4.0"
   };
 }

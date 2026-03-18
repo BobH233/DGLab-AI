@@ -6,14 +6,20 @@ export type PresentationDetail = {
   value: string;
 };
 
+export type PresentationDiffLine = {
+  prefix: "+" | "-";
+  value: string;
+};
+
 export type PresentationItem = {
   id: string;
   seq: number;
-  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error" | "pause";
+  kind: "player" | "dialogue" | "thought" | "action" | "system" | "effect" | "error" | "pause" | "inventory";
   kicker: string;
   title: string;
   main: string;
   details?: PresentationDetail[];
+  diffLines?: PresentationDiffLine[];
   meta?: string;
   tags: string[];
   createdAt: string;
@@ -28,6 +34,9 @@ export function buildTimelinePresentationItems(events: SessionEvent[]): Presenta
     const itemId = `${event.seq}:${index}:${event.type}`;
     const isLatestEvent = index === events.length - 1;
     switch (event.type) {
+      case "player.body_item_state_updated":
+        items.push(buildPlayerBodyItemStateItem(event, itemId));
+        return items;
       case "player.message":
         items.push({
           id: itemId,
@@ -374,6 +383,40 @@ function buildSceneUpdateDetails(payload: Record<string, unknown>): Presentation
   return details;
 }
 
+function buildPlayerBodyItemStateItem(event: SessionEvent, itemId: string): PresentationItem {
+  const nextItems = listOf(event.payload.playerBodyItemState);
+  const previousItems = listOf(event.payload.previousPlayerBodyItemState);
+  const added = nextItems.filter((item) => !previousItems.includes(item));
+  const removed = previousItems.filter((item) => !nextItems.includes(item));
+  const diffLines: PresentationDiffLine[] = [
+    ...added.map((value): PresentationDiffLine => ({ prefix: "+", value })),
+    ...removed.map((value): PresentationDiffLine => ({ prefix: "-", value }))
+  ];
+  const details = nextItems.length > 0
+    ? nextItems.map((value) => ({
+      label: "当前",
+      value
+    }))
+    : [{
+      label: "当前",
+      value: "玩家当前身上没有记录中的物理道具"
+    }];
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "inventory",
+    kicker: "身体道具",
+    title: "玩家身体道具状态已更新",
+    main: "",
+    details,
+    diffLines,
+    meta: diffLines.length === 0 ? "本次同步未检测到增删变化。" : undefined,
+    tags: ["可见状态"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
+}
+
 function buildDeviceControlText(payload: Record<string, unknown>): string {
   const changes: string[] = [];
   if (payload.intensityPercent !== undefined) {
@@ -394,6 +437,13 @@ function buildDeviceControlMeta(payload: Record<string, unknown>): string | unde
     entries.push(`执行状态：${textOf(payload.status)}`);
   }
   return entries.length > 0 ? entries.join("；") : undefined;
+}
+
+function listOf(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => textOf(item)).filter(Boolean);
 }
 
 function buildPauseItem(event: SessionEvent, itemId: string): PresentationItem {

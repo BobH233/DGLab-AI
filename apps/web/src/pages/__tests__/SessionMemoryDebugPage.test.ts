@@ -49,6 +49,7 @@ describe("SessionMemoryDebugPage", () => {
         worldSummary: "world",
         openingSituation: "opening",
         playerState: "player",
+        initialPlayerBodyItemState: [],
         suggestedPace: "slow",
         safetyFrame: "fiction",
         agents: [],
@@ -56,6 +57,7 @@ describe("SessionMemoryDebugPage", () => {
         contentNotes: []
       },
       confirmedSetup: null,
+      playerBodyItemState: [],
       storyState: {
         location: "study",
         phase: "teasing",
@@ -187,7 +189,8 @@ describe("SessionMemoryDebugPage", () => {
         coreState: {
           sessionDraft: "{}",
           storyState: "{}",
-          agentStates: "{}"
+          agentStates: "{}",
+          playerBodyItemState: "[]"
         },
         archiveBlock: "Archive Summary\narchive summary",
         episodeBlocks: [],

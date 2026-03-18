@@ -94,7 +94,8 @@ describe("OpenAICompatibleProvider", () => {
                 ],
                 turnControl: {
                   continue: true
-                }
+                },
+                playerBodyItemState: []
               })
             }
           }
@@ -129,7 +130,8 @@ describe("OpenAICompatibleProvider", () => {
         })),
         turnControl: z.object({
           continue: z.boolean()
-        })
+        }),
+        playerBodyItemState: z.array(z.string())
       }),
       schemaName: "action_batch",
       usageContext: {}
@@ -144,10 +146,11 @@ describe("OpenAICompatibleProvider", () => {
           }
         }
       ],
-      turnControl: {
-        continue: true
-      }
-    });
+        turnControl: {
+          continue: true
+        },
+        playerBodyItemState: []
+      });
   });
 
   it("parses SSE data chunk responses and reconstructs content", async () => {
@@ -200,7 +203,8 @@ describe("OpenAICompatibleProvider", () => {
                 "</think>",
                 "{",
                 "\"actions\":[],",
-                "\"turnControl\":{\"continue\":true}",
+                "\"turnControl\":{\"continue\":true},",
+                "\"playerBodyItemState\":[]",
                 "}"
               ].join("\n")
             }
@@ -233,7 +237,8 @@ describe("OpenAICompatibleProvider", () => {
         actions: z.array(z.unknown()),
         turnControl: z.object({
           continue: z.boolean()
-        })
+        }),
+        playerBodyItemState: z.array(z.string())
       }),
       schemaName: "action_batch",
       usageContext: {}
@@ -241,10 +246,11 @@ describe("OpenAICompatibleProvider", () => {
 
     expect(result.data).toEqual({
       actions: [],
-      turnControl: {
-        continue: true
-      }
-    });
+        turnControl: {
+          continue: true
+        },
+        playerBodyItemState: []
+      });
   });
 
   it("rejects action batches that use legacy tool key aliases", async () => {
@@ -264,7 +270,8 @@ describe("OpenAICompatibleProvider", () => {
                 ],
                 turnControl: {
                   continue: true
-                }
+                },
+                playerBodyItemState: []
               })
             }
           }
@@ -299,7 +306,8 @@ describe("OpenAICompatibleProvider", () => {
         })),
         turnControl: z.object({
           continue: z.boolean()
-        })
+        }),
+        playerBodyItemState: z.array(z.string())
       }),
       schemaName: "action_batch",
       usageContext: {}

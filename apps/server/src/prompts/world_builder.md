@@ -13,6 +13,11 @@ Design goals:
 - Unless the player brief clearly asks for a different dynamic, default to a guided power imbalance where the lead agent drives the encounter and the player is the one being guided, tested, positioned, tempted, or steadily drawn deeper into the scene.
 - Any player-facing setup text should read like an immersive briefing addressed directly to the player.
 - `openingSituation`, `playerState`, `suggestedPace`, `safetyFrame`, and any summary-like prose should use `你` / `你的` instead of describing the player from an outside viewpoint.
+- You must also initialize `initialPlayerBodyItemState` as a string array describing which physical props, restraints, wearable devices, costume pieces, masks, gags, bindings, or other tangible items are already on the player's body at the opening of the session.
+- `initialPlayerBodyItemState` must contain only items that are physically on the player's body right now at scene start, not props that merely exist nearby or may be introduced later.
+- If nothing is currently on the player's body at the opening, return an empty array.
+- Each entry in `initialPlayerBodyItemState` must be a complete Chinese sentence written from the player's perspective, such as `你现在戴着一副遮光眼罩` or `你现在双手被红色绳子捆在身后`.
+- Only track physical item presence, attachment, removal, swap, or position on the body. Do not treat toy intensity, power level, mode, emotional effects, or non-physical state as entries in this array.
 - `suggestedPace` must not be a vague sentence about "slow burn" or "gradual escalation". It must function as a forward-looking outline for the whole story, so the runtime agents already know the likely sequence of beats before the session starts.
 - In `suggestedPace`, pre-plan 3 to 6 sequential phases or time blocks for the session. For each phase, state the rough order or timing, the emotional goal, how the lead agent intends to guide or pressure you, which props / devices / environmental elements are likely to be introduced or withheld, and how the teasing, control, or intimacy changes.
 - If the player brief implies a specific fantasy, game, punishment loop, roleplay loop, or favored prop, reflect that directly inside `suggestedPace` as an anticipated flow of actions. Do not wait for the player to invent the next step.
@@ -36,6 +41,7 @@ Return:
 - worldSummary
 - openingSituation
 - playerState
+- initialPlayerBodyItemState (must be an array of strings)
 - suggestedPace (a single string, but internally structured as a phase-by-phase plan for the full scene with rough timing/order, planned props or devices, and anticipated escalation beats)
 - safetyFrame
 - sceneGoals (must be an array of strings)

@@ -127,7 +127,8 @@ export class MemoryContextAssembler {
     const coreState = {
       sessionDraft: stringify(session.confirmedSetup ?? session.draft),
       storyState: stringify(session.storyState),
-      agentStates: stringify(session.agentStates)
+      agentStates: stringify(session.agentStates),
+      playerBodyItemState: stringify(session.playerBodyItemState)
     };
 
     return narrativeContextBundleSchema.parse({
@@ -149,7 +150,10 @@ export class MemoryContextAssembler {
           rawTurns: selectedRawTurns.blocks.join("").length,
           playerMessages: playerMessagesBlock.length,
           tickContext: tickContextBlock.length,
-          coreState: coreState.sessionDraft.length + coreState.storyState.length + coreState.agentStates.length
+          coreState: coreState.sessionDraft.length
+            + coreState.storyState.length
+            + coreState.agentStates.length
+            + coreState.playerBodyItemState.length
         },
         droppedBlocks: [
           ...selectedEpisodes.dropped,

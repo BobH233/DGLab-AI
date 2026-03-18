@@ -28,6 +28,9 @@ Session draft:
 Current scene:
 {{sceneState}}
 
+Current player body item state:
+{{playerBodyItemState}}
+
 Compressed long-term memory:
 {{archiveMemory}}
 
@@ -54,6 +57,12 @@ Preferred behavior:
 - If a line or narration should briefly breathe, insert `<delay>1000</delay>` inside the relevant player-visible string instead of creating a separate pause action.
 - When the scene materially changes, include `update_scene_state`.
 - When you use `update_scene_state`, populate the hidden memory fields whenever you can so long-context memory can keep an abstract continuity note instead of replaying sensory detail.
+- `playerBodyItemState` is an authoritative session-level ledger of which physical props or wearable items are currently on the player's body. Read it carefully before planning the turn.
+- In every response, you must return a complete `playerBodyItemState` array representing the new authoritative post-turn state.
+- If nothing about the physical items on the player's body changed this turn, return the same `playerBodyItemState` array with the same entries.
+- Only include physical item presence, attachment, removal, swapping, or body-position changes. Do not add entries for vibration strength, toy mode, intensity, emotional effects, or other non-physical parameter adjustments.
+- If a small toy remains on the same body position and only its strength or mode changes, `playerBodyItemState` must stay unchanged.
+- If a toy or prop is newly attached, removed, moved to a different body position, replaced, tightened onto the body, or taken off, reflect that in `playerBodyItemState`.
 - If multiple agents act, make the ordering feel intentional.
 - Every action object must use the exact fields `actorAgentId`, `tool`, and `args`.
 - Keep dialogue and action separate. `speak_to_player` must contain only spoken dialogue to the player, and `speak_to_agent` must contain only spoken dialogue to another agent.
@@ -77,3 +86,8 @@ Preferred behavior:
 - A tool call is the wrapper for visible output, not a limit on what fictional actions can happen. Use the existing tools to narrate varied prop handling, setup rituals, wardrobe adjustments, furniture use, restraint cues, or object-based teasing whenever the current world state supports it.
 - If compressed memory conflicts with recent raw turns, trust recent raw turns. Compressed memory is for continuity, not verbatim recall.
 - Treat the persistent player utterances block as an authoritative ledger of what the player has said across the session. When older player statements conflict with newer ones, trust the newer player statements.
+
+Return valid JSON with exactly these top-level fields:
+- `actions`
+- `turnControl`
+- `playerBodyItemState`

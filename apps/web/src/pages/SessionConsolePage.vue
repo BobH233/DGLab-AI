@@ -72,6 +72,26 @@
         <section class="panel stack">
           <div class="section-head">
             <div>
+              <span class="eyebrow">Body Items</span>
+              <h3>玩家身体道具</h3>
+            </div>
+            <span class="soft-pill">{{ playerBodyItemState.length }} 项</span>
+          </div>
+          <div v-if="playerBodyItemState.length" class="state-list">
+            <article
+              v-for="item in playerBodyItemState"
+              :key="item"
+              class="state-card"
+            >
+              <p>{{ item }}</p>
+            </article>
+          </div>
+          <p v-else class="soft-note">当前没有记录中的身体道具。</p>
+        </section>
+
+        <section class="panel stack">
+          <div class="section-head">
+            <div>
               <span class="eyebrow">Interaction</span>
               <h3>输入区</h3>
             </div>
@@ -223,6 +243,7 @@ const agentCards = computed(() => {
     summary: agent.summary
   }));
 });
+const playerBodyItemState = computed(() => session.value?.playerBodyItemState ?? []);
 
 const displayedEventCount = computed(() => events.value.length);
 const isTickInFlight = computed(() => liveTickInFlight.value || Boolean(session.value?.timerState.inFlight));

@@ -73,6 +73,18 @@ function toStringList(value: unknown): string[] {
   return [];
 }
 
+function normalizePlayerBodyItemState(value: unknown): string[] {
+  const normalized = toStringList(value);
+  const seen = new Set<string>();
+  return normalized.filter((item) => {
+    if (seen.has(item)) {
+      return false;
+    }
+    seen.add(item);
+    return true;
+  });
+}
+
 function toRole(value: unknown, index: number): "director" | "support" {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "director" || normalized === "主导者") {
@@ -126,6 +138,9 @@ function normalizeWorldBuilderOutput(raw: unknown, playerBrief: string): Session
     worldSummary: toText(source.worldSummary, "系统已根据你的输入生成基础世界观。"),
     openingSituation: toText(source.openingSituation, "故事从一场让你难以抽身的暧昧对峙里缓缓展开。"),
     playerState: toText(source.playerState, "你正被卷入一场充满试探、吸引力与情绪拉扯的互动之中。"),
+    initialPlayerBodyItemState: normalizePlayerBodyItemState(
+      source.initialPlayerBodyItemState ?? source.playerBodyItemState ?? source.playerPhysicalItemState
+    ),
     suggestedPace: toText(
       source.suggestedPace,
       "整体会先用试探与拉近距离让你进入状态，再进入逐步加压与条件引导的中段，最后以情绪回收和余韵收束；每一段都会提前埋好道具、动作与掌控方式，让你在互动、试探与情绪升温里逐步沉浸其中。"
@@ -180,7 +195,8 @@ function toolExamplesForPrompt(): string {
         continue: true,
         endStory: false,
         needsHandoff: false
-      }
+      },
+      playerBodyItemState: ["你现在戴着一副遮光眼罩"]
     }, null, 2),
     "```",
     "Example batch 2:",
@@ -212,7 +228,11 @@ function toolExamplesForPrompt(): string {
         continue: true,
         endStory: false,
         needsHandoff: false
-      }
+      },
+      playerBodyItemState: [
+        "你现在戴着一副遮光眼罩",
+        "你现在双手被红色绳子捆在身后"
+      ]
     }, null, 2),
     "```",
     "Example batch 3:",
@@ -232,10 +252,18 @@ function toolExamplesForPrompt(): string {
         continue: false,
         endStory: true,
         needsHandoff: false
-      }
+      },
+      playerBodyItemState: []
     }, null, 2),
     "```"
   ].join("\n");
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
 }
 
 function worldBuilderToolHooksForPrompt(
@@ -336,6 +364,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
       agentRuntimeState: contextBundle.coreState.agentStates,
       sessionDraft: contextBundle.coreState.sessionDraft,
       sceneState: contextBundle.coreState.storyState,
+      playerBodyItemState: contextBundle.coreState.playerBodyItemState,
       archiveMemory: contextBundle.archiveBlock,
       episodeMemories: contextBundle.episodeBlocks.join("\n\n") || "No episode summaries yet.",
       turnMemories: contextBundle.turnSummaryBlocks.join("\n\n") || "No turn summaries yet.",
@@ -396,6 +425,9 @@ export class DefaultOrchestratorService implements OrchestratorService {
         totalTokens: response.usage.totalTokens
       }
     });
+    const previousPlayerBodyItemState = [...session.playerBodyItemState];
+    const nextPlayerBodyItemState = normalizePlayerBodyItemState(response.data.playerBodyItemState);
+    session.playerBodyItemState = nextPlayerBodyItemState;
     for (const action of response.data.actions) {
       const actor = agentById.get(action.actorAgentId);
       if (!actor) {
@@ -412,6 +444,17 @@ export class DefaultOrchestratorService implements OrchestratorService {
       if (result?.stopProcessing || hasEnded()) {
         break;
       }
+    }
+    if (!sameStringList(previousPlayerBodyItemState, nextPlayerBodyItemState)) {
+      events.push({
+        type: "player.body_item_state_updated",
+        source: "system",
+        createdAt: now,
+        payload: {
+          previousPlayerBodyItemState,
+          playerBodyItemState: nextPlayerBodyItemState
+        }
+      });
     }
     if (response.data.turnControl.endStory && !hasEnded()) {
       session.status = "ended";

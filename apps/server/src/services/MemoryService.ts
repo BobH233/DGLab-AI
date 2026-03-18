@@ -149,6 +149,21 @@ function extractSceneFromTurn(turn: ParsedTurn): SummaryShape["scene"] | null {
   };
 }
 
+function describePlayerBodyItemStateUpdate(event: ParsedTurn["events"][number]): string[] {
+  const nextItems = Array.isArray(event.payload.playerBodyItemState)
+    ? event.payload.playerBodyItemState.map((item) => textOf(item)).filter(Boolean)
+    : [];
+  const previousItems = Array.isArray(event.payload.previousPlayerBodyItemState)
+    ? event.payload.previousPlayerBodyItemState.map((item) => textOf(item)).filter(Boolean)
+    : [];
+  const added = nextItems.filter((item) => !previousItems.includes(item));
+  const removed = previousItems.filter((item) => !nextItems.includes(item));
+  return uniqStrings([
+    ...added.map((item) => `玩家身上新增道具：${truncateText(item, 90)}`),
+    ...removed.map((item) => `玩家身上移除了道具：${truncateText(item, 90)}`)
+  ], 4);
+}
+
 function ruleBasedTurnShape(session: Session, turn: ParsedTurn): SummaryShape {
   const scene = extractSceneFromTurn(turn) ?? {
     phase: session.storyState.phase,
@@ -188,6 +203,9 @@ function ruleBasedTurnShape(session: Session, turn: ParsedTurn): SummaryShape {
   );
 
   const fallbackKeyDevelopments = uniqStrings([
+    ...turn.events
+      .filter((event) => event.type === "player.body_item_state_updated")
+      .flatMap((event) => describePlayerBodyItemStateUpdate(event)),
     ...turn.events
       .filter((event) => event.type === "agent.story_effect")
       .map((event) => {

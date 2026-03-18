@@ -24,6 +24,15 @@
           <textarea v-model="draft.playerState" class="field textarea" rows="5" />
         </label>
         <label>
+          <span>开场时玩家身体道具（每行一条）</span>
+          <textarea
+            :value="(draft.initialPlayerBodyItemState ?? []).join('\n')"
+            class="field textarea"
+            rows="5"
+            @input="updateDraftList('initialPlayerBodyItemState', $event)"
+          />
+        </label>
+        <label>
           <span>节奏建议</span>
           <textarea v-model="draft.suggestedPace" class="field textarea" rows="4" />
         </label>
@@ -97,6 +106,7 @@ const draft = reactive<UpdateDraftRequest & { title: string; agents: AgentProfil
   worldSummary: "",
   openingSituation: "",
   playerState: "",
+  initialPlayerBodyItemState: [],
   suggestedPace: "",
   safetyFrame: "",
   sceneGoals: [],
@@ -151,6 +161,11 @@ async function loadSession() {
 function updateList(agent: AgentProfile, field: "goals" | "style", event: Event) {
   const target = event.target as HTMLTextAreaElement;
   agent[field] = target.value.split("\n").map((item) => item.trim()).filter(Boolean);
+}
+
+function updateDraftList(field: "initialPlayerBodyItemState", event: Event) {
+  const target = event.target as HTMLTextAreaElement;
+  draft[field] = target.value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
 async function saveDraft() {

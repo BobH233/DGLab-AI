@@ -74,6 +74,10 @@
             <p>{{ setupSource.playerState }}</p>
           </article>
           <article class="print-info-card">
+            <h4>当前玩家身体道具</h4>
+            <p>{{ playerBodyItemStateLabel }}</p>
+          </article>
+          <article class="print-info-card">
             <h4>安全框架</h4>
             <p>{{ setupSource.safetyFrame }}</p>
           </article>
@@ -142,6 +146,11 @@
               </div>
             </header>
             <p v-if="item.main" class="print-timeline-item__main">{{ item.main }}</p>
+            <div v-if="item.diffLines?.length" class="print-timeline-item__diff">
+              <p v-for="line in item.diffLines" :key="`${item.id}-${line.prefix}-${line.value}`" :data-prefix="line.prefix">
+                <strong>{{ line.prefix }}</strong> {{ line.value }}
+              </p>
+            </div>
             <div v-if="item.details?.length" class="print-timeline-item__details">
               <p v-for="detail in item.details" :key="`${item.id}-${detail.label}-${detail.value}`">
                 <strong>{{ detail.label }}：</strong>{{ detail.value }}
@@ -188,6 +197,7 @@ const setupSource = computed<SessionDraft>(() => session.value?.confirmedSetup ?
   worldSummary: "",
   openingSituation: "",
   playerState: "",
+  initialPlayerBodyItemState: [],
   suggestedPace: "",
   safetyFrame: "",
   agents: [],
@@ -249,6 +259,10 @@ const agentCards = computed(() => {
     role: agent.role === "director" ? "主导者" : "辅助者",
     summary: agent.summary
   }));
+});
+const playerBodyItemStateLabel = computed(() => {
+  const items = session.value?.playerBodyItemState ?? [];
+  return items.length > 0 ? items.join("\n") : "当前没有记录中的身体道具。";
 });
 
 async function loadPrintView() {

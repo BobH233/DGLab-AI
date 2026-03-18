@@ -109,6 +109,7 @@ export class SessionService {
       initialPrompt: playerBrief,
       draft,
       confirmedSetup: null,
+      playerBodyItemState: draft.initialPlayerBodyItemState,
       storyState: storyStateSchema.parse({
         location: "未揭示",
         phase: "draft",
@@ -169,6 +170,7 @@ export class SessionService {
         ...session.draft,
         ...patch
       });
+      session.playerBodyItemState = session.draft.initialPlayerBodyItemState;
       session.title = session.draft.title;
       session.updatedAt = new Date().toISOString();
       const events = await this.store.appendEvents(sessionId, session.lastSeq, [
@@ -196,15 +198,16 @@ export class SessionService {
       const versions = this.prompts.versions();
       session.status = "active";
       session.confirmedSetup = session.draft;
+      session.playerBodyItemState = session.draft.initialPlayerBodyItemState;
       session.llmConfigSnapshot = config;
       session.promptVersions = {
         ...defaultPromptVersions(),
         sharedSafety: versions.shared_safety_preamble ?? "1.3.0",
         toolContract: versions.tool_contract ?? "2.3.0",
-        worldBuilder: versions.world_builder ?? "1.5.0",
+        worldBuilder: versions.world_builder ?? "1.6.0",
         directorAgent: versions.director_agent ?? "1.2.0",
         supportAgent: versions.support_agent ?? "1.2.0",
-        ensembleTurn: versions.ensemble_turn ?? "1.3.0"
+        ensembleTurn: versions.ensemble_turn ?? "1.4.0"
       };
       session.storyState = {
         ...session.storyState,
@@ -220,7 +223,17 @@ export class SessionService {
           payload: {
             confirmedAt: session.updatedAt
           }
-        }
+        },
+        ...(session.playerBodyItemState.length > 0 ? [{
+          type: "player.body_item_state_updated" as const,
+          source: "system" as const,
+          createdAt: session.updatedAt,
+          payload: {
+            previousPlayerBodyItemState: [],
+            playerBodyItemState: session.playerBodyItemState,
+            reason: "session_confirmed"
+          }
+        }] : [])
       ]);
       session.lastSeq += events.length;
       await this.store.replaceSession(session);
