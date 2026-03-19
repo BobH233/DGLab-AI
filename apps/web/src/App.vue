@@ -32,6 +32,7 @@
         </label>
         <nav class="topnav">
           <RouterLink to="/">会话</RouterLink>
+          <RouterLink to="/llm-calls">模型调用</RouterLink>
           <RouterLink to="/settings">配置</RouterLink>
           <RouterLink to="/devices/e-stim">郊狼配置</RouterLink>
         </nav>

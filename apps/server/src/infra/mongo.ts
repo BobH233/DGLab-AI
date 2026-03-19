@@ -4,23 +4,28 @@ import {
   createDefaultAppConfig,
   extractLlmConfig,
   findActiveModelBackend,
+  llmCallListResponseSchema,
+  llmCallRecordSchema,
   llmConfigSchema,
   normalizeAppConfig,
   normalizeLlmConfig,
   sessionSchema,
   type AppConfig,
+  type LlmCallListQuery,
+  type LlmCallListResponse,
+  type LlmCallRecord,
   type LlmConfig,
   type Session,
   type SessionEvent
 } from "@dglab-ai/shared";
-import type { SessionStore } from "../types/contracts.js";
+import type { LlmCallStore, SessionStore } from "../types/contracts.js";
 
 type ConfigDocument = {
   _id: "default";
   config: unknown;
 };
 
-export class MongoSessionStore implements SessionStore {
+export class MongoSessionStore implements SessionStore, LlmCallStore {
   private readonly client: MongoClient;
   private readonly dbName: string;
 
@@ -41,12 +46,19 @@ export class MongoSessionStore implements SessionStore {
     return this.client.db(this.dbName).collection("session_events");
   }
 
+  private get llmCalls(): Collection<LlmCallRecord> {
+    return this.client.db(this.dbName).collection("llm_call_records");
+  }
+
   async init(): Promise<void> {
     await this.client.connect();
     await Promise.all([
       this.sessions.createIndex({ id: 1 }, { unique: true }),
       this.sessions.createIndex({ updatedAt: -1 }),
-      this.events.createIndex({ sessionId: 1, seq: 1 }, { unique: true })
+      this.events.createIndex({ sessionId: 1, seq: 1 }, { unique: true }),
+      this.llmCalls.createIndex({ id: 1 }, { unique: true }),
+      this.llmCalls.createIndex({ startedAt: -1 }),
+      this.llmCalls.createIndex({ sessionId: 1, startedAt: -1 })
     ]);
   }
 
@@ -177,5 +189,31 @@ export class MongoSessionStore implements SessionStore {
       }, { projection: { _id: 0 } })
       .toArray();
     return documents.map((document) => sessionSchema.parse(document));
+  }
+
+  async recordLlmCall(record: LlmCallRecord): Promise<void> {
+    await this.llmCalls.insertOne(llmCallRecordSchema.parse(record));
+  }
+
+  async listLlmCalls(query: LlmCallListQuery): Promise<LlmCallListResponse> {
+    const page = query.page;
+    const pageSize = query.pageSize;
+    const [items, total] = await Promise.all([
+      this.llmCalls
+        .find({}, { projection: { _id: 0 } })
+        .sort({ startedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray(),
+      this.llmCalls.countDocuments({})
+    ]);
+
+    return llmCallListResponseSchema.parse({
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages: total === 0 ? 0 : Math.ceil(total / pageSize)
+    });
   }
 }

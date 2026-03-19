@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  LlmCallListResponse,
   MemoryDebugResponse,
   Session,
   SessionEvent,
@@ -29,6 +30,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getAppConfig(): Promise<AppConfig> {
     return request<AppConfig>("/config");
+  },
+  listLlmCalls(page = 1, pageSize = 25): Promise<LlmCallListResponse> {
+    return request<LlmCallListResponse>(`/llm-calls?page=${page}&pageSize=${pageSize}`);
   },
   saveAppConfig(config: AppConfig): Promise<AppConfig> {
     return request<AppConfig>("/config", {

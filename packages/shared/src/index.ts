@@ -254,6 +254,46 @@ export const usageStatsSchema = z.object({
 
 export type UsageStats = z.infer<typeof usageStatsSchema>;
 
+export const llmCallStatusSchema = z.enum(["success", "error"]);
+export type LlmCallStatus = z.infer<typeof llmCallStatusSchema>;
+
+export const llmCallRecordSchema = z.object({
+  id: z.string().min(1),
+  provider: z.string().min(1).default("openai-compatible"),
+  model: z.string().min(1),
+  kind: z.string().min(1).default("unknown"),
+  schemaName: z.string().min(1),
+  status: llmCallStatusSchema.default("success"),
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime(),
+  durationMs: z.number().int().nonnegative(),
+  promptTokens: z.number().int().nonnegative().default(0),
+  completionTokens: z.number().int().nonnegative().default(0),
+  totalTokens: z.number().int().nonnegative().default(0),
+  sessionId: nullToUndefined(z.string()),
+  context: z.record(z.unknown()).default({}),
+  errorMessage: z.string().nullable().default(null)
+});
+
+export type LlmCallRecord = z.infer<typeof llmCallRecordSchema>;
+
+export const llmCallListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25)
+});
+
+export type LlmCallListQuery = z.infer<typeof llmCallListQuerySchema>;
+
+export const llmCallListResponseSchema = z.object({
+  items: z.array(llmCallRecordSchema),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative()
+});
+
+export type LlmCallListResponse = z.infer<typeof llmCallListResponseSchema>;
+
 export const agentRoleSchema = z.enum(["director", "support"]);
 export type AgentRole = z.infer<typeof agentRoleSchema>;
 

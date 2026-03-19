@@ -4,6 +4,9 @@ import type {
   ActionBatch,
   AgentProfile,
   AppConfig,
+  LlmCallListQuery,
+  LlmCallListResponse,
+  LlmCallRecord,
   LlmConfig,
   MemoryDebugResponse,
   NarrativeContextBundle,
@@ -133,6 +136,11 @@ export interface SessionStore {
   ): Promise<SessionEvent[]>;
   getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]>;
   listSchedulableSessions(): Promise<Session[]>;
+}
+
+export interface LlmCallStore {
+  recordLlmCall(record: LlmCallRecord): Promise<void>;
+  listLlmCalls(query: LlmCallListQuery): Promise<LlmCallListResponse>;
 }
 
 export interface PromptTemplateService {

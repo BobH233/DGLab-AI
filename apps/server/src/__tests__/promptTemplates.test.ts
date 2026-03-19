@@ -29,15 +29,15 @@ describe("prompt templates", () => {
     expect(prompt).toContain("interactive fiction aimed directly at the player");
     expect(prompt).toContain("tool contract");
     expect(prompt).toContain("r18 guidance");
-    expect(prompt).toContain("immersive second-person narration");
-    expect(prompt).toContain("do not refer to the player as `玩家`, by proper name, or with third-person pronouns");
+    expect(prompt).toContain("Prefer vivid sensory phrasing over detached observer summaries");
+    expect(prompt).toContain("Every action object must use the exact fields `actorAgentId`, `tool`, and `args`");
     expect(prompt).toContain("slow-burn, romantic, adult, emotionally charged cadence");
     expect(prompt).toContain("Do not over-focus on any single enabled tool or device");
     expect(prompt).toContain("Do not leave the entire burden of momentum on the player");
     expect(prompt).toContain("Props and scene elements mentioned in the player brief");
-    expect(prompt).toContain("narrate it as a sequence instead of a shortcut");
+    expect(prompt).toContain("Do not collapse an intimate beat into a single vague line");
     expect(prompt).toContain("Keep the fiction close to the body and moment-by-moment");
-    expect(prompt).toContain("Keep dialogue and action separate");
+    expect(prompt).toContain("If a character both speaks and acts in the same beat, emit both tools");
     expect(prompt).toContain("Do not hide motion, touching, prop handling, posture changes, or narration inside dialogue strings");
     expect(prompt).toContain("Compressed long-term memory");
     expect(prompt).toContain("Compressed mid-term memory");
@@ -67,7 +67,7 @@ describe("prompt templates", () => {
     expect(prompt).toContain("<delay>1000</delay>");
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
     expect(prompt).toContain("do not skip from intent to completion");
-    expect(prompt).toContain("Favor concrete sensory progression over abstract summaries");
+    expect(prompt).toContain("prefer abstract causal summaries over sensory replay");
     expect(prompt).toContain("must contain only the words spoken to the player");
     expect(prompt).toContain("split it across tools");
     expect(prompt).toContain("Use only the exact tool ids and argument keys shown in the Tool reference above.");
@@ -77,9 +77,9 @@ describe("prompt templates", () => {
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
     const prompt = await promptService.getTemplate("shared_safety_preamble");
 
-    expect(prompt).toContain("All participating characters are fictional adults");
+    expect(prompt).toContain("All characters are **fictional adults (18+)**.");
     expect(prompt).toContain("Non-explicit romantic or suggestive content is allowed");
-    expect(prompt).toContain("Favor emotional pull, chemistry, teasing, and narrative intimacy");
+    expect(prompt).toContain("Prioritize emotional pull, chemistry, teasing, and narrative intimacy");
   });
 
   it("allows world builder prompts to weave active tool hooks into the setup", async () => {

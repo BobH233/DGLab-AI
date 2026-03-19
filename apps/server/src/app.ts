@@ -8,8 +8,10 @@ import { FilePromptTemplateService } from "./infra/PromptTemplateService.js";
 import { WebChannelAdapter } from "./infra/WebChannelAdapter.js";
 import { isHttpError } from "./lib/errors.js";
 import { createConfigRoutes } from "./routes/configRoutes.js";
+import { createLlmCallRoutes } from "./routes/llmCallRoutes.js";
 import { createSessionRoutes } from "./routes/sessionRoutes.js";
 import { ConfigService } from "./services/ConfigService.js";
+import { LlmCallService } from "./services/LlmCallService.js";
 import { DefaultOrchestratorService } from "./services/OrchestratorService.js";
 import { MemoryContextAssembler } from "./services/MemoryContextAssembler.js";
 import { MemoryService } from "./services/MemoryService.js";
@@ -27,7 +29,7 @@ export async function createServerApp() {
   const promptService = new FilePromptTemplateService(
     path.resolve(currentDir, "prompts")
   );
-  const provider = new OpenAICompatibleProvider();
+  const provider = new OpenAICompatibleProvider(store);
   const channel = new WebChannelAdapter();
   const toolRegistry = createDefaultToolRegistry();
   const orchestrator = new DefaultOrchestratorService(provider, promptService, toolRegistry);
@@ -43,6 +45,7 @@ export async function createServerApp() {
     memoryContextAssembler
   );
   const scheduler = new SchedulerService(sessionService);
+  const llmCallService = new LlmCallService(store);
   sessionService.attachScheduler(scheduler);
 
   const app = express();
@@ -53,6 +56,7 @@ export async function createServerApp() {
     response.json({ ok: true });
   });
   app.use("/api/config", createConfigRoutes(configService));
+  app.use("/api/llm-calls", createLlmCallRoutes(llmCallService));
   app.use("/api/sessions", createSessionRoutes(sessionService, channel));
 
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {

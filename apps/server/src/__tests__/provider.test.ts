@@ -4,6 +4,7 @@ import { z } from "zod";
 import { OpenAICompatibleProvider } from "../infra/OpenAICompatibleProvider.js";
 
 const modelConfig = {
+  provider: "openai-compatible" as const,
   baseUrl: "https://example.com/v1",
   apiKey: "secret",
   model: "test-model",
@@ -312,5 +313,116 @@ describe("OpenAICompatibleProvider", () => {
       schemaName: "action_batch",
       usageContext: {}
     })).rejects.toThrow();
+  });
+
+  it("records successful llm call telemetry", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "{\"ok\":true}"
+            }
+          }
+        ],
+        usage: {
+          prompt_tokens: 8,
+          completion_tokens: 4,
+          total_tokens: 12
+        }
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    ));
+    const recordLlmCall = vi.fn();
+    const provider = new OpenAICompatibleProvider({ recordLlmCall });
+
+    await provider.completeJson({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return JSON"
+        }
+      ],
+      schema: z.object({
+        ok: z.boolean()
+      }),
+      schemaName: "test_schema",
+      usageContext: {
+        kind: "world-builder",
+        sessionId: "session_1"
+      }
+    });
+
+    expect(recordLlmCall).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "openai-compatible",
+      model: "test-model",
+      kind: "world-builder",
+      schemaName: "test_schema",
+      status: "success",
+      promptTokens: 8,
+      completionTokens: 4,
+      totalTokens: 12,
+      sessionId: "session_1",
+      errorMessage: null
+    }));
+  });
+
+  it("records failed llm call telemetry", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "{\"legacy\":true}"
+            }
+          }
+        ],
+        usage: {
+          prompt_tokens: 3,
+          completion_tokens: 2,
+          total_tokens: 5
+        }
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    ));
+    const recordLlmCall = vi.fn();
+    const provider = new OpenAICompatibleProvider({ recordLlmCall });
+
+    await expect(provider.completeJson({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return JSON"
+        }
+      ],
+      schema: z.object({
+        ok: z.boolean()
+      }),
+      schemaName: "test_schema",
+      usageContext: {
+        kind: "ensemble-turn"
+      }
+    })).rejects.toThrow();
+
+    expect(recordLlmCall).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "ensemble-turn",
+      status: "error",
+      promptTokens: 3,
+      completionTokens: 2,
+      totalTokens: 5
+    }));
+    expect(recordLlmCall.mock.calls[0]?.[0]?.errorMessage).toContain("Required");
   });
 });

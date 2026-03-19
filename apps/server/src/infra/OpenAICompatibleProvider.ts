@@ -1,6 +1,8 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { z } from "zod";
-import type { ChatMessage, LLMProvider, ProviderUsage } from "../types/contracts.js";
+import type { LlmConfig } from "@dglab-ai/shared";
+import { createId } from "../lib/ids.js";
+import type { ChatMessage, LLMProvider, LlmCallStore, ProviderUsage } from "../types/contracts.js";
 
 type CompletionPayload = {
   choices: Array<{
@@ -209,21 +211,16 @@ function buildUsage(model: string, payload: CompletionPayload): ProviderUsage {
 }
 
 export class OpenAICompatibleProvider implements LLMProvider {
+  constructor(private readonly llmCallStore?: Pick<LlmCallStore, "recordLlmCall">) {}
+
   async completeJson<T>({
     modelConfig,
     messages,
     schema,
-    schemaName
+    schemaName,
+    usageContext
   }: {
-    modelConfig: {
-      baseUrl: string;
-      apiKey: string;
-      model: string;
-      temperature: number;
-      maxTokens: number;
-      topP: number;
-      requestTimeoutMs: number;
-    };
+    modelConfig: LlmConfig;
     messages: ChatMessage[];
     schema: z.ZodSchema<T>;
     schemaName: string;
@@ -232,6 +229,44 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const effectiveTimeoutMs = Math.max(modelConfig.requestTimeoutMs, 120000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    const startedAt = new Date().toISOString();
+    let usage: ProviderUsage | undefined;
+
+    const recordCall = async (status: "success" | "error", errorMessage?: string | null) => {
+      if (!this.llmCallStore) {
+        return;
+      }
+
+      try {
+        const finishedAt = new Date().toISOString();
+        const kind = typeof usageContext.kind === "string" && usageContext.kind.trim()
+          ? usageContext.kind
+          : "unknown";
+        const sessionId = typeof usageContext.sessionId === "string" && usageContext.sessionId.trim()
+          ? usageContext.sessionId
+          : undefined;
+        await this.llmCallStore.recordLlmCall({
+          id: createId("llm_call"),
+          provider: modelConfig.provider,
+          model: modelConfig.model,
+          kind,
+          schemaName,
+          status,
+          startedAt,
+          finishedAt,
+          durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
+          promptTokens: usage?.promptTokens ?? 0,
+          completionTokens: usage?.completionTokens ?? 0,
+          totalTokens: usage?.totalTokens ?? 0,
+          sessionId,
+          context: usageContext,
+          errorMessage: errorMessage ?? null
+        });
+      } catch (recordError) {
+        console.error("Failed to persist LLM call record", recordError);
+      }
+    };
+
     try {
       const endpoint = `${modelConfig.baseUrl.replace(/\/$/, "")}/chat/completions`;
       const headers = {
@@ -321,6 +356,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
       const responseText = await response.text();
       const payload = parseCompletionPayload(responseText);
+      usage = buildUsage(modelConfig.model, payload);
       const rawText = normalizeContent(payload.choices?.[0]?.message?.content);
       debugLog("raw_response", payload);
       debugLog("raw_content", rawText);
@@ -329,10 +365,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
       const parsedJson = JSON.parse(jsonText);
       const data = schema.parse(parsedJson);
       debugLog("validated_data", data);
+      await recordCall("success");
       return {
         data,
         rawText: jsonText,
-        usage: buildUsage(modelConfig.model, payload)
+        usage
       };
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -342,10 +379,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
           schemaName,
           timeoutMs: effectiveTimeoutMs
         });
-        throw new Error(
+        const timeoutError = new Error(
           `Provider request timed out after ${effectiveTimeoutMs}ms for model ${modelConfig.model}`
         );
+        await recordCall("error", timeoutError.message);
+        throw timeoutError;
       }
+      await recordCall("error", error instanceof Error ? error.message : String(error));
       throw error;
     } finally {
       clearTimeout(timeout);

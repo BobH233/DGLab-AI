@@ -6,6 +6,7 @@ import SessionPrintPage from "./pages/SessionPrintPage.vue";
 import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 import ElectroStimSettingsPage from "./pages/ElectroStimSettingsPage.vue";
+import LlmCallHistoryPage from "./pages/LlmCallHistoryPage.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -36,6 +37,10 @@ export const router = createRouter({
     {
       path: "/settings",
       component: SettingsPage
+    },
+    {
+      path: "/llm-calls",
+      component: LlmCallHistoryPage
     },
     {
       path: "/devices/e-stim",
