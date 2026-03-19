@@ -460,10 +460,23 @@ export class DefaultOrchestratorService implements OrchestratorService {
     const nextPlayerBodyItemState = normalizePlayerBodyItemState(response.data.playerBodyItemState);
     session.playerBodyItemState = nextPlayerBodyItemState;
     for (const action of response.data.actions) {
-      const actor = agentById.get(action.actorAgentId);
+      // Try to find actor by ID first
+      let actor = agentById.get(action.actorAgentId);
+      
+      // If not found by ID, try to find by role (fallback for when LLM generates role-based references)
+      if (!actor) {
+        actor = agents.find((a) => a.role === action.actorAgentId);
+      }
+      
+      // If still not found, try to find by name
+      if (!actor) {
+        actor = agents.find((a) => a.name === action.actorAgentId);
+      }
+      
       if (!actor) {
         throw new Error(`Unknown actorAgentId in action batch: ${action.actorAgentId}`);
       }
+      
       const result = await this.tools.execute({
         session,
         agent: actor,

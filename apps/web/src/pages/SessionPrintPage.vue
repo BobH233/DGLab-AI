@@ -207,7 +207,7 @@ const setupSource = computed<SessionDraft>(() => session.value?.confirmedSetup ?
 
 const timelineItems = computed(() => {
   const printableEvents = events.value.filter((event) => !isHiddenInPrint(event.type));
-  return buildTimelinePresentationItems(printableEvents);
+  return buildTimelinePresentationItems(printableEvents, {}, setupSource.value.agents ?? []);
 });
 const orientation = computed<"portrait" | "landscape">(() => {
   const queryValue = route.query.orientation;

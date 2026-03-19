@@ -1,4 +1,4 @@
-import { isToolRequired, type SessionEvent } from "@dglab-ai/shared";
+import { isToolRequired, type AgentProfile, type SessionEvent } from "@dglab-ai/shared";
 import { stripInlineDelays } from "./inlineDelays";
 
 export type PresentationDetail = {
@@ -41,8 +41,10 @@ export function executionKeyForEvent(event: SessionEvent): string {
 
 export function buildTimelinePresentationItems(
   events: SessionEvent[],
-  deviceExecutionStates: Record<string, DeviceExecutionState> = {}
+  deviceExecutionStates: Record<string, DeviceExecutionState> = {},
+  agents: AgentProfile[] = []
 ): PresentationItem[] {
+  const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   return events.reduce<PresentationItem[]>((items, event, index) => {
     const itemId = `${event.seq}:${index}:${event.type}`;
     const isLatestEvent = index === events.length - 1;
@@ -64,17 +66,7 @@ export function buildTimelinePresentationItems(
         });
         return items;
       case "agent.speak_player":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "dialogue",
-          kicker: "角色发言",
-          title: String(event.payload.speaker ?? "角色"),
-          main: textOf(event.payload.message),
-          tags: ["对你说"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(buildAgentSpeakPlayerItem(event, itemId));
         return items;
       case "agent.device_control":
         const optionalTool = isOptionalToolEvent(event);
@@ -99,18 +91,7 @@ export function buildTimelinePresentationItems(
         });
         return items;
       case "agent.speak_agent":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "dialogue",
-          kicker: "角色互动",
-          title: `${textOf(event.payload.speaker)} 与其他角色交流`,
-          main: textOf(event.payload.message),
-          meta: `目标角色：${textOf(event.payload.targetAgentId)}`,
-          tags: ["角色间对话"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(buildAgentSpeakAgentItem(event, itemId, agentMap));
         return items;
       case "agent.reasoning":
         items.push({
@@ -583,4 +564,43 @@ function formatTime(value: string): string {
 function joinText(parts: Array<string | undefined>): string | undefined {
   const normalized = parts.filter((part): part is string => Boolean(part && part.trim()));
   return normalized.length > 0 ? normalized.join("；") : undefined;
+}
+
+function buildAgentSpeakPlayerItem(event: SessionEvent, itemId: string): PresentationItem {
+  const message = typeof event.payload.message === "string" ? event.payload.message : "";
+
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "dialogue",
+    kicker: "角色发言",
+    title: String(event.payload.speaker ?? "角色"),
+    main: stripInlineDelays(message),
+    tags: ["对你说"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
+}
+
+function buildAgentSpeakAgentItem(
+  event: SessionEvent,
+  itemId: string,
+  agentMap: Map<string, AgentProfile>
+): PresentationItem {
+  const message = typeof event.payload.message === "string" ? event.payload.message : "";
+  const targetAgentId = typeof event.payload.targetAgentId === "string" ? event.payload.targetAgentId : "";
+  const targetAgent = agentMap.get(targetAgentId);
+  const targetAgentName = targetAgent?.name ?? targetAgentId;
+
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "dialogue",
+    kicker: "角色互动",
+    title: `${textOf(event.payload.speaker)} 对着 ${targetAgentName} 说`,
+    main: stripInlineDelays(message),
+    tags: ["角色间对话"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
 }

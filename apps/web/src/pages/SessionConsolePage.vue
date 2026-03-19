@@ -70,6 +70,7 @@
           :active-pause="activePause"
           :automation-status="automationTimelineStatus"
           :device-execution-states="deviceExecutionStates"
+          :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
         />
       </section>
 

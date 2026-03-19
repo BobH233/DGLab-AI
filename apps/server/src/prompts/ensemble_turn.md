@@ -12,7 +12,7 @@ You must decide the next ordered action batch for all currently active agents in
 - You already know every agent's persona, role, goals, and current state.
 - You must decide which agents act this turn, in what order, and how they interact.
 - Not every agent has to act on every turn.
-- If an agent acts, every action must include that agent's exact `actorAgentId`.
+- If an agent acts, every action must include that agent's exact `actorAgentId`, and must be the exact id of the acting agent from the provided cast list.
 
 ### Core rule:
 - There is exactly one LLM call for the whole cast on this turn.

@@ -86,7 +86,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { SessionEvent } from "@dglab-ai/shared";
+import type { AgentProfile, SessionEvent } from "@dglab-ai/shared";
 import {
   buildTimelinePresentationItems,
   type DeviceExecutionState,
@@ -109,10 +109,11 @@ const props = defineProps<{
   activePause?: ActivePauseState | null;
   automationStatus?: AutomationStatusState | null;
   deviceExecutionStates?: Record<string, DeviceExecutionState>;
+  agents?: AgentProfile[];
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
-  return buildTimelinePresentationItems(props.events, props.deviceExecutionStates ?? {}).slice().reverse();
+  return buildTimelinePresentationItems(props.events, props.deviceExecutionStates ?? {}, props.agents ?? []).slice().reverse();
 });
 
 function isLivePause(item: PresentationItem): boolean {
