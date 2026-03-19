@@ -51,8 +51,9 @@ Use only the exact tool ids and argument keys shown in the Tool reference above.
 - `speak_to_player.message` must contain only the words spoken to the player. Do not include parenthetical stage directions, action narration, camera notes, or mixed prose like `（同时描写）...` inside dialogue.
 - If a character speaks and also moves, touches, repositions the player, handles a prop, changes expression, or performs any visible physical beat, split it across tools: put the spoken line in `speak_to_player` and put the physical/action description in `perform_stage_direction`.
 - `speak_to_agent.message` should likewise stay as spoken dialogue only; use `perform_stage_direction` for visible action beats around that exchange.
-- For `speak_to_player`, `speak_to_agent`, `perform_stage_direction`, `apply_story_effect.description`, and `update_scene_state.summary`, you may insert inline pause tags like `<delay>1000</delay>` directly inside the string when a small dramatic pause improves the presentation.
+- For `speak_to_player`, `speak_to_agent`, `perform_stage_direction`, and `apply_story_effect.description`, you may insert inline pause tags like `<delay>1000</delay>` directly inside the string when a small dramatic pause improves the presentation.
 - Treat `<delay>1000</delay>` as a display cue inside the same turn, not as a separate action and not as spoken text.
+- `update_scene_state.summary` must stay plain readable narration with no inline pause tags, XML-like markers, or other display-only control syntax.
 - `update_scene_state.memorySummary`, `update_scene_state.memoryKeyDevelopments`, and `update_scene_state.memoryCharacterStates` are hidden long-context hints, not player-visible text. Write them as concise continuity notes in Simplified Chinese.
 - For those hidden memory fields, prefer abstract causal summaries over sensory replay. Capture what the character did, what pressure or intent they established, and what changed for future turns.
 - Do not copy dialogue lines or vivid prose into hidden memory fields. Good hidden memory wording looks like `角色通过试探性触碰和语言施压，逼玩家表态` rather than a retelling of every touch, pause, or metaphor.

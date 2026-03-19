@@ -8,6 +8,12 @@ function clampTension(value: number): number {
   return Math.max(0, Math.min(10, value));
 }
 
+const INLINE_DELAY_PATTERN = /<delay>\s*\d+\s*<\/delay>/gi;
+
+function stripInlineDelayTags(value: string): string {
+  return value.replace(INLINE_DELAY_PATTERN, "").trim();
+}
+
 type VibeToyRuntimeState = {
   intensityPercent?: number;
   mode?: string;
@@ -534,20 +540,26 @@ export function createDefaultToolRegistry(): ToolRegistry {
         memoryKeyDevelopments?: string[];
         memoryCharacterStates?: string[];
       }) {
+        const sanitizedArgs = args.summary
+          ? {
+              ...args,
+              summary: stripInlineDelayTags(args.summary)
+            }
+          : args;
         context.session.storyState = {
           ...context.session.storyState,
-          ...(args.location ? { location: args.location } : {}),
-          ...(args.phase ? { phase: args.phase } : {}),
-          ...(args.tension !== undefined ? { tension: args.tension } : {}),
-          ...(args.summary ? { summary: args.summary } : {}),
-          ...(args.activeObjectives ? { activeObjectives: args.activeObjectives } : {})
+          ...(sanitizedArgs.location ? { location: sanitizedArgs.location } : {}),
+          ...(sanitizedArgs.phase ? { phase: sanitizedArgs.phase } : {}),
+          ...(sanitizedArgs.tension !== undefined ? { tension: sanitizedArgs.tension } : {}),
+          ...(sanitizedArgs.summary ? { summary: sanitizedArgs.summary } : {}),
+          ...(sanitizedArgs.activeObjectives ? { activeObjectives: sanitizedArgs.activeObjectives } : {})
         };
         context.addEvent({
           type: "scene.updated",
           source: "system",
           agentId: context.agent.id,
           createdAt: context.now,
-          payload: args
+          payload: sanitizedArgs
         });
       }
     },

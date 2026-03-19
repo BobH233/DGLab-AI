@@ -62,10 +62,6 @@ DGLabAI 的提示词系统不是让模型自由写剧情，而是让模型在不
 
 它会被正式推演链路加载。
 
-### 2.6 `director_agent.md` / `support_agent.md`
-
-这两个模板仍然保留在仓库里，但当前正式链路并不使用。它们更像后续扩展“逐角色独立推理”方案时的预留参考。
-
 ## 3. 提示词渲染机制
 
 `FilePromptTemplateService` 负责：
@@ -81,8 +77,6 @@ DGLabAI 的提示词系统不是让模型自由写剧情，而是让模型在不
 - `r18_guidance`
 - `tool_contract`
 - `world_builder`
-- `director_agent`
-- `support_agent`
 - `ensemble_turn`
 
 这些版本号会在 Session 确认时写入 `promptVersions`。

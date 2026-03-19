@@ -126,8 +126,6 @@ function createSession(): Session {
       sharedSafety: "1",
       toolContract: "1",
       worldBuilder: "1",
-      directorAgent: "1",
-      supportAgent: "1",
       ensembleTurn: "1"
     },
     createdAt: new Date().toISOString(),

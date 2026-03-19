@@ -167,6 +167,33 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
   });
 
+  it("strips inline delay tags from the session summary header", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      storyState: {
+        location: "study",
+        phase: "teasing",
+        tension: 6,
+        summary: "先别急。<delay>800</delay>抬头看我。",
+        activeObjectives: []
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(normalizedText(wrapper)).toContain("先别急。抬头看我。");
+    expect(normalizedText(wrapper)).not.toContain("<delay>");
+  });
+
   it("explains that auto-advance will defer while the current tick is still running", async () => {
     apiMocks.getSession.mockResolvedValue(createSession());
     apiMocks.getEvents.mockResolvedValue([

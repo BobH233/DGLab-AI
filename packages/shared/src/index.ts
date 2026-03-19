@@ -478,8 +478,6 @@ export const promptVersionsSchema = z.object({
   sharedSafety: z.string(),
   toolContract: z.string(),
   worldBuilder: z.string(),
-  directorAgent: nullToUndefined(z.string()),
-  supportAgent: nullToUndefined(z.string()),
   ensembleTurn: nullToUndefined(z.string())
 });
 
@@ -789,8 +787,6 @@ export function defaultPromptVersions(): PromptVersions {
     sharedSafety: "1.3.0",
     toolContract: "2.3.0",
     worldBuilder: "1.6.0",
-    directorAgent: "1.2.0",
-    supportAgent: "1.2.0",
     ensembleTurn: "1.4.0"
   };
 }

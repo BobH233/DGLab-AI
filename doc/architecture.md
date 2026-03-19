@@ -281,5 +281,5 @@ MongoDB 中存在三类核心数据：
 - 只有 Web 前端和 SSE 通道
 - 没有用户鉴权与权限控制
 - `wait` 更像界面节奏事件，不是独立未来任务
-- 保留了 `director_agent.md`、`support_agent.md`，但正式链路不使用
+- 正式链路统一使用 `ensemble_turn` 提示词
 - 自动推进依赖前端活跃页面

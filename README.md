@@ -224,7 +224,7 @@ npm test
 - `UsageStats.byAgent` 结构已定义，但实际只记录会话总量和每次调用记录
 - `wait` 更多是界面节奏控制，不是未来任务系统
 - 渠道抽象已预留，但真正实现的只有 `WebChannelAdapter`
-- 仓库中保留了 `director_agent.md` 和 `support_agent.md`，但正式运行链路使用的是 `ensemble_turn`
+- 正式运行链路使用统一的 `ensemble_turn` 提示词
 
 ## 文档导航
 

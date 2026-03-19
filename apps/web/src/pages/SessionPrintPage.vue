@@ -31,7 +31,7 @@
           <div>
             <span class="print-kicker">DGLabAI Session Export</span>
             <h1>{{ session.title }}</h1>
-            <p class="print-summary">{{ session.storyState.summary || "当前会话暂无摘要。" }}</p>
+            <p class="print-summary">{{ displaySummary || "当前会话暂无摘要。" }}</p>
           </div>
           <div class="print-badge">{{ statusLabel }}</div>
         </div>
@@ -181,6 +181,7 @@ import type { AgentProfile, Session, SessionEvent, SessionDraft } from "@dglab-a
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
+import { stripInlineDelays } from "../lib/inlineDelays";
 import { buildTimelinePresentationItems } from "../lib/timelinePresentation";
 
 const route = useRoute();
@@ -252,6 +253,7 @@ const usedModels = computed(() => {
 });
 const providerLabel = computed(() => session.value?.llmConfigSnapshot?.provider ?? "未记录");
 const baseUrlLabel = computed(() => session.value?.llmConfigSnapshot?.baseUrl ?? "未记录");
+const displaySummary = computed(() => stripInlineDelays(session.value?.storyState.summary ?? ""));
 const agentCards = computed(() => {
   return setupSource.value.agents.map((agent: AgentProfile) => ({
     id: agent.id,

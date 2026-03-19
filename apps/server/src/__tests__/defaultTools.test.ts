@@ -468,6 +468,31 @@ describe("createDefaultToolRegistry", () => {
     });
   });
 
+  it("strips inline delay tags from update_scene_state summary before storing it", async () => {
+    const registry = createDefaultToolRegistry();
+    const session = createSession();
+    const events: Array<Record<string, unknown>> = [];
+
+    await registry.execute({
+      session,
+      agent: session.draft.agents[0],
+      now: new Date().toISOString(),
+      addEvent: (event) => {
+        events.push(event as Record<string, unknown>);
+      }
+    }, "update_scene_state", {
+      summary: "你一句试探没能糊弄过去。<delay>800</delay>她们顺势把你逼得更近。"
+    });
+
+    expect(session.storyState.summary).toBe("你一句试探没能糊弄过去。她们顺势把你逼得更近。");
+    expect(events[0]).toMatchObject({
+      type: "scene.updated",
+      payload: {
+        summary: "你一句试探没能糊弄过去。她们顺势把你逼得更近。"
+      }
+    });
+  });
+
   it("treats wait as an in-turn pause event instead of scheduling a future tick", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();

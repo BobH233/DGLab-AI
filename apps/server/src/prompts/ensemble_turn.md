@@ -62,6 +62,7 @@ You must decide the next ordered action batch for all currently active agents in
 - Use the minimum number of actions needed for a strong turn, but do not confuse "minimum" with "flat". One action may carry several connected beats when that feels more human.
 - If a line or narration should briefly breathe, insert `<delay>1000</delay>` inside the relevant player-visible string instead of creating a separate pause action.
 - When the scene materially changes, include `update_scene_state`.
+- Keep `update_scene_state.summary` clean and plain-text. Do not place `<delay>...</delay>` or any other display tags inside it.
 - When you use `update_scene_state`, populate the hidden memory fields whenever you can so long-context memory can keep an abstract continuity note instead of replaying sensory detail.
 - `playerBodyItemState` is an authoritative session-level ledger of which physical props or wearable items are currently on the player's body. Read it carefully before planning the turn.
 - In every response, you must return a complete `playerBodyItemState` array representing the new authoritative post-turn state.

@@ -65,6 +65,7 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Tool calls are presentation containers, not a restriction on fictional scene content");
     expect(prompt).toContain("Do not stall waiting for the player to invent the next move");
     expect(prompt).toContain("<delay>1000</delay>");
+    expect(prompt).toContain("`update_scene_state.summary` must stay plain readable narration");
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
     expect(prompt).toContain("do not skip from intent to completion");
     expect(prompt).toContain("prefer abstract causal summaries over sensory replay");

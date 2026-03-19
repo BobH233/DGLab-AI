@@ -4,7 +4,7 @@
       <div class="console-hero__main">
         <span class="eyebrow">Session Console</span>
         <h2>{{ session.title }}</h2>
-        <p class="console-summary">{{ session.storyState.summary }}</p>
+        <p class="console-summary">{{ displaySummary }}</p>
         <div v-if="isTickInFlight" class="thinking-indicator" role="status" aria-live="polite">
           <strong>Thinking</strong>
           <span class="thinking-indicator__dots" aria-hidden="true">
@@ -262,6 +262,7 @@ const agentCards = computed(() => {
     summary: agent.summary
   }));
 });
+const displaySummary = computed(() => stripInlineDelays(session.value?.storyState.summary ?? ""));
 const playerBodyItemState = computed(() => session.value?.playerBodyItemState ?? []);
 
 const displayedEventCount = computed(() => events.value.length);
