@@ -234,7 +234,8 @@ export function createDefaultToolRegistry(): ToolRegistry {
           "For `command:\"set\"`, send only `command` plus `channels`. Do not include `durationMs`, `override`, or channel-level `enabled`.",
           "For `command:\"fire\"`, `durationMs` is required, `override` is allowed, and channel-level `enabled` may be used.",
           "`command:\"fire\"` is a timed burst: it rapidly jumps to the requested strength, holds the requested wave for `durationMs`, and is better for sudden punishment, sharper control, interruption, forced compliance, or moments where you want the player to feel a more volatile and uncertain loss of control.",
-          "Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing."
+          "Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing.",
+          "You are free to adjust channels independently: you can target only Channel A, only Channel B, or both in the same call. For example, `{\"command\":\"set\",\"channels\":{\"a\":{\"intensityPercent\":20}}}` adjusts only Channel A. This flexibility lets you apply asymmetric pressure or control specific body zones independently."
         ]
       },
       buildWorldPrompt(context) {
@@ -283,7 +284,6 @@ export function createDefaultToolRegistry(): ToolRegistry {
 
         return [
           "The frontend has synced an e-stim device configuration for this session. Real execution depends on the player's local frontend calling the localhost bridge.",
-          `Game connection: ${eStim.gameConnectionCodeLabel ?? "configured"}`,
           `Allowed pulse names: ${allowedPulseNames.length > 0 ? allowedPulseNames.join(", ") : "none selected; avoid switching pulses unless necessary"}`,
           channelALine,
           channelBLine,
@@ -292,6 +292,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
           "`command: \"fire\"` is a time-limited burst. Once triggered, it rapidly drives the target channel to the requested intensity, keeps the requested pulse for `durationMs`, and then ends the burst.",
           "Use `fire` for short escalations, abrupt interruption, explicit punishment, forced compliance, increased uncertainty, or stronger demonstrations of control when the player relaxes, hesitates, talks back, provokes, or resists.",
           "Do not treat `fire` as a routine action for every turn. Use it only when you need a more sudden, forceful, controlling, or punitive beat; otherwise prefer `set` for finer pacing.",
+          "You can control channels independently: adjust only Channel A, only Channel B, or both in a single call. This allows fine-grained control and asymmetric pressure on different body zones. For example, you can set Channel A to one intensity while keeping Channel B unchanged, or fire only one channel at a time.",
           "If you are only adjusting e-stim intensity, pulse, or firing, do not modify `playerBodyItemState`."
         ].join("\n");
       },
