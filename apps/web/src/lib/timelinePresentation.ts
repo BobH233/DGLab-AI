@@ -491,7 +491,7 @@ function buildEStimControlItem(
     }];
   });
   detailRows.push(...channelLines);
-  if (payload.durationMs !== undefined) {
+  if (payload.durationMs !== undefined && payload.durationMs !== null) {
     detailRows.push({
       label: "持续时间",
       value: `${textOf(payload.durationMs)} ms`

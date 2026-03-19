@@ -17,7 +17,7 @@
           <td>{{ run.inputRange }}</td>
           <td>{{ run.outputLevel }}</td>
           <td>{{ run.status }}</td>
-          <td>{{ run.durationMs }} ms</td>
+          <td>{{ run.durationMs !== null ? run.durationMs + ' ms' : '-' }}</td>
           <td>{{ run.sourceModel ?? "-" }}</td>
         </tr>
       </tbody>
