@@ -1,3 +1,5 @@
+## Detailed Action Guidance
+
 - When an action involves touch, prop handling, repositioning, dressing, restraint cues, or any other intimate physical beat, **interleave the physical description with dialogue in real-time**. Never let the character finish speaking the intent and then jump straight to “it’s done” in the next line. The action must unfold progressively **while** she is still talking.
 
   Example with Yae Miko and the tail plug:
