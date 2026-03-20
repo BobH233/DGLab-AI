@@ -83,6 +83,18 @@
         />
       </label>
       <label>
+        <span>推理强度</span>
+        <select v-model="selectedBackend.reasoningEffort" class="field">
+          <option
+            v-for="effort in reasoningEffortOptions"
+            :key="effort"
+            :value="effort"
+          >
+            {{ reasoningEffortLabels[effort] }}
+          </option>
+        </select>
+      </label>
+      <label>
         <span>Top P</span>
         <input
           v-model.number="selectedBackend.topP"
@@ -101,6 +113,10 @@
         <span>Request Timeout (ms)</span>
         <input v-model.number="selectedBackend.requestTimeoutMs" class="field" type="number" min="1000" step="1000" />
       </label>
+      <p class="soft-note">
+        当前会把这个设置作为 OpenAI-compatible `/chat/completions` 的 `reasoning_effort`
+        参数发送；若目标后端不支持，服务端会自动回退为不带该参数重试。
+      </p>
 
       <div class="stack">
         <h3>工具默认开关</h3>
@@ -136,9 +152,11 @@
 <script setup lang="ts">
 import {
   createDefaultModelBackend,
+  reasoningEffortOptions,
   toolCatalog,
   type AppConfig,
-  type ModelBackend
+  type ModelBackend,
+  type ReasoningEffort
 } from "@dglab-ai/shared";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useConfigStore } from "../configStore";
@@ -152,6 +170,11 @@ const selectedBackendId = ref("");
 const saving = ref(false);
 const message = ref("");
 const error = ref("");
+const reasoningEffortLabels: Record<ReasoningEffort, string> = {
+  low: "低强度推理",
+  medium: "中强度推理",
+  high: "高强度推理"
+};
 
 const selectedBackend = computed<ModelBackend | null>(() => (
   form.backends.find((backend) => backend.id === selectedBackendId.value)

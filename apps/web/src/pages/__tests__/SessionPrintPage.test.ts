@@ -139,6 +139,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
       apiKey: "test-key",
       model: "gpt-5.4-mini",
       temperature: 1,
+      reasoningEffort: "medium",
       maxTokens: 1200,
       topP: 1,
       requestTimeoutMs: 120000,

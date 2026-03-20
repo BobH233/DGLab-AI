@@ -243,7 +243,7 @@ describe("SessionConsolePage", () => {
 
     await flushPromises();
 
-    expect(normalizedText(wrapper)).toContain("Thinking");
+    expect(normalizedText(wrapper)).toContain("正在思考中");
     expect(normalizedText(wrapper)).toContain("约 5.0 秒 后自动推进");
     expect(normalizedText(wrapper)).toContain("如果计时到点，会顺延 5.0 秒，不会并发触发");
   });
@@ -302,6 +302,10 @@ describe("SessionConsolePage", () => {
       turnId: "tick_1",
       model: "gpt-5.4"
     });
+    FakeEventSource.instances[0]?.emit("llm.reasoning_summary.delta", {
+      turnId: "tick_1",
+      delta: "先判断她会不会继续嘴硬。"
+    });
     FakeEventSource.instances[0]?.emit("llm.action.meta", {
       turnId: "tick_1",
       index: 0,
@@ -339,6 +343,7 @@ describe("SessionConsolePage", () => {
     await flushPromises();
 
     expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("先判断她会不会继续嘴硬。");
     expect(normalizedText(wrapper)).toContain("先看着我。");
     expect(normalizedText(wrapper)).toContain("对你说");
   });
@@ -380,6 +385,7 @@ describe("SessionConsolePage", () => {
         turnId: "tick_1",
         status: "streaming",
         model: "gpt-5.4",
+        reasoningSummaryText: "我先顺着她的情绪往前推一点。",
         actions: [
           {
             index: 0,
@@ -408,7 +414,225 @@ describe("SessionConsolePage", () => {
     await flushPromises();
 
     expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("我先顺着她的情绪往前推一点。");
     expect(normalizedText(wrapper)).toContain("刷新后也能接着看。");
     expect(normalizedText(wrapper)).toContain("对你说");
+  });
+
+  it("hides the live reasoning summary once the streaming tick is committed", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_3",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.reasoning_summary.delta", {
+      turnId: "tick_3",
+      delta: "先确认这一轮该怎么收束。"
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).toContain("先确认这一轮该怎么收束。");
+
+    FakeEventSource.instances[0]?.emit("event.appended", {
+      event: {
+        sessionId: "session_1",
+        seq: 1,
+        type: "system.tick_completed",
+        source: "system",
+        createdAt: "2026-03-17T12:00:02.000Z",
+        payload: {
+          reason: "player_message",
+          status: "active"
+        }
+      }
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).not.toContain("先确认这一轮该怎么收束。");
+  });
+
+  it("updates the page-level preview card when e-stim field-completed events arrive", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_1",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_1",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "control_e_stim_toy",
+      targetScope: "scene"
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).toContain("正在编写控制参数");
+
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.command",
+      value: "fire"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.durationMs",
+      value: 2500
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.override",
+      value: true
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.channels",
+      value: {
+        a: {
+          enabled: true,
+          intensityPercent: 35,
+          pulseName: "快速按捏"
+        },
+        b: {
+          enabled: false
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const text = normalizedText(wrapper);
+    expect(text).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(text).toContain("一键开火");
+    expect(text).toContain("2500 ms");
+    expect(text).toContain("覆盖模式");
+    expect(text).toContain("A 通道");
+    expect(text).toContain("B 通道");
+    expect(text).not.toContain("正在编写控制参数");
+  });
+
+  it("updates the page-level preview card when e-stim params arrive as a single args object", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_2",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_2",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "control_e_stim_toy",
+      targetScope: "scene"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_2",
+      index: 0,
+      path: "args",
+      value: {
+        command: "fire",
+        durationMs: 3500,
+        override: true,
+        channels: {
+          a: {
+            enabled: true,
+            intensityPercent: 45,
+            pulseName: "压缩"
+          },
+          b: {
+            enabled: true,
+            intensityPercent: 40,
+            pulseName: "颗粒摩擦"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const text = normalizedText(wrapper);
+    expect(text).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(text).toContain("一键开火");
+    expect(text).toContain("3500 ms");
+    expect(text).toContain("A 通道");
+    expect(text).toContain("波形 压缩");
+    expect(text).toContain("B 通道");
+    expect(text).toContain("波形 颗粒摩擦");
+    expect(text).not.toContain("正在编写控制参数");
   });
 });

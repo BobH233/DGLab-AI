@@ -416,6 +416,15 @@ export class DefaultOrchestratorService implements OrchestratorService {
       },
       onTextDelta: (delta) => {
         parser.push(delta);
+      },
+      onReasoningSummaryDelta: (delta) => {
+        options?.onPreviewEvent?.({
+          type: "llm.reasoning_summary.delta",
+          payload: {
+            turnId,
+            delta
+          }
+        });
       }
     });
     const parsed = parser.finish();

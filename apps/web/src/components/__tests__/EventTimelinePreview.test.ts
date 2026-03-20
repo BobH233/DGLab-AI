@@ -380,4 +380,214 @@ describe("EventTimeline preview", () => {
     expect(wrapper.text()).toContain("约 800 ms 后继续");
     expect(wrapper.find('.timeline-item[data-preview="true"][data-kind="pause"][data-live="true"]').exists()).toBe(false);
   });
+
+  it("renders control_e_stim_toy preview with the same e-stim card style and completed parameter rows", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ],
+        previewTurn: {
+          turnId: "tick_8",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "control_e_stim_toy",
+              targetScope: "scene",
+              textByPath: {},
+              valueByPath: {
+                "args.command": "fire",
+                "args.durationMs": 2500,
+                "args.override": true,
+                "args.channels": {
+                  a: {
+                    enabled: true,
+                    intensityPercent: 35,
+                    pulseName: "快速按捏"
+                  },
+                  b: {
+                    enabled: false
+                  }
+                }
+              },
+              completedFields: [
+                "args.command",
+                "args.durationMs",
+                "args.override",
+                "args.channels"
+              ],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewItem = wrapper.find('.timeline-item[data-preview="true"][data-kind="action"] .event-card--e-stim-control');
+
+    expect(previewItem.exists()).toBe(true);
+    expect(previewItem.text()).toContain("电击器控制");
+    expect(previewItem.text()).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(previewItem.text()).toContain("一键开火");
+    expect(previewItem.text()).toContain("A 通道");
+    expect(previewItem.text()).toContain("强度 35%");
+    expect(previewItem.text()).toContain("波形 快速按捏");
+    expect(previewItem.text()).toContain("B 通道");
+    expect(previewItem.text()).toContain("启用：否");
+    expect(previewItem.text()).toContain("持续时间");
+    expect(previewItem.text()).toContain("2500 ms");
+    expect(previewItem.text()).toContain("覆盖模式");
+    expect(previewItem.text()).toContain("等待正式提交");
+    expect(previewItem.text()).not.toContain("正在编写参数");
+  });
+
+  it("shows partial e-stim preview fields as soon as an individual parameter completes", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        previewTurn: {
+          turnId: "tick_9",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "control_e_stim_toy",
+              targetScope: "scene",
+              textByPath: {},
+              valueByPath: {
+                "args.durationMs": 2500
+              },
+              completedFields: ["args.durationMs"],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewItem = wrapper.find('.timeline-item[data-preview="true"][data-kind="action"] .event-card--e-stim-control');
+
+    expect(previewItem.exists()).toBe(true);
+    expect(previewItem.text()).toContain("持续时间");
+    expect(previewItem.text()).toContain("2500 ms");
+    expect(previewItem.text()).toContain("角色正在补全电击器控制参数。");
+  });
+
+  it("renders e-stim preview details even when channel fields stream in as nested paths", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        previewTurn: {
+          turnId: "tick_10",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "control_e_stim_toy",
+              targetScope: "scene",
+              textByPath: {},
+              valueByPath: {
+                "args.command": "fire",
+                "args.channels.a.enabled": true,
+                "args.channels.a.intensityPercent": 35,
+                "args.channels.a.pulseName": "快速按捏"
+              },
+              completedFields: [
+                "args.command",
+                "args.channels.a.enabled",
+                "args.channels.a.intensityPercent",
+                "args.channels.a.pulseName"
+              ],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewItem = wrapper.find('.timeline-item[data-preview="true"][data-kind="action"] .event-card--e-stim-control');
+
+    expect(previewItem.exists()).toBe(true);
+    expect(previewItem.text()).toContain("一键开火");
+    expect(previewItem.text()).toContain("A 通道");
+    expect(previewItem.text()).toContain("启用：是");
+    expect(previewItem.text()).toContain("强度 35%");
+    expect(previewItem.text()).toContain("波形 快速按捏");
+    expect(previewItem.text()).not.toContain("正在编写控制参数");
+  });
+
+  it("renders e-stim preview details when the backend completes a single args object field", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        previewTurn: {
+          turnId: "tick_11",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "control_e_stim_toy",
+              targetScope: "scene",
+              textByPath: {},
+              valueByPath: {
+                args: {
+                  command: "fire",
+                  durationMs: 3500,
+                  override: true,
+                  channels: {
+                    a: {
+                      enabled: true,
+                      intensityPercent: 45,
+                      pulseName: "压缩"
+                    },
+                    b: {
+                      enabled: true,
+                      intensityPercent: 40,
+                      pulseName: "颗粒摩擦"
+                    }
+                  }
+                }
+              },
+              completedFields: ["args"],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewItem = wrapper.find('.timeline-item[data-preview="true"][data-kind="action"] .event-card--e-stim-control');
+
+    expect(previewItem.exists()).toBe(true);
+    expect(previewItem.text()).toContain("一键开火");
+    expect(previewItem.text()).toContain("3500 ms");
+    expect(previewItem.text()).toContain("覆盖模式");
+    expect(previewItem.text()).toContain("A 通道");
+    expect(previewItem.text()).toContain("强度 45%");
+    expect(previewItem.text()).toContain("波形 压缩");
+    expect(previewItem.text()).toContain("B 通道");
+    expect(previewItem.text()).toContain("强度 40%");
+    expect(previewItem.text()).toContain("波形 颗粒摩擦");
+    expect(previewItem.text()).not.toContain("正在编写控制参数");
+  });
 });

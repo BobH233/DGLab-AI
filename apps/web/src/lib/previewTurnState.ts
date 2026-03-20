@@ -19,6 +19,7 @@ export type PreviewAction = {
 export type PreviewTurnState = {
   turnId: string;
   actions: PreviewAction[];
+  reasoningSummaryText?: string;
   restoredActionIndexes?: number[];
   model?: string;
   promptTokens?: number;
@@ -97,6 +98,14 @@ export function applyPreviewEvent(
         completionTokens: numberFromPayload(payload.completionTokens) ?? current.completionTokens,
         totalTokens: numberFromPayload(payload.totalTokens) ?? current.totalTokens,
         status: "completed"
+      };
+    case "llm.reasoning_summary.delta":
+      if (!current || current.turnId !== String(payload.turnId ?? "")) {
+        return current;
+      }
+      return {
+        ...current,
+        reasoningSummaryText: `${current.reasoningSummaryText ?? ""}${String(payload.delta ?? "")}`
       };
     case "llm.turn.control":
       if (!current || current.turnId !== String(payload.turnId ?? "")) {

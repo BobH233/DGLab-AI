@@ -45,7 +45,7 @@
           <span />
         </span>
       </div>
-      <div v-else :class="cardClassForPreview(entry.action)">
+      <div v-else :class="buildCardClass(entry.kind, entry.variant)">
         <header class="event-header event-header--single">
           <div class="event-title-block">
             <span class="event-kicker">{{ previewKicker(entry.action) }}</span>
@@ -71,6 +71,19 @@
           <template v-else>
             <p v-if="entry.main" class="event-main">{{ entry.main }}</p>
             <p v-else class="event-main event-main--placeholder">{{ entry.placeholder }}</p>
+            <div v-if="entry.details?.length" class="event-detail-list">
+              <p
+                v-for="detail in entry.details"
+                :key="detail.key"
+                class="event-detail-row"
+              >
+                <strong class="event-detail-label">{{ detail.label }}：</strong>
+                <span
+                  class="event-detail-value"
+                  :class="detail.pending ? 'event-detail-value--placeholder' : undefined"
+                >{{ detail.value }}</span>
+              </p>
+            </div>
             <p v-if="entry.meta" class="event-meta">{{ entry.meta }}</p>
           </template>
         </div>
@@ -209,9 +222,11 @@ type PreviewDelayProgress = {
 type PreviewEntry = {
   id: string;
   kind: PresentationItem["kind"];
+  variant?: PresentationItem["variant"];
   kicker: string;
   title: string;
   main?: string;
+  details?: PreviewDetailRow[];
   meta?: string;
   status?: string;
   compact?: boolean;
@@ -391,6 +406,8 @@ function previewPlaceholder(action: PreviewAction): string | null {
       return "正在生成摘要...";
     case "update_scene_state":
       return "正在同步场景状态...";
+    case "control_e_stim_toy":
+      return "正在编写控制参数...";
     default:
       return "正在编写参数...";
   }
@@ -403,6 +420,21 @@ function buildPreviewEntries(action: PreviewAction): PreviewEntry[] {
       kind: previewKind(action),
       kicker: previewKicker(action),
       title: previewTitle(action),
+      action
+    }];
+  }
+
+  if (previewIsEStimControl(action)) {
+    return [{
+      id: `${previewActionKey(action)}:e-stim`,
+      kind: previewKind(action),
+      variant: "e-stim-control",
+      kicker: previewKicker(action),
+      title: previewTitle(action),
+      main: previewEStimMain(action),
+      details: previewEStimDetails(action),
+      meta: previewMeta(action),
+      placeholder: previewPlaceholder(action),
       action
     }];
   }
@@ -642,6 +674,7 @@ function previewKind(action: PreviewAction): PresentationItem["kind"] {
     case "speak_to_player":
     case "speak_to_agent":
       return "dialogue";
+    case "control_e_stim_toy":
     case "perform_stage_direction":
       return "action";
     case "apply_story_effect":
@@ -661,6 +694,8 @@ function previewTags(action: PreviewAction): string[] {
       return ["对你说"];
     case "speak_to_agent":
       return ["角色间对话"];
+    case "control_e_stim_toy":
+      return ["工具调用", "电击器"];
     case "perform_stage_direction":
       return ["动作"];
     case "apply_story_effect":
@@ -680,6 +715,8 @@ function previewKicker(action: PreviewAction): string {
       return "角色发言";
     case "speak_to_agent":
       return "角色互动";
+    case "control_e_stim_toy":
+      return "电击器控制";
     case "perform_stage_direction":
       return "舞台动作";
     case "apply_story_effect":
@@ -707,6 +744,8 @@ function previewTitle(action: PreviewAction): string {
       return actor;
     case "speak_to_agent":
       return `${actor} 对其他角色说`;
+    case "control_e_stim_toy":
+      return `${actor} 调用了 情趣电击器`;
     case "perform_stage_direction":
       return `${actor} 的动作`;
     case "apply_story_effect":
@@ -731,12 +770,232 @@ function previewMeta(action: PreviewAction): string | undefined {
   }
 }
 
-function cardClassForPreview(action: PreviewAction): string[] {
-  return buildCardClass(previewKind(action));
-}
-
 function previewIsSceneState(action: PreviewAction): boolean {
   return action.tool === "update_scene_state";
+}
+
+function previewIsEStimControl(action: PreviewAction): boolean {
+  return action.tool === "control_e_stim_toy";
+}
+
+function isPreviewRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatPreviewBoolean(value: unknown): string {
+  return value ? "是" : "否";
+}
+
+function previewPathSegments(path: string): string[] {
+  return path.split(".").filter(Boolean);
+}
+
+function previewDrillValue(source: unknown, path: string): unknown {
+  let cursor = source;
+  for (const segment of previewPathSegments(path)) {
+    if (!isPreviewRecord(cursor) || !(segment in cursor)) {
+      return undefined;
+    }
+    cursor = cursor[segment];
+  }
+  return cursor;
+}
+
+function previewValueAtPath(action: PreviewAction, path: string): unknown {
+  const exact = previewCompletedValue(action, path);
+  if (exact !== undefined) {
+    return exact;
+  }
+
+  for (let index = previewPathSegments(path).length - 1; index >= 1; index -= 1) {
+    const prefix = previewPathSegments(path).slice(0, index).join(".");
+    const suffix = previewPathSegments(path).slice(index).join(".");
+    const parentValue = previewCompletedValue(action, prefix);
+    const nested = previewDrillValue(parentValue, suffix);
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+
+  return undefined;
+}
+
+function previewHasCompletedPath(action: PreviewAction, path: string): boolean {
+  if (action.completedFields.includes(path)) {
+    return true;
+  }
+
+  for (let index = previewPathSegments(path).length - 1; index >= 1; index -= 1) {
+    const prefix = previewPathSegments(path).slice(0, index).join(".");
+    const suffix = previewPathSegments(path).slice(index).join(".");
+    if (!action.completedFields.includes(prefix)) {
+      continue;
+    }
+    const parentValue = previewCompletedValue(action, prefix);
+    if (previewDrillValue(parentValue, suffix) !== undefined) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function previewCompletedChannelField(
+  action: PreviewAction,
+  channelId: "a" | "b",
+  key: "enabled" | "intensityPercent" | "pulseName"
+): unknown {
+  const channels = previewValueAtPath(action, "args.channels");
+  if (isPreviewRecord(channels)) {
+    const channel = channels[channelId];
+    if (isPreviewRecord(channel) && channel[key] !== undefined) {
+      return channel[key];
+    }
+  }
+  return previewValueAtPath(action, `args.channels.${channelId}.${key}`);
+}
+
+function previewHasCompletedChannelField(
+  action: PreviewAction,
+  channelId: "a" | "b",
+  key: "enabled" | "intensityPercent" | "pulseName"
+): boolean {
+  const channels = previewValueAtPath(action, "args.channels");
+  if (isPreviewRecord(channels)) {
+    const channel = channels[channelId];
+    if (isPreviewRecord(channel) && channel[key] !== undefined) {
+      return true;
+    }
+  }
+  return previewHasCompletedPath(action, `args.channels.${channelId}.${key}`);
+}
+
+function previewLabelForPath(path: string): string {
+  switch (path) {
+    case "args.command":
+      return "命令";
+    case "args.durationMs":
+      return "持续时间";
+    case "args.override":
+      return "覆盖模式";
+    default:
+      return path.replace(/^args\./, "");
+  }
+}
+
+function formatPreviewEStimPathValue(path: string, value: unknown): string {
+  if (path === "args.command") {
+    return value === "fire" ? "一键开火" : value === "set" ? "通道设置" : formatPreviewValue(value);
+  }
+  if (path === "args.durationMs") {
+    return `${formatPreviewValue(value)} ms`;
+  }
+  if (path === "args.override") {
+    return formatPreviewBoolean(value);
+  }
+  return formatPreviewValue(value);
+}
+
+function previewEStimMain(action: PreviewAction): string {
+  const command = formatPreviewValue(previewValueAtPath(action, "args.command"));
+  if (command === "fire") {
+    return "角色准备触发一次带持续时间的一键开火。";
+  }
+  if (command) {
+    return "角色正在调整电击器的通道强度或波形。";
+  }
+  if (previewValueAtPath(action, "args.channels") !== undefined || previewHasCompletedPath(action, "args.channels")) {
+    return "角色正在补全电击器通道参数。";
+  }
+  if (
+    previewValueAtPath(action, "args.durationMs") !== undefined
+    || previewValueAtPath(action, "args.override") !== undefined
+    || previewHasCompletedPath(action, "args.durationMs")
+    || previewHasCompletedPath(action, "args.override")
+  ) {
+    return "角色正在补全电击器控制参数。";
+  }
+  return "";
+}
+
+function previewEStimDetails(action: PreviewAction): PreviewDetailRow[] {
+  const rows: PreviewDetailRow[] = [];
+  const command = formatPreviewValue(previewValueAtPath(action, "args.command"));
+  if (command || previewHasCompletedPath(action, "args.command")) {
+    rows.push({
+      key: "args.command",
+      label: "命令",
+      value: command === "fire" ? "一键开火" : command === "set" ? "通道设置" : command
+    });
+  }
+
+  for (const channelId of ["a", "b"] as const) {
+    if (
+      !previewHasCompletedPath(action, "args.channels")
+      && !previewHasCompletedChannelField(action, channelId, "enabled")
+      && !previewHasCompletedChannelField(action, channelId, "intensityPercent")
+      && !previewHasCompletedChannelField(action, channelId, "pulseName")
+    ) {
+      continue;
+    }
+      const parts = [
+        typeof previewCompletedChannelField(action, channelId, "enabled") === "boolean"
+          ? `启用：${formatPreviewBoolean(previewCompletedChannelField(action, channelId, "enabled"))}`
+          : undefined,
+        previewCompletedChannelField(action, channelId, "intensityPercent") !== undefined
+          ? `强度 ${formatPreviewValue(previewCompletedChannelField(action, channelId, "intensityPercent"))}%`
+          : undefined,
+        previewCompletedChannelField(action, channelId, "pulseName") !== undefined
+          ? `波形 ${formatPreviewValue(previewCompletedChannelField(action, channelId, "pulseName"))}`
+          : undefined
+      ].filter((part): part is string => Boolean(part));
+      rows.push({
+        key: `args.channels.${channelId}`,
+        label: `${channelId.toUpperCase()} 通道`,
+        value: parts.join("；") || "本次未提供具体参数"
+      });
+  }
+
+  const durationMs = previewValueAtPath(action, "args.durationMs");
+  if (durationMs !== undefined || previewHasCompletedPath(action, "args.durationMs")) {
+    rows.push({
+      key: "args.durationMs",
+      label: "持续时间",
+      value: `${formatPreviewValue(durationMs)} ms`
+    });
+  }
+
+  const override = previewValueAtPath(action, "args.override");
+  if (override !== undefined || previewHasCompletedPath(action, "args.override")) {
+    rows.push({
+      key: "args.override",
+      label: "覆盖模式",
+      value: formatPreviewBoolean(override)
+    });
+  }
+
+  if (rows.length === 0) {
+    rows.push(
+      ...action.completedFields
+        .filter((path) => path.startsWith("args."))
+        .map((path) => ({
+          key: path,
+          label: previewLabelForPath(path),
+          value: formatPreviewEStimPathValue(path, previewCompletedValue(action, path))
+        }))
+        .filter((row) => row.value)
+    );
+  }
+
+  if (rows.length > 0) {
+    rows.push({
+      key: "preview.execution",
+      label: "本地执行",
+      value: "等待正式提交"
+    });
+  }
+
+  return rows;
 }
 
 function previewSceneDetails(action: PreviewAction): PreviewDetailRow[] {

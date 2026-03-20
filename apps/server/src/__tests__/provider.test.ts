@@ -9,6 +9,7 @@ const modelConfig = {
   apiKey: "secret",
   model: "test-model",
   temperature: 0.8,
+  reasoningEffort: "medium" as const,
   maxTokens: 300,
   topP: 1,
   requestTimeoutMs: 1000,
@@ -76,6 +77,69 @@ describe("OpenAICompatibleProvider", () => {
 
     expect(result.data).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to chat completions and retries without reasoning_effort when streaming extras are unsupported", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          error: {
+            message: "Unknown endpoint: /responses"
+          }
+        }),
+        {
+          status: 404,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          error: {
+            message: "Unknown parameter: reasoning_effort"
+          }
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      ))
+      .mockResolvedValueOnce(new Response(
+        [
+          "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}",
+          "",
+          "data: [DONE]"
+        ].join("\n"),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "text/event-stream"
+          }
+        }
+      ));
+
+    const provider = new OpenAICompatibleProvider();
+    const result = await provider.streamText({
+      modelConfig,
+      messages: [
+        {
+          role: "user",
+          content: "Say hello"
+        }
+      ],
+      usageContext: {}
+    });
+
+    expect(result.rawText).toBe("hello");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/responses");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      reasoning_effort: "medium"
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).not.toHaveProperty("reasoning_effort");
   });
 
   it("accepts action batches that use exact tool and args keys", async () => {
@@ -195,9 +259,17 @@ describe("OpenAICompatibleProvider", () => {
   it("streams text deltas to the caller while collecting the final response", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
       [
-        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"@action {\\\"actorAgentId\\\":\\\"director\\\",\\\"tool\\\":\\\"speak_to_player\\\"}\\n@field args.message\\n你看着她\"},\"finish_reason\":null}]}",
+        "event: response.reasoning_summary_text.delta",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"summary_index\":0,\"delta\":\"先试探她现在会不会躲。\"}",
         "",
-        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"缓缓开口。\\n@endfield\\n@endaction\\n@turnControl {\\\"continue\\\":true,\\\"endStory\\\":false,\\\"needsHandoff\\\":false}\\n@playerBodyItemState []\\n@done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":15,\"total_tokens\":22}}",
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"@action {\\\"actorAgentId\\\":\\\"director\\\",\\\"tool\\\":\\\"speak_to_player\\\"}\\n@field args.message\\n你看着她\"}",
+        "",
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"缓缓开口。\\n@endfield\\n@endaction\\n@turnControl {\\\"continue\\\":true,\\\"endStory\\\":false,\\\"needsHandoff\\\":false}\\n@playerBodyItemState []\\n@done\"}",
+        "",
+        "event: response.completed",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":15,\"total_tokens\":22}}}",
         "",
         "data: [DONE]"
       ].join("\n"),
@@ -210,6 +282,7 @@ describe("OpenAICompatibleProvider", () => {
     ));
 
     const deltas: string[] = [];
+    const reasoningDeltas: string[] = [];
     const provider = new OpenAICompatibleProvider();
     const result = await provider.streamText({
       modelConfig,
@@ -224,12 +297,17 @@ describe("OpenAICompatibleProvider", () => {
       },
       onTextDelta: (delta) => {
         deltas.push(delta);
+      },
+      onReasoningSummaryDelta: (delta) => {
+        reasoningDeltas.push(delta);
       }
     });
 
     expect(deltas).toHaveLength(2);
+    expect(reasoningDeltas.join("")).toContain("先试探她现在会不会躲。");
     expect(result.rawText).toContain("@action");
     expect(result.rawText).toContain("@done");
+    expect(result.reasoningSummary).toContain("先试探她现在会不会躲。");
     expect(result.usage.totalTokens).toBe(22);
   });
 

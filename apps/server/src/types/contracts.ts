@@ -54,15 +54,18 @@ export interface LLMProvider {
     modelConfig,
     messages,
     usageContext,
-    onTextDelta
+    onTextDelta,
+    onReasoningSummaryDelta
   }: {
     modelConfig: LlmConfig;
     messages: ChatMessage[];
     usageContext: Record<string, unknown>;
     onTextDelta?: (delta: string) => void;
+    onReasoningSummaryDelta?: (delta: string) => void;
   }): Promise<{
     usage: ProviderUsage;
     rawText: string;
+    reasoningSummary?: string;
   }>;
 }
 

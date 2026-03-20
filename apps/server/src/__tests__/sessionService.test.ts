@@ -8,6 +8,7 @@ const config: LlmConfig = {
   apiKey: "test",
   model: "test-model",
   temperature: 0.7,
+  reasoningEffort: "medium",
   maxTokens: 500,
   topP: 1,
   requestTimeoutMs: 1000,
@@ -219,6 +220,13 @@ describe("SessionService", () => {
       summarizeScene: vi.fn(),
       runTick: vi.fn(async (_session, _reason, _context, _config, options) => {
         options?.onPreviewEvent?.({
+          type: "llm.reasoning_summary.delta",
+          payload: {
+            turnId: "tick_1",
+            delta: "我先缓一下气氛，再抛一个更轻的动作。"
+          }
+        });
+        options?.onPreviewEvent?.({
           type: "llm.action.meta",
           payload: {
             turnId: "tick_1",
@@ -298,6 +306,7 @@ describe("SessionService", () => {
       turnId: "tick_1",
       status: "streaming",
       model: "test-model",
+      reasoningSummaryText: "我先缓一下气氛，再抛一个更轻的动作。",
       actions: [
         {
           actorAgentId: "director",

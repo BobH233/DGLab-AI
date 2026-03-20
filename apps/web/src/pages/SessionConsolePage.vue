@@ -6,11 +6,13 @@
         <h2>{{ session.title }}</h2>
         <p class="console-summary">{{ displaySummary }}</p>
         <div v-if="isTickInFlight" class="thinking-indicator" role="status" aria-live="polite">
-          <strong>Thinking</strong>
-          <span class="thinking-indicator__dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
+          <span class="thinking-indicator__label">
+            <strong>正在思考中</strong>
+            <span class="thinking-indicator__dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </span>
         </div>
         <div v-if="latestTickFailure" class="inline-alert inline-alert--error">
@@ -64,6 +66,12 @@
             <h3>剧情动态</h3>
           </div>
           <span class="soft-pill">{{ displayedEventCount }} 条事件</span>
+        </div>
+        <div v-if="liveReasoningSummary" class="reasoning-live-banner" role="status" aria-live="polite">
+          <span class="reasoning-live-banner__kicker">思路摘要</span>
+          <div ref="reasoningBannerBody" class="reasoning-live-banner__body">
+            <p>{{ liveReasoningSummary }}</p>
+          </div>
         </div>
         <EventTimeline
           :events="events"
@@ -194,7 +202,7 @@
 
 <script setup lang="ts">
 import { isToolEnabled, type Session, type SessionEvent, type ToolContext } from "@dglab-ai/shared";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api";
 import EventTimeline from "../components/EventTimeline.vue";
@@ -240,6 +248,7 @@ const liveTickInFlight = ref(false);
 const pendingAutomationCooldown = ref(false);
 const playbackCooldownUntil = ref<number | null>(null);
 const deviceExecutionStates = ref<Record<string, DeviceExecutionState>>({});
+const reasoningBannerBody = ref<HTMLDivElement | null>(null);
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
@@ -260,9 +269,14 @@ const agentCards = computed(() => {
 });
 const displaySummary = computed(() => stripInlineDelays(session.value?.storyState.summary ?? ""));
 const playerBodyItemState = computed(() => session.value?.playerBodyItemState ?? []);
+const liveReasoningSummary = computed(() => stripInlineDelays(previewTurn.value?.reasoningSummaryText ?? "").trim());
 
 const displayedEventCount = computed(() => events.value.length);
-const isTickInFlight = computed(() => liveTickInFlight.value || Boolean(session.value?.timerState.inFlight));
+const isTickInFlight = computed(() => (
+  liveTickInFlight.value
+  || Boolean(session.value?.timerState.inFlight)
+  || previewTurn.value?.status === "streaming"
+));
 const automationDueAt = computed(() => {
   if (!session.value || !session.value.timerState.enabled) {
     return null;
@@ -415,6 +429,7 @@ function connectStream(sessionId: string) {
     "llm.action.text.delta",
     "llm.action.field.completed",
     "llm.action.completed",
+    "llm.reasoning_summary.delta",
     "llm.turn.control",
     "llm.turn.player_body_item_state",
     "llm.turn.completed",
@@ -783,6 +798,18 @@ async function saveTimer() {
 
 watch(() => route.params.id, () => {
   void loadSession();
+});
+
+watch(liveReasoningSummary, async (value) => {
+  if (!value) {
+    return;
+  }
+  await nextTick();
+  const element = reasoningBannerBody.value;
+  if (!element) {
+    return;
+  }
+  element.scrollTop = element.scrollHeight;
 });
 
 onMounted(() => {

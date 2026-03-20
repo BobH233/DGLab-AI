@@ -101,6 +101,9 @@ export function isToolEnabled(toolId: string, toolStates?: Record<string, boolea
 
 export const DEFAULT_MODEL_BACKEND_ID = "default-openai";
 export const DEFAULT_MODEL_BACKEND_NAME = "默认后端";
+export const reasoningEffortSchema = z.enum(["low", "medium", "high"]);
+export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export const reasoningEffortOptions = reasoningEffortSchema.options;
 
 export const llmConfigSchema = z.object({
   provider: z.literal("openai-compatible").default("openai-compatible"),
@@ -108,6 +111,7 @@ export const llmConfigSchema = z.object({
   apiKey: z.string().min(1),
   model: z.string().min(1),
   temperature: z.number().min(0).max(2).default(0.9),
+  reasoningEffort: reasoningEffortSchema.default("medium"),
   maxTokens: z.number().int().positive().default(1200),
   topP: z.number().min(0).max(1).default(1),
   requestTimeoutMs: z.number().int().positive().default(120000),
@@ -123,6 +127,7 @@ export function createDefaultLlmConfig(): LlmConfig {
     apiKey: "replace-me",
     model: "gpt-4.1-mini",
     temperature: 0.9,
+    reasoningEffort: "medium",
     maxTokens: 1200,
     topP: 1,
     requestTimeoutMs: 120000,
@@ -182,6 +187,7 @@ export function extractLlmConfig(backend: ModelBackend): LlmConfig {
     apiKey: backend.apiKey,
     model: backend.model,
     temperature: backend.temperature,
+    reasoningEffort: backend.reasoningEffort,
     maxTokens: backend.maxTokens,
     topP: backend.topP,
     requestTimeoutMs: backend.requestTimeoutMs,
@@ -761,6 +767,7 @@ export const sseEventSchema = z.object({
     "llm.action.text.delta",
     "llm.action.field.completed",
     "llm.action.completed",
+    "llm.reasoning_summary.delta",
     "llm.preview.snapshot",
     "llm.turn.control",
     "llm.turn.player_body_item_state",

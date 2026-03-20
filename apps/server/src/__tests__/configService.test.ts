@@ -14,6 +14,7 @@ const activeConfig: LlmConfig = {
   apiKey: "test-key",
   model: "gpt-4.1-mini",
   temperature: 0.9,
+  reasoningEffort: "medium",
   maxTokens: 1200,
   topP: 1,
   requestTimeoutMs: 120000,
