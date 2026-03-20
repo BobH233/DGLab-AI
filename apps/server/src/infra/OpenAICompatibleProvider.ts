@@ -38,6 +38,11 @@ type CompletionChunkPayload = {
   usage?: CompletionPayload["usage"];
 };
 
+type StreamedTextResult = {
+  rawText: string;
+  usage?: CompletionPayload["usage"];
+};
+
 function debugLog(label: string, payload: unknown): void {
   if (process.env.DEBUG_LLM !== "1") {
     return;
@@ -122,6 +127,124 @@ function parseSseCompletionPayload(responseText: string): CompletionPayload {
       }
     ],
     usage
+  };
+}
+
+function extractSseDataBlocks(source: string): { blocks: string[]; remainder: string } {
+  const normalized = source.replace(/\r\n/g, "\n");
+  const blocks: string[] = [];
+  let cursor = 0;
+
+  while (cursor < normalized.length) {
+    const separatorIndex = normalized.indexOf("\n\n", cursor);
+    if (separatorIndex === -1) {
+      break;
+    }
+    blocks.push(normalized.slice(cursor, separatorIndex));
+    cursor = separatorIndex + 2;
+  }
+
+  return {
+    blocks,
+    remainder: normalized.slice(cursor)
+  };
+}
+
+function processSseBlock(
+  block: string,
+  state: { contentParts: string[]; usage?: CompletionPayload["usage"]; sawChunk: boolean },
+  onTextDelta?: (delta: string) => void
+): void {
+  const data = block
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n")
+    .trim();
+
+  if (!data || data === "[DONE]") {
+    return;
+  }
+
+  const chunk = JSON.parse(data) as CompletionChunkPayload;
+  state.sawChunk = true;
+  const deltaContent = normalizeContent(chunk.choices?.[0]?.delta?.content);
+  if (deltaContent) {
+    state.contentParts.push(deltaContent);
+    onTextDelta?.(deltaContent);
+  }
+  if (chunk.usage) {
+    state.usage = chunk.usage;
+  }
+}
+
+async function readStreamedTextResponse(
+  response: Response,
+  onTextDelta?: (delta: string) => void
+): Promise<StreamedTextResult> {
+  if (!response.body) {
+    const responseText = await response.text();
+    const payload = parseCompletionPayload(responseText);
+    const rawText = normalizeContent(payload.choices?.[0]?.message?.content);
+    if (rawText) {
+      onTextDelta?.(rawText);
+    }
+    return {
+      rawText,
+      usage: payload.usage
+    };
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/text\/event-stream/i.test(contentType)) {
+    const responseText = await response.text();
+    const payload = parseCompletionPayload(responseText);
+    const rawText = normalizeContent(payload.choices?.[0]?.message?.content);
+    if (rawText) {
+      onTextDelta?.(rawText);
+    }
+    return {
+      rawText,
+      usage: payload.usage
+    };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const state: { contentParts: string[]; usage?: CompletionPayload["usage"]; sawChunk: boolean } = {
+    contentParts: [],
+    sawChunk: false
+  };
+  let pending = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    pending += decoder.decode(value, { stream: true });
+    const parsed = extractSseDataBlocks(pending);
+    pending = parsed.remainder;
+    for (const block of parsed.blocks) {
+      processSseBlock(block, state, onTextDelta);
+    }
+  }
+
+  pending += decoder.decode();
+  if (pending.trim()) {
+    const parsed = extractSseDataBlocks(`${pending}\n\n`);
+    for (const block of parsed.blocks) {
+      processSseBlock(block, state, onTextDelta);
+    }
+  }
+
+  if (!state.sawChunk) {
+    throw new Error("Provider returned SSE response without any data chunks");
+  }
+
+  return {
+    rawText: state.contentParts.join(""),
+    usage: state.usage
   };
 }
 
@@ -212,6 +335,131 @@ function buildUsage(model: string, payload: CompletionPayload): ProviderUsage {
 
 export class OpenAICompatibleProvider implements LLMProvider {
   constructor(private readonly llmCallStore?: Pick<LlmCallStore, "recordLlmCall">) {}
+
+  async streamText({
+    modelConfig,
+    messages,
+    usageContext,
+    onTextDelta
+  }: {
+    modelConfig: LlmConfig;
+    messages: ChatMessage[];
+    usageContext: Record<string, unknown>;
+    onTextDelta?: (delta: string) => void;
+  }): Promise<{ usage: ProviderUsage; rawText: string }> {
+    const effectiveTimeoutMs = Math.max(modelConfig.requestTimeoutMs, 120000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    const startedAt = new Date().toISOString();
+    let usage: ProviderUsage | undefined;
+
+    const recordCall = async (status: "success" | "error", errorMessage?: string | null) => {
+      if (!this.llmCallStore) {
+        return;
+      }
+
+      try {
+        const finishedAt = new Date().toISOString();
+        const kind = typeof usageContext.kind === "string" && usageContext.kind.trim()
+          ? usageContext.kind
+          : "unknown";
+        const sessionId = typeof usageContext.sessionId === "string" && usageContext.sessionId.trim()
+          ? usageContext.sessionId
+          : undefined;
+        await this.llmCallStore.recordLlmCall({
+          id: createId("llm_call"),
+          provider: modelConfig.provider,
+          model: modelConfig.model,
+          kind,
+          schemaName: "stream_text",
+          status,
+          startedAt,
+          finishedAt,
+          durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
+          promptTokens: usage?.promptTokens ?? 0,
+          completionTokens: usage?.completionTokens ?? 0,
+          totalTokens: usage?.totalTokens ?? 0,
+          sessionId,
+          context: usageContext,
+          errorMessage: errorMessage ?? null
+        });
+      } catch (recordError) {
+        console.error("Failed to persist LLM call record", recordError);
+      }
+    };
+
+    try {
+      const endpoint = `${modelConfig.baseUrl.replace(/\/$/, "")}/chat/completions`;
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${modelConfig.apiKey}`
+      };
+      const requestBody = {
+        model: modelConfig.model,
+        temperature: modelConfig.temperature,
+        max_tokens: modelConfig.maxTokens,
+        top_p: modelConfig.topP,
+        stream: true,
+        stream_options: {
+          include_usage: true
+        },
+        messages
+      };
+
+      debugLog("request", {
+        endpoint,
+        model: modelConfig.model,
+        strategy: "stream_text",
+        messages
+      });
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        debugLog("stream_error", {
+          status: response.status,
+          body: errorText
+        });
+        throw new Error(`Provider stream request failed: ${response.status} ${errorText}`);
+      }
+
+      const streamed = await readStreamedTextResponse(response, onTextDelta);
+      usage = buildUsage(modelConfig.model, {
+        choices: [
+          {
+            message: {
+              content: streamed.rawText
+            }
+          }
+        ],
+        usage: streamed.usage
+      });
+      debugLog("raw_content", streamed.rawText);
+      await recordCall("success");
+      return {
+        rawText: streamed.rawText,
+        usage
+      };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        const timeoutError = new Error(
+          `Provider request timed out after ${effectiveTimeoutMs}ms for model ${modelConfig.model}`
+        );
+        await recordCall("error", timeoutError.message);
+        throw timeoutError;
+      }
+      await recordCall("error", error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   async completeJson<T>({
     modelConfig,

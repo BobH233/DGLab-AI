@@ -71,6 +71,7 @@
           :automation-status="automationTimelineStatus"
           :device-execution-states="deviceExecutionStates"
           :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
+          :preview-turn="previewTurn"
         />
       </section>
 
@@ -205,6 +206,11 @@ import {
   syncElectroStimToolContext
 } from "../lib/eStim";
 import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
+import {
+  applyPreviewEvent,
+  shouldClearPreviewOnCommittedEvent,
+  type PreviewTurnState
+} from "../lib/previewTurnState";
 
 type ActivePauseState = {
   id: string;
@@ -231,6 +237,7 @@ const route = useRoute();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
 const activePause = ref<ActivePauseState | null>(null);
+const previewTurn = ref<PreviewTurnState | null>(null);
 const message = ref("");
 const sending = ref(false);
 const retrying = ref(false);
@@ -381,6 +388,7 @@ async function maybeRequestAutoTick() {
 async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
+  previewTurn.value = null;
   syncSession(await api.getSession(id));
   events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
   deviceExecutionStates.value = {};
@@ -398,8 +406,28 @@ function connectStream(sessionId: string) {
   stream.addEventListener("event.appended", (event) => {
     const payload = JSON.parse((event as MessageEvent).data) as { event: SessionEvent };
     trackLiveTick(payload.event);
+    if (shouldClearPreviewOnCommittedEvent(payload.event.type)) {
+      previewTurn.value = null;
+    }
     enqueueLiveEvent(payload.event);
   });
+  for (const eventType of [
+    "llm.turn.started",
+    "llm.action.started",
+    "llm.action.meta",
+    "llm.action.text.delta",
+    "llm.action.field.completed",
+    "llm.action.completed",
+    "llm.turn.control",
+    "llm.turn.player_body_item_state",
+    "llm.turn.completed",
+    "llm.turn.failed"
+  ]) {
+    stream.addEventListener(eventType, (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
+      previewTurn.value = applyPreviewEvent(previewTurn.value, eventType, payload);
+    });
+  }
   stream.addEventListener("error", () => {
     error.value = "实时连接已断开，请刷新页面重试。";
   });
@@ -521,6 +549,7 @@ function clearLivePlayback() {
   liveQueue.length = 0;
   queueRunning = false;
   liveTickInFlight.value = false;
+  previewTurn.value = null;
   pendingAutomationCooldown.value = false;
   playbackCooldownUntil.value = null;
   clearActivePause();

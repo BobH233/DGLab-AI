@@ -1,41 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../inlineDelays";
+import {
+  appendStreamingInlineDelay,
+  createStreamingInlineDelayState,
+  finalizeStreamingInlineDelay
+} from "../inlineDelays";
 
-describe("inlineDelays", () => {
-  it("splits text and delay tags into playback parts", () => {
-    expect(splitInlineDelays("先别急。<delay>1000</delay>再抬头看我。")).toEqual([
+describe("streaming inline delays", () => {
+  it("keeps partial delay tags hidden until the full tag is complete", () => {
+    let state = createStreamingInlineDelayState();
+    state = appendStreamingInlineDelay(state, "站直。<del");
+
+    expect(state.visibleSegments).toEqual([
       {
         type: "text",
-        text: "先别急。"
+        text: "站直。"
+      }
+    ]);
+    expect(state.pendingBuffer).toBe("<del");
+
+    state = appendStreamingInlineDelay(state, "ay>800</delay>肩放平。");
+
+    expect(state.visibleSegments).toEqual([
+      {
+        type: "text",
+        text: "站直。"
       },
       {
         type: "delay",
-        delayMs: 1000
+        delayMs: 800
       },
       {
         type: "text",
-        text: "再抬头看我。"
+        text: "肩放平。"
       }
     ]);
+    expect(state.pendingBuffer).toBe("");
   });
 
-  it("clamps invalid delays and removes tags from display text", () => {
-    expect(splitInlineDelays("A<delay>999999</delay>B")).toEqual([
+  it("falls back to plain text when delay-like content is invalid", () => {
+    let state = createStreamingInlineDelayState();
+    state = appendStreamingInlineDelay(state, "<delay>abc</delay>");
+    state = finalizeStreamingInlineDelay(state);
+
+    expect(state.visibleSegments).toEqual([
       {
         type: "text",
-        text: "A"
-      },
-      {
-        type: "delay",
-        delayMs: 60000
-      },
-      {
-        type: "text",
-        text: "B"
+        text: "<delay>abc</delay>"
       }
     ]);
-    expect(stripInlineDelays("A<delay>800</delay>B")).toBe("AB");
-    expect(hasInlineDelays("A<delay>800</delay>B")).toBe(true);
-    expect(hasInlineDelays("AB")).toBe(false);
   });
 });

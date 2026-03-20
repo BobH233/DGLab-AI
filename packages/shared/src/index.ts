@@ -755,6 +755,16 @@ export const sseEventSchema = z.object({
     "tick.completed",
     "usage.updated",
     "timer.updated",
+    "llm.turn.started",
+    "llm.action.started",
+    "llm.action.meta",
+    "llm.action.text.delta",
+    "llm.action.field.completed",
+    "llm.action.completed",
+    "llm.turn.control",
+    "llm.turn.player_body_item_state",
+    "llm.turn.completed",
+    "llm.turn.failed",
     "error"
   ]),
   sessionId: z.string(),
@@ -785,8 +795,8 @@ export function mergeUsageEntry(base: UsageEntry, next: Partial<UsageEntry>): Us
 export function defaultPromptVersions(): PromptVersions {
   return {
     sharedSafety: "1.3.0",
-    toolContract: "2.3.0",
+    toolContract: "3.0.0",
     worldBuilder: "1.6.0",
-    ensembleTurn: "1.4.0"
+    ensembleTurn: "1.6.0"
   };
 }

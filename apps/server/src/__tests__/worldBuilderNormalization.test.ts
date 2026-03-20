@@ -50,6 +50,10 @@ class FakeProvider {
       }
     };
   }
+
+  async streamText() {
+    return Promise.reject(new Error("streamText should not be called in world builder normalization tests"));
+  }
 }
 
 describe("world builder normalization", () => {

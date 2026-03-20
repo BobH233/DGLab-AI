@@ -27,6 +27,11 @@ export interface ProviderUsage extends UsageEntry {
   model: string;
 }
 
+export type OrchestratorPreviewEvent = {
+  type: SseEvent["type"];
+  payload: Record<string, unknown>;
+};
+
 export interface LLMProvider {
   completeJson<T>({
     modelConfig,
@@ -42,6 +47,20 @@ export interface LLMProvider {
     usageContext: Record<string, unknown>;
   }): Promise<{
     data: T;
+    usage: ProviderUsage;
+    rawText: string;
+  }>;
+  streamText({
+    modelConfig,
+    messages,
+    usageContext,
+    onTextDelta
+  }: {
+    modelConfig: LlmConfig;
+    messages: ChatMessage[];
+    usageContext: Record<string, unknown>;
+    onTextDelta?: (delta: string) => void;
+  }): Promise<{
     usage: ProviderUsage;
     rawText: string;
   }>;
@@ -168,7 +187,11 @@ export interface OrchestratorService {
     session: Session,
     reason: string,
     contextBundle: NarrativeContextBundle,
-    config: LlmConfig
+    config: LlmConfig,
+    options?: {
+      turnId?: string;
+      onPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
+    }
   ): Promise<OrchestratorTurnResult>;
 }
 

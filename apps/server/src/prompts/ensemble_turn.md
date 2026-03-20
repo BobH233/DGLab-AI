@@ -92,7 +92,8 @@ You must decide the next ordered action batch for all currently active agents in
 - If compressed memory conflicts with recent raw turns, trust recent raw turns. Compressed memory is for continuity, not verbatim recall.
 - Treat the persistent player utterances block as an authoritative ledger of what the player has said across the session. When older player statements conflict with newer ones, trust the newer player statements.
 
-Return valid JSON with exactly these top-level fields:
-- `actions`
-- `turnControl`
-- `playerBodyItemState`
+Return one complete streamed turn using the line protocol from the tool contract.
+
+- Text fields like `args.message`, `args.direction`, and `args.description` must be written as raw text inside the field body, not as JSON strings.
+- Non-text fields like numbers, booleans, arrays, and objects must be written as valid JSON literals inside the field body.
+- Always finish with `@turnControl`, `@playerBodyItemState`, and `@done`.

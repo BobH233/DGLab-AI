@@ -216,9 +216,9 @@ export class SessionService {
       session.promptVersions = {
         ...defaultPromptVersions(),
         sharedSafety: versions.shared_safety_preamble ?? "1.3.0",
-        toolContract: versions.tool_contract ?? "2.3.0",
+        toolContract: versions.tool_contract ?? "3.0.0",
         worldBuilder: versions.world_builder ?? "1.6.0",
-        ensembleTurn: versions.ensemble_turn ?? "1.4.0"
+        ensembleTurn: versions.ensemble_turn ?? "1.6.0"
       };
       session.storyState = {
         ...session.storyState,
@@ -419,11 +419,28 @@ export class SessionService {
           const contextBundle = this.memoryContextAssembler.assemble(session, currentEvents, reason);
           session.updatedAt = now;
           const startEvents = await this.store.appendEvents(sessionId, session.lastSeq, [tickStartEvent]);
+          const turnId = `tick_${startEvents[0]?.seq ?? session.lastSeq + 1}`;
           session.lastSeq += startEvents.length;
           await this.store.replaceSession(session);
           this.publishSession(session, startEvents);
+          this.channel.publish({
+            type: "llm.turn.started",
+            sessionId,
+            payload: {
+              turnId
+            }
+          });
 
-          const result = await this.orchestrator.runTick(session, reason, contextBundle, config);
+          const result = await this.orchestrator.runTick(session, reason, contextBundle, config, {
+            turnId,
+            onPreviewEvent: (event) => {
+              this.channel.publish({
+                type: event.type,
+                sessionId,
+                payload: event.payload
+              });
+            }
+          });
           session.timerState.queuedReasons = [];
           session.timerState.queuedPlayerMessages = [];
           const tickCompletedAt = new Date().toISOString();
@@ -460,6 +477,14 @@ export class SessionService {
           const failedAt = new Date().toISOString();
           const message = formatRuntimeError(error);
           console.error(`Tick failed for session ${sessionId}`, error);
+          this.channel.publish({
+            type: "llm.turn.failed",
+            sessionId,
+            payload: {
+              turnId: `tick_${session.lastSeq}`,
+              message
+            }
+          });
           session.timerState.inFlight = false;
           session.timerState.nextTickAt = session.timerState.enabled
             ? new Date(Date.parse(failedAt) + session.timerState.intervalMs).toISOString()

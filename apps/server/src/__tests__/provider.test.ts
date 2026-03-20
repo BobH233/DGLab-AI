@@ -192,6 +192,47 @@ describe("OpenAICompatibleProvider", () => {
     expect(result.usage.totalTokens).toBe(5);
   });
 
+  it("streams text deltas to the caller while collecting the final response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      [
+        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"@action {\\\"actorAgentId\\\":\\\"director\\\",\\\"tool\\\":\\\"speak_to_player\\\"}\\n@field args.message\\n你看着她\"},\"finish_reason\":null}]}",
+        "",
+        "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"缓缓开口。\\n@endfield\\n@endaction\\n@turnControl {\\\"continue\\\":true,\\\"endStory\\\":false,\\\"needsHandoff\\\":false}\\n@playerBodyItemState []\\n@done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":15,\"total_tokens\":22}}",
+        "",
+        "data: [DONE]"
+      ].join("\n"),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream"
+        }
+      }
+    ));
+
+    const deltas: string[] = [];
+    const provider = new OpenAICompatibleProvider();
+    const result = await provider.streamText({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return line protocol"
+        }
+      ],
+      usageContext: {
+        kind: "ensemble-turn"
+      },
+      onTextDelta: (delta) => {
+        deltas.push(delta);
+      }
+    });
+
+    expect(deltas).toHaveLength(2);
+    expect(result.rawText).toContain("@action");
+    expect(result.rawText).toContain("@done");
+    expect(result.usage.totalTokens).toBe(22);
+  });
+
   it("extracts the first complete JSON object after think blocks", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
       JSON.stringify({
