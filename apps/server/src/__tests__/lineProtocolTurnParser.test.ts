@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LineProtocolTurnParser } from "../infra/LineProtocolTurnParser.js";
 
 describe("LineProtocolTurnParser", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
   it("reconstructs an action batch and emits preview deltas", () => {
     const previewEvents: Array<{ type: string; payload: Record<string, unknown> }> = [];
     const parser = new LineProtocolTurnParser({
@@ -116,5 +121,75 @@ describe("LineProtocolTurnParser", () => {
       { path: "args.tension", value: 7 },
       { path: "args.activeObjectives", value: ["让你继续停留", "逼你给出更诚实的反应"] }
     ]);
+  });
+
+  it("accepts pretty-printed multiline playerBodyItemState JSON", () => {
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_multiline_body"
+    });
+
+    parser.push([
+      "@action {\"actorAgentId\":\"director\",\"tool\":\"perform_stage_direction\",\"targetScope\":\"scene\"}",
+      "@field args.direction",
+      "你听见她放轻了声音。",
+      "@endfield",
+      "@endaction",
+      "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerBodyItemState [",
+      "  \"你现在戴着一副严密的遮光眼罩\",",
+      "  \"你现在双手被束在身后\"",
+      "]",
+      "@done"
+    ].join("\n"));
+
+    const result = parser.finish();
+
+    expect(result.data.playerBodyItemState).toEqual([
+      "你现在戴着一副严密的遮光眼罩",
+      "你现在双手被束在身后"
+    ]);
+  });
+
+  it("includes the broken control JSON fragment in parser errors", () => {
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_4"
+    });
+
+    const payload = [
+      "@action {\"actorAgentId\":\"director\",\"tool\":\"speak_to_player\"}",
+      "@field args.message",
+      "说吧。",
+      "@endfield",
+      "@endaction",
+      "@turnControl {\"continue\":true,\"endStory\":false",
+      "@done"
+    ].join("\n");
+
+    let thrown: unknown;
+    try {
+      parser.push(payload);
+      parser.finish();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toMatch(/Failed to parse @turnControl JSON:/);
+    expect((thrown as Error).message).toMatch(/JSON fragment: \{\"continue\":true,\"endStory\":false/);
+  });
+
+  it("logs detailed parser context when DEBUG_LLM=1", () => {
+    vi.stubEnv("DEBUG_LLM", "1");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_5"
+    });
+
+    parser.push("@playerBodyItemState [\"mask\"");
+
+    expect(() => parser.finish()).toThrowError(/Failed to parse @playerBodyItemState JSON/);
+    expect(consoleError).toHaveBeenCalledWith("[LLM DEBUG] line_protocol_control_json_parse_failed");
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("\"label\": \"@playerBodyItemState\""));
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("\"rawJson\": \"[\\\"mask\\\"\""));
   });
 });

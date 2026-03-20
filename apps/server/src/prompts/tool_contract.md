@@ -16,6 +16,8 @@ You must output exactly one complete turn using this line protocol:
 ### Output shape rules
 
 - `@action` must be followed by a single-line JSON object.
+- `@turnControl` should be followed by a compact single-line JSON object.
+- `@playerBodyItemState` should be followed by a compact single-line JSON array.
 - Every action header must include `actorAgentId` and `tool`.
 - You may also include `targetScope` and `whyVisible` in the `@action` header.
 - Do not place long prose in the `@action` JSON header.

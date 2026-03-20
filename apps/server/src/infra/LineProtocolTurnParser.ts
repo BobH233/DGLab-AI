@@ -23,6 +23,8 @@ type ParserOptions = {
   emitPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
 };
 
+type MultilineControlLabel = "@turnControl" | "@playerBodyItemState";
+
 const PREVIEWABLE_TEXT_FIELDS = new Set([
   "speak_to_player:args.message",
   "speak_to_agent:args.message",
@@ -79,6 +81,15 @@ function parseFieldValue(tool: string, path: string, rawValue: string): unknown 
   }
 }
 
+function truncateForDebug(text: string, maxLength = 400): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  const headLength = Math.ceil(maxLength * 0.6);
+  const tailLength = Math.max(0, maxLength - headLength - 13);
+  return `${text.slice(0, headLength)}\n...<truncated>...\n${text.slice(-tailLength)}`;
+}
+
 export class LineProtocolTurnParser {
   private readonly draft: DraftBatch = {
     actions: []
@@ -95,6 +106,12 @@ export class LineProtocolTurnParser {
   private currentFieldBuffer = "";
   private fieldAtLineStart = true;
   private fieldControlCandidate: string | null = null;
+  private pendingMultilineControl:
+    | {
+        label: MultilineControlLabel;
+        rawJson: string;
+      }
+    | null = null;
   private seenDone = false;
 
   constructor(options: ParserOptions) {
@@ -132,6 +149,11 @@ export class LineProtocolTurnParser {
     if (this.controlLineBuffer.trim()) {
       this.processControlLine(this.controlLineBuffer);
       this.controlLineBuffer = "";
+    }
+
+    if (this.pendingMultilineControl) {
+      this.commitMultilineControl(this.pendingMultilineControl.label, this.pendingMultilineControl.rawJson);
+      this.pendingMultilineControl = null;
     }
 
     if (this.currentAction) {
@@ -237,6 +259,11 @@ export class LineProtocolTurnParser {
       return;
     }
 
+    if (this.pendingMultilineControl) {
+      this.processPendingMultilineControlLine(line);
+      return;
+    }
+
     if (this.seenDone) {
       throw new Error("Line protocol contained extra content after @done");
     }
@@ -245,7 +272,7 @@ export class LineProtocolTurnParser {
       if (this.currentAction || this.currentFieldPath) {
         throw new Error("Encountered @action before the previous action was closed");
       }
-      const parsed = JSON.parse(trimmed.slice("@action ".length)) as Record<string, unknown>;
+      const parsed = this.parseControlJson("@action", trimmed.slice("@action ".length)) as Record<string, unknown>;
       const actorAgentId = typeof parsed.actorAgentId === "string" ? parsed.actorAgentId.trim() : "";
       const tool = typeof parsed.tool === "string" ? parsed.tool.trim() : "";
       if (!actorAgentId || !tool) {
@@ -320,7 +347,84 @@ export class LineProtocolTurnParser {
       if (this.currentAction || this.currentFieldPath) {
         throw new Error("@turnControl must appear after all actions are closed");
       }
-      this.draft.turnControl = JSON.parse(trimmed.slice("@turnControl ".length)) as ActionBatch["turnControl"];
+      this.parseOrBufferMultilineControl("@turnControl", trimmed.slice("@turnControl ".length));
+      return;
+    }
+
+    if (trimmed.startsWith("@playerBodyItemState ")) {
+      if (this.currentAction || this.currentFieldPath) {
+        throw new Error("@playerBodyItemState must appear after all actions are closed");
+      }
+      this.parseOrBufferMultilineControl("@playerBodyItemState", trimmed.slice("@playerBodyItemState ".length));
+      return;
+    }
+
+    if (trimmed === "@done") {
+      this.seenDone = true;
+      return;
+    }
+
+    throw new Error(`Unknown line protocol control line: ${trimmed}`);
+  }
+
+  private parseControlJson(label: "@action" | "@turnControl" | "@playerBodyItemState", rawJson: string): unknown {
+    try {
+      return JSON.parse(rawJson);
+    } catch (error) {
+      const parseMessage = error instanceof Error ? error.message : String(error);
+      const debugPayload = {
+        turnId: this.turnId,
+        label,
+        error: parseMessage,
+        rawJson,
+        rawJsonPreview: truncateForDebug(rawJson, 800),
+        currentActionTool: this.currentAction?.tool ?? null,
+        currentFieldPath: this.currentFieldPath,
+        controlLineBuffer: this.controlLineBuffer,
+        rawTextTail: truncateForDebug(this.rawParts.join("").slice(-2000), 1000)
+      };
+
+      if (process.env.DEBUG_LLM === "1") {
+        console.error("[LLM DEBUG] line_protocol_control_json_parse_failed");
+        console.error(JSON.stringify(debugPayload, null, 2));
+      }
+
+      throw new Error(
+        `Failed to parse ${label} JSON: ${parseMessage}. JSON fragment: ${truncateForDebug(rawJson, 240)}`
+      );
+    }
+  }
+
+  private parseOrBufferMultilineControl(label: MultilineControlLabel, rawJson: string): void {
+    try {
+      this.commitMultilineControl(label, rawJson);
+    } catch {
+      this.pendingMultilineControl = {
+        label,
+        rawJson
+      };
+    }
+  }
+
+  private processPendingMultilineControlLine(line: string): void {
+    if (!this.pendingMultilineControl) {
+      return;
+    }
+
+    const trimmed = line.trim();
+    if (trimmed.startsWith("@")) {
+      this.commitMultilineControl(this.pendingMultilineControl.label, this.pendingMultilineControl.rawJson);
+      this.pendingMultilineControl = null;
+      this.processControlLine(line);
+      return;
+    }
+
+    this.pendingMultilineControl.rawJson += `\n${line}`;
+  }
+
+  private commitMultilineControl(label: MultilineControlLabel, rawJson: string): void {
+    if (label === "@turnControl") {
+      this.draft.turnControl = this.parseControlJson(label, rawJson) as ActionBatch["turnControl"];
       this.emitPreviewEvent?.({
         type: "llm.turn.control",
         payload: {
@@ -331,26 +435,13 @@ export class LineProtocolTurnParser {
       return;
     }
 
-    if (trimmed.startsWith("@playerBodyItemState ")) {
-      if (this.currentAction || this.currentFieldPath) {
-        throw new Error("@playerBodyItemState must appear after all actions are closed");
+    this.draft.playerBodyItemState = this.parseControlJson(label, rawJson) as string[];
+    this.emitPreviewEvent?.({
+      type: "llm.turn.player_body_item_state",
+      payload: {
+        turnId: this.turnId,
+        value: this.draft.playerBodyItemState
       }
-      this.draft.playerBodyItemState = JSON.parse(trimmed.slice("@playerBodyItemState ".length)) as string[];
-      this.emitPreviewEvent?.({
-        type: "llm.turn.player_body_item_state",
-        payload: {
-          turnId: this.turnId,
-          value: this.draft.playerBodyItemState
-        }
-      });
-      return;
-    }
-
-    if (trimmed === "@done") {
-      this.seenDone = true;
-      return;
-    }
-
-    throw new Error(`Unknown line protocol control line: ${trimmed}`);
+    });
   }
 }
