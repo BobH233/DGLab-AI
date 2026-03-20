@@ -1,6 +1,28 @@
 <template>
   <section class="timeline">
     <article
+      v-if="previewStatus"
+      class="timeline-item"
+      data-kind="system"
+      data-compact="true"
+      data-preview-status="true"
+      :data-live="previewStatus.live ? 'true' : undefined"
+    >
+      <div class="timeline-rail">
+        <span class="timeline-dot" />
+      </div>
+      <div class="timeline-compact">
+        <span class="timeline-compact__kicker">{{ previewStatus.kicker }}</span>
+        <strong class="timeline-compact__title">{{ previewStatus.title }}</strong>
+        <span v-if="previewStatus.meta" class="timeline-compact__meta">{{ previewStatus.meta }}</span>
+        <span v-if="previewStatus.live" class="timeline-compact__dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      </div>
+    </article>
+    <article
       v-for="action in previewActions"
       :key="`preview-${previewTurn?.turnId}-${action.index}`"
       class="timeline-item"
@@ -12,27 +34,18 @@
         <span class="timeline-dot" />
       </div>
       <div :class="cardClassForPreview(action)">
-        <header class="event-header">
+        <header class="event-header event-header--single">
           <div class="event-title-block">
             <span class="event-kicker">{{ previewKicker(action) }}</span>
             <strong>{{ previewTitle(action) }}</strong>
           </div>
-          <span>{{ previewStatusLabel(action) }}</span>
         </header>
         <div class="event-body">
-          <p v-if="previewPlaceholder(action)" class="event-main event-main--placeholder">{{ previewPlaceholder(action) }}</p>
-          <p v-else class="event-main">
-            <template v-for="(segment, segmentIndex) in previewSegments(action)" :key="`${action.index}-${segmentIndex}`">
-              <span v-if="segment.type === 'text'">{{ segment.text }}</span>
-              <span v-else class="preview-delay-chip">停顿 {{ segment.delayMs }} ms</span>
-            </template>
-          </p>
-          <p v-if="previewMeta(action)" class="event-meta">{{ previewMeta(action) }}</p>
+          <p v-if="previewHasText(action)" class="event-main">{{ previewText(action) }}</p>
+          <p v-else class="event-main event-main--placeholder">{{ previewPlaceholder(action) }}</p>
         </div>
-        <div class="event-tags">
-          <span class="event-tag">预览</span>
-          <span v-if="action.actorAgentId" class="event-tag">{{ previewActorName(action) }}</span>
-          <span v-if="action.tool" class="event-tag">{{ action.tool }}</span>
+        <div v-if="previewTags(action).length" class="event-tags">
+          <span v-for="tag in previewTags(action)" :key="tag" class="event-tag">{{ tag }}</span>
         </div>
       </div>
     </article>
@@ -142,6 +155,13 @@ type AutomationStatusState = {
   live?: boolean;
 };
 
+type PreviewStatusState = {
+  kicker: string;
+  title: string;
+  meta?: string;
+  live: boolean;
+};
+
 const props = defineProps<{
   events: SessionEvent[];
   activePause?: ActivePauseState | null;
@@ -160,6 +180,36 @@ const agentNameById = computed(() => {
 const previewActions = computed<PreviewAction[]>(() => {
   return [...(props.previewTurn?.actions ?? [])].reverse();
 });
+const previewStatus = computed<PreviewStatusState | null>(() => {
+  if (!props.previewTurn) {
+    return null;
+  }
+
+  if (props.previewTurn.status === "failed") {
+    return {
+      kicker: "模型",
+      title: "预览失败",
+      meta: props.previewTurn.errorMessage ?? props.previewTurn.model,
+      live: false
+    };
+  }
+
+  if (typeof props.previewTurn.totalTokens === "number") {
+    return {
+      kicker: "用量",
+      title: `${props.previewTurn.totalTokens} tokens`,
+      meta: props.previewTurn.model,
+      live: props.previewTurn.status === "streaming"
+    };
+  }
+
+  return {
+    kicker: "模型",
+    title: props.previewTurn.status === "completed" ? "等待正式提交" : "正在思考中",
+    meta: props.previewTurn.model,
+    live: props.previewTurn.status === "streaming"
+  };
+});
 
 function isLivePause(item: PresentationItem): boolean {
   return Boolean(item.pauseId) && item.pauseId === props.activePause?.id;
@@ -170,13 +220,21 @@ function pauseLiveLabel(item: PresentationItem): string | undefined {
 }
 
 function cardClass(item: PresentationItem): string[] {
+  return buildCardClass(item.kind, item.variant, item.optionalTool);
+}
+
+function buildCardClass(
+  kind: PresentationItem["kind"],
+  variant?: PresentationItem["variant"],
+  optionalTool?: boolean
+): string[] {
   return [
     "event-card",
-    ...(item.kind === "player" ? ["event-card--player"] : []),
-    ...(item.kind === "dialogue" ? ["event-card--dialogue"] : []),
-    ...(item.kind === "inventory" ? ["event-card--inventory"] : []),
-    ...(item.variant === "e-stim-control" ? ["event-card--e-stim-control"] : []),
-    ...(item.optionalTool ? ["event-card--optional-tool"] : [])
+    ...(kind === "player" ? ["event-card--player"] : []),
+    ...(kind === "dialogue" ? ["event-card--dialogue"] : []),
+    ...(kind === "inventory" ? ["event-card--inventory"] : []),
+    ...(variant === "e-stim-control" ? ["event-card--e-stim-control"] : []),
+    ...(optionalTool ? ["event-card--optional-tool"] : [])
   ];
 }
 
@@ -204,8 +262,19 @@ function previewSegments(action: PreviewAction): InlineDelayPart[] {
   return action.textByPath[primaryPath]?.visibleSegments ?? [];
 }
 
+function previewText(action: PreviewAction): string {
+  return previewSegments(action)
+    .filter((segment): segment is Extract<InlineDelayPart, { type: "text" }> => segment.type === "text")
+    .map((segment) => segment.text)
+    .join("");
+}
+
+function previewHasText(action: PreviewAction): boolean {
+  return previewText(action).trim().length > 0;
+}
+
 function previewPlaceholder(action: PreviewAction): string | null {
-  if (previewSegments(action).length > 0) {
+  if (previewHasText(action)) {
     return null;
   }
   switch (action.tool) {
@@ -235,6 +304,23 @@ function previewKind(action: PreviewAction): PresentationItem["kind"] {
       return "thought";
     default:
       return "system";
+  }
+}
+
+function previewTags(action: PreviewAction): string[] {
+  switch (action.tool) {
+    case "speak_to_player":
+      return ["对你说"];
+    case "speak_to_agent":
+      return ["角色间对话"];
+    case "perform_stage_direction":
+      return ["动作"];
+    case "apply_story_effect":
+      return ["效果"];
+    case "emit_reasoning_summary":
+      return ["可见推理"];
+    default:
+      return ["系统"];
   }
 }
 
@@ -280,34 +366,7 @@ function previewTitle(action: PreviewAction): string {
   }
 }
 
-function previewStatusLabel(action: PreviewAction): string {
-  if (props.previewTurn?.status === "failed") {
-    return "已失败";
-  }
-  if (action.completed) {
-    return "已生成";
-  }
-  if (props.previewTurn?.status === "completed") {
-    return "等待正式提交";
-  }
-  return "生成中";
-}
-
-function previewMeta(action: PreviewAction): string | undefined {
-  if (props.previewTurn?.status === "failed") {
-    return props.previewTurn.errorMessage ?? "本轮预览失败，正式状态没有被提交。";
-  }
-  if (action.completed) {
-    return "这张卡片来自临时预览，正式事件到达后会由时间线接管。";
-  }
-  return "预览内容尚未正式提交。";
-}
-
 function cardClassForPreview(action: PreviewAction): string[] {
-  return [
-    "event-card",
-    "event-card--preview",
-    ...(previewKind(action) === "dialogue" ? ["event-card--dialogue"] : [])
-  ];
+  return buildCardClass(previewKind(action));
 }
 </script>

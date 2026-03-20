@@ -11,12 +11,17 @@ import {
   type Session,
   type SessionDraft,
   type SessionEvent,
+  type SseEvent,
   type ToolContext,
   type UpdateDraftRequest
 } from "@dglab-ai/shared";
 import { HttpError } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { LockManager } from "../lib/locks.js";
+import {
+  applyPreviewSnapshotEvent,
+  type PreviewTurnSnapshot
+} from "../lib/previewTurnState.js";
 import { MemoryContextAssembler } from "./MemoryContextAssembler.js";
 import { MemoryService } from "./MemoryService.js";
 import type {
@@ -54,6 +59,7 @@ function mergeToolContext(base: ToolContext | undefined, next: ToolContext | und
 export class SessionService {
   private readonly locks = new LockManager();
   private readonly activeTicks = new Set<string>();
+  private readonly previewSnapshots = new Map<string, PreviewTurnSnapshot>();
   private scheduler?: SchedulerLike;
 
   constructor(
@@ -76,6 +82,11 @@ export class SessionService {
   async getSession(sessionId: string): Promise<Session> {
     await this.reconcileStaleTick(sessionId);
     return this.getSessionRecord(sessionId);
+  }
+
+  getPreviewSnapshot(sessionId: string): PreviewTurnSnapshot | null {
+    const snapshot = this.previewSnapshots.get(sessionId);
+    return snapshot ? structuredClone(snapshot) : null;
   }
 
   async getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]> {
@@ -423,22 +434,15 @@ export class SessionService {
           session.lastSeq += startEvents.length;
           await this.store.replaceSession(session);
           this.publishSession(session, startEvents);
-          this.channel.publish({
-            type: "llm.turn.started",
-            sessionId,
-            payload: {
-              turnId
-            }
+          this.publishPreviewEvent(sessionId, "llm.turn.started", {
+            turnId,
+            model: config.model
           });
 
           const result = await this.orchestrator.runTick(session, reason, contextBundle, config, {
             turnId,
             onPreviewEvent: (event) => {
-              this.channel.publish({
-                type: event.type,
-                sessionId,
-                payload: event.payload
-              });
+              this.publishPreviewEvent(sessionId, event.type, event.payload);
             }
           });
           session.timerState.queuedReasons = [];
@@ -461,6 +465,7 @@ export class SessionService {
           const events = await this.store.appendEvents(sessionId, session.lastSeq, [...result.events, tickEndEvent]);
           session.lastSeq += events.length;
           await this.store.replaceSession(session);
+          this.clearPreviewSnapshot(sessionId);
           this.publishSession(session, events);
           void this.refreshMemory(sessionId);
           if (result.usageCalls.length > 0) {
@@ -477,13 +482,9 @@ export class SessionService {
           const failedAt = new Date().toISOString();
           const message = formatRuntimeError(error);
           console.error(`Tick failed for session ${sessionId}`, error);
-          this.channel.publish({
-            type: "llm.turn.failed",
-            sessionId,
-            payload: {
-              turnId: `tick_${session.lastSeq}`,
-              message
-            }
+          this.publishPreviewEvent(sessionId, "llm.turn.failed", {
+            turnId: `tick_${session.lastSeq}`,
+            message
           });
           session.timerState.inFlight = false;
           session.timerState.nextTickAt = session.timerState.enabled
@@ -504,6 +505,7 @@ export class SessionService {
           ]);
           session.lastSeq += events.length;
           await this.store.replaceSession(session);
+          this.clearPreviewSnapshot(sessionId);
           this.publishSession(session, events);
         }
         this.scheduler?.syncSession(session);
@@ -588,6 +590,24 @@ export class SessionService {
         }
       });
     }
+  }
+
+  private publishPreviewEvent(sessionId: string, type: SseEvent["type"], payload: Record<string, unknown>): void {
+    const next = applyPreviewSnapshotEvent(this.previewSnapshots.get(sessionId) ?? null, type, payload);
+    if (next) {
+      this.previewSnapshots.set(sessionId, next);
+    } else {
+      this.previewSnapshots.delete(sessionId);
+    }
+    this.channel.publish({
+      type,
+      sessionId,
+      payload
+    });
+  }
+
+  private clearPreviewSnapshot(sessionId: string): void {
+    this.previewSnapshots.delete(sessionId);
   }
 
   private async getAllEvents(session: Session): Promise<SessionEvent[]> {

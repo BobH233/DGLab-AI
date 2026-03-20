@@ -188,11 +188,135 @@ describe("SessionService", () => {
         })
       }
     }));
+    expect(channel.publish).toHaveBeenCalledWith(expect.objectContaining({
+      type: "llm.turn.started",
+      payload: expect.objectContaining({
+        turnId: "tick_1",
+        model: "test-model"
+      })
+    }));
 
     finishTick();
     await processing;
 
     expect(store.events.map((event) => event.type)).toEqual(["system.tick_started", "system.tick_completed"]);
+  });
+
+  it("keeps a reconnectable preview snapshot while a tick is streaming", async () => {
+    let finishTick!: () => void;
+    const pendingTick = new Promise<{ events: SessionEvent[]; usageCalls: [] }>((resolve) => {
+      finishTick = () => resolve({ events: [], usageCalls: [] });
+    });
+    const store = new InMemoryStore();
+    const channel = {
+      publish: vi.fn(),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      normalizeInbound: vi.fn()
+    };
+    const orchestrator = {
+      generateDraft: vi.fn(),
+      summarizeScene: vi.fn(),
+      runTick: vi.fn(async (_session, _reason, _context, _config, options) => {
+        options?.onPreviewEvent?.({
+          type: "llm.action.meta",
+          payload: {
+            turnId: "tick_1",
+            index: 0,
+            actorAgentId: "director",
+            tool: "speak_to_player",
+            targetScope: "player"
+          }
+        });
+        options?.onPreviewEvent?.({
+          type: "llm.action.text.delta",
+          payload: {
+            turnId: "tick_1",
+            index: 0,
+            path: "args.message",
+            delta: "先看着我。"
+          }
+        });
+        return pendingTick;
+      })
+    };
+    const prompts = {
+      getTemplate: vi.fn(),
+      render: vi.fn(),
+      versions: vi.fn(() => ({}))
+    };
+    const memoryService = {
+      refreshSessionMemory: vi.fn(),
+      markRefreshFailure: vi.fn()
+    };
+    const memoryContextAssembler = {
+      assemble: vi.fn(() => ({
+        coreState: {
+          sessionDraft: "{}",
+          storyState: "{}",
+          agentStates: "{}",
+          playerBodyItemState: "[]"
+        },
+        archiveBlock: "",
+        episodeBlocks: [],
+        turnSummaryBlocks: [],
+        recentRawTurns: [],
+        recentRawTurnsBlock: "",
+        playerMessagesBlock: "",
+        tickContextBlock: "{}",
+        stats: {
+          charCounts: {
+            archive: 0,
+            episodes: 0,
+            turns: 0,
+            rawTurns: 0,
+            playerMessages: 0,
+            tickContext: 0,
+            coreState: 0
+          },
+          droppedBlocks: [],
+          rawTurnsIncluded: 0,
+          episodeCountIncluded: 0,
+          turnSummaryCountIncluded: 0,
+          usedFallback: false
+        }
+      }))
+    };
+    const service = new SessionService(
+      store as never,
+      channel as never,
+      orchestrator as never,
+      prompts as never,
+      memoryService as never,
+      memoryContextAssembler as never
+    );
+
+    const processing = service.processTick("session_test", "player_message");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(service.getPreviewSnapshot("session_test")).toMatchObject({
+      turnId: "tick_1",
+      status: "streaming",
+      model: "test-model",
+      actions: [
+        {
+          actorAgentId: "director",
+          tool: "speak_to_player",
+          targetScope: "player"
+        }
+      ]
+    });
+    expect(service.getPreviewSnapshot("session_test")?.actions[0]?.textByPath["args.message"]?.visibleSegments).toEqual([
+      {
+        type: "text",
+        text: "先看着我。"
+      }
+    ]);
+
+    finishTick();
+    await processing;
+
+    expect(service.getPreviewSnapshot("session_test")).toBeNull();
   });
 
   it("records a retryable failure event when a tick crashes", async () => {

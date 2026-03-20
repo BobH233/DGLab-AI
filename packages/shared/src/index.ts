@@ -761,6 +761,7 @@ export const sseEventSchema = z.object({
     "llm.action.text.delta",
     "llm.action.field.completed",
     "llm.action.completed",
+    "llm.preview.snapshot",
     "llm.turn.control",
     "llm.turn.player_body_item_state",
     "llm.turn.completed",

@@ -402,7 +402,11 @@ export class DefaultOrchestratorService implements OrchestratorService {
     options?.onPreviewEvent?.({
       type: "llm.turn.completed",
       payload: {
-        turnId
+        turnId,
+        model: response.usage.model,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens
       }
     });
     const usageId = createId("usage");

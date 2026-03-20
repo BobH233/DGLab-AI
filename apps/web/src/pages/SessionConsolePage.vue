@@ -208,6 +208,7 @@ import {
 import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
 import {
   applyPreviewEvent,
+  previewTurnFromSnapshot,
   shouldClearPreviewOnCommittedEvent,
   type PreviewTurnState
 } from "../lib/previewTurnState";
@@ -389,11 +390,15 @@ async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
   previewTurn.value = null;
-  syncSession(await api.getSession(id));
-  events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
   deviceExecutionStates.value = {};
-  liveTickInFlight.value = hasOpenTick(events.value);
   connectStream(id);
+  const [nextSession, nextEvents] = await Promise.all([
+    api.getSession(id),
+    api.getEvents(id)
+  ]);
+  syncSession(nextSession);
+  events.value = mergeTimelineEvents(events.value, nextEvents.map(normalizeTimelineEvent));
+  liveTickInFlight.value = hasOpenTick(events.value) || Boolean(nextSession.timerState.inFlight);
 }
 
 function connectStream(sessionId: string) {
@@ -410,6 +415,10 @@ function connectStream(sessionId: string) {
       previewTurn.value = null;
     }
     enqueueLiveEvent(payload.event);
+  });
+  stream.addEventListener("llm.preview.snapshot", (event) => {
+    const payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
+    previewTurn.value = previewTurnFromSnapshot(payload);
   });
   for (const eventType of [
     "llm.turn.started",
@@ -794,6 +803,21 @@ function normalizeTimelineEvent(event: SessionEvent): SessionEvent {
 
 function isSameTimelineEvent(left: SessionEvent, right: SessionEvent): boolean {
   return left.seq === right.seq && left.type === right.type && left.createdAt === right.createdAt;
+}
+
+function mergeTimelineEvents(existing: SessionEvent[], incoming: SessionEvent[]): SessionEvent[] {
+  const merged = [...existing];
+  for (const event of incoming) {
+    if (!merged.some((item) => isSameTimelineEvent(item, event))) {
+      merged.push(event);
+    }
+  }
+  return merged.sort((left, right) => {
+    if (left.seq !== right.seq) {
+      return left.seq - right.seq;
+    }
+    return Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  });
 }
 
 function pauseEventId(event: SessionEvent): string {

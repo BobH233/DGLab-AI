@@ -34,8 +34,29 @@ vi.mock("vue-router", () => ({
 }));
 
 class FakeEventSource {
-  constructor(_url: string) {}
-  addEventListener() {}
+  static instances: FakeEventSource[] = [];
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+
+  constructor(_url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  emit(type: string, payload: Record<string, unknown>) {
+    const listeners = this.listeners.get(type) ?? [];
+    const event = {
+      data: JSON.stringify(payload)
+    } as MessageEvent;
+    for (const listener of listeners) {
+      listener(event);
+    }
+  }
+
   close() {}
 }
 
@@ -127,6 +148,7 @@ describe("SessionConsolePage", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
     vi.resetAllMocks();
+    FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     apiMocks.getEvents.mockResolvedValue([]);
     apiMocks.requestAutoTick.mockResolvedValue(createSession({
@@ -253,5 +275,139 @@ describe("SessionConsolePage", () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(apiMocks.requestAutoTick).toHaveBeenCalledWith("session_1", undefined);
+  });
+
+  it("subscribes to the stream before initial data finishes loading so the first preview is not missed", async () => {
+    let resolveSession!: (value: Session) => void;
+    let resolveEvents!: (value: SessionEvent[]) => void;
+    apiMocks.getSession.mockImplementation(() => new Promise((resolve) => {
+      resolveSession = resolve;
+    }));
+    apiMocks.getEvents.mockImplementation(() => new Promise((resolve) => {
+      resolveEvents = resolve;
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_1",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_1",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "speak_to_player",
+      targetScope: "player"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.text.delta", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.message",
+      delta: "先看着我。"
+    });
+
+    resolveSession(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+    resolveEvents([]);
+
+    await flushPromises();
+
+    expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("先看着我。");
+    expect(normalizedText(wrapper)).toContain("对你说");
+  });
+
+  it("restores an in-flight preview snapshot after reconnect", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.preview.snapshot", {
+      previewTurn: {
+        turnId: "tick_1",
+        status: "streaming",
+        model: "gpt-5.4",
+        actions: [
+          {
+            index: 0,
+            actorAgentId: "director_1",
+            tool: "speak_to_player",
+            targetScope: "player",
+            textByPath: {
+              "args.message": {
+                visibleSegments: [
+                  {
+                    type: "text",
+                    text: "刷新后也能接着看。"
+                  }
+                ],
+                pendingBuffer: ""
+              }
+            },
+            completedFields: [],
+            completed: false
+          }
+        ]
+      }
+    });
+
+    await flushPromises();
+
+    expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("刷新后也能接着看。");
+    expect(normalizedText(wrapper)).toContain("对你说");
   });
 });
