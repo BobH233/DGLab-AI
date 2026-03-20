@@ -331,4 +331,53 @@ describe("EventTimeline preview", () => {
     expect(previewItem.text()).toContain("强度：6");
     expect(previewItem.text()).toContain("你感觉空气里的温度被悄悄抬高了一点。");
   });
+
+  it("does not replay old inline delays when restoring preview from a snapshot", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        previewTurn: {
+          turnId: "tick_7",
+          status: "streaming",
+          model: "gpt-5.4",
+          restoredActionIndexes: [0],
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "speak_to_player",
+              targetScope: "player",
+              textByPath: {
+                "args.message": {
+                  visibleSegments: [
+                    {
+                      type: "text",
+                      text: "第一段。"
+                    },
+                    {
+                      type: "delay",
+                      delayMs: 800
+                    },
+                    {
+                      type: "text",
+                      text: "第二段。"
+                    }
+                  ],
+                  pendingBuffer: ""
+                }
+              },
+              valueByPath: {},
+              completedFields: [],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    expect(wrapper.text()).toContain("第一段。");
+    expect(wrapper.text()).toContain("第二段。");
+    expect(wrapper.text()).toContain("约 800 ms 后继续");
+    expect(wrapper.find('.timeline-item[data-preview="true"][data-kind="pause"][data-live="true"]').exists()).toBe(false);
+  });
 });

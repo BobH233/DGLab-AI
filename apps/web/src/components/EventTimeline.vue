@@ -528,7 +528,7 @@ function syncPreviewDelayProgress(): void {
     const key = previewActionKey(action);
     nextKeys.add(key);
     const existing = previewDelayProgress.value[key] ?? {
-      revealedCount: 0,
+      revealedCount: shouldBootstrapPreviewAction(action) ? previewSegments(action).length : 0,
       activeDelayIndex: null,
       deadlineAt: null,
       delayMs: null
@@ -546,6 +546,10 @@ function syncPreviewDelayProgress(): void {
   }
 
   syncPreviewClock();
+}
+
+function shouldBootstrapPreviewAction(action: PreviewAction): boolean {
+  return Boolean(props.previewTurn?.restoredActionIndexes?.includes(action.index));
 }
 
 function advancePreviewDelayProgress(key: string, action: PreviewAction): void {

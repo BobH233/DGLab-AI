@@ -19,6 +19,7 @@ export type PreviewAction = {
 export type PreviewTurnState = {
   turnId: string;
   actions: PreviewAction[];
+  restoredActionIndexes?: number[];
   model?: string;
   promptTokens?: number;
   completionTokens?: number;
@@ -188,5 +189,11 @@ export function previewTurnFromSnapshot(payload: Record<string, unknown>): Previ
   if (!snapshot || typeof snapshot !== "object") {
     return null;
   }
-  return snapshot as PreviewTurnState;
+  const restored = snapshot as PreviewTurnState;
+  return {
+    ...restored,
+    restoredActionIndexes: Array.isArray(restored.actions)
+      ? restored.actions.map((action) => action.index)
+      : []
+  };
 }
