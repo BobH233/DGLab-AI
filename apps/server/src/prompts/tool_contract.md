@@ -32,6 +32,9 @@ You must output exactly one complete turn using this line protocol:
 - Do not rename argument properties.
 - Do not translate argument keys.
 - Do not switch between camelCase and snake_case.
+- Do not collapse a multi-property args object into a single root field like `@field args` when the tool has named argument properties.
+- Instead, emit one `@field` block per concrete argument path such as `args.command`, `args.durationMs`, `args.override`, `args.channels`.
+- If a nested object is needed, place it at its real property path like `args.channels`; do not move unrelated keys into the same field body.
 
 ### Tool reference:
 {{toolReference}}
@@ -81,3 +84,4 @@ Use only the exact tool ids and argument keys shown in the Tool reference above.
 - Do not stall waiting for the player to invent the next move.
 - If nothing should happen, return no `@action` blocks and still emit `@turnControl`, `@playerBodyItemState`, and `@done`.
 - Never invent tools outside the provided tool list.
+- For `control_e_stim_toy`, never emit a single `@field args` block containing the whole JSON object. Always use the canonical field paths required by the tool reference.

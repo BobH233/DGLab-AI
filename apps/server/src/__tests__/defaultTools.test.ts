@@ -274,6 +274,8 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Channel B");
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 臀部");
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 大腿两侧");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("never emit `@field args`");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("`@field args.command`, `@field args.durationMs`, `@field args.override`, `@field args.channels`");
 
     await registry.execute({
       session,
