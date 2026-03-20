@@ -397,6 +397,7 @@ describe("SessionConsolePage", () => {
                 pendingBuffer: ""
               }
             },
+            valueByPath: {},
             completedFields: [],
             completed: false
           }

@@ -205,7 +205,7 @@ import {
   parseGameConnectionCode,
   syncElectroStimToolContext
 } from "../lib/eStim";
-import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
+import { stripInlineDelays } from "../lib/inlineDelays";
 import {
   applyPreviewEvent,
   previewTurnFromSnapshot,
@@ -217,17 +217,6 @@ type ActivePauseState = {
   id: string;
   countdownLabel: string;
 };
-
-type PlaybackStep =
-  | {
-    type: "event";
-    event: SessionEvent;
-  }
-  | {
-    type: "pause";
-    delayMs: number;
-    event: SessionEvent;
-  };
 
 type DeviceExecutionState = {
   status: "pending" | "success" | "simulated" | "error";
@@ -258,7 +247,6 @@ let automationClockTimer: number | null = null;
 let queueRunning = false;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
-let localPauseId = 0;
 const liveQueue: SessionEvent[] = [];
 
 const agentCards = computed(() => {
@@ -474,18 +462,8 @@ async function flushLiveQueue() {
         await runPause(next, Number(next.payload.delayMs ?? 0), generation);
         continue;
       }
-      for (const step of expandPlaybackSteps(next)) {
-        if (generation !== playbackGeneration) {
-          return;
-        }
-        if (step.type === "pause") {
-          events.value = [...events.value, step.event];
-          await runPause(step.event, step.delayMs, generation);
-          continue;
-        }
-        events.value = [...events.value, step.event];
-        void maybeExecuteDeviceControl(step.event);
-      }
+      events.value = [...events.value, next];
+      void maybeExecuteDeviceControl(next);
     }
   } finally {
     queueRunning = false;
@@ -645,146 +623,6 @@ function formatClockTime(value: string): string {
     minute: "2-digit",
     second: "2-digit"
   });
-}
-
-function expandPlaybackSteps(event: SessionEvent): PlaybackStep[] {
-  const field = playbackFieldForEvent(event);
-  if (!field) {
-    return [{
-      type: "event",
-      event
-    }];
-  }
-
-  const rawValue = event.payload[field];
-  if (typeof rawValue !== "string" || !hasInlineDelays(rawValue)) {
-    return [{
-      type: "event",
-      event
-    }];
-  }
-
-  const steps: PlaybackStep[] = [];
-  for (const part of splitInlineDelays(rawValue)) {
-    if (part.type === "delay") {
-      steps.push({
-        type: "pause",
-        delayMs: part.delayMs,
-        event: createInlinePauseEvent(event, part.delayMs)
-      });
-      continue;
-    }
-
-    const text = part.text.trim();
-    if (!text) {
-      continue;
-    }
-    steps.push({
-      type: "event",
-      event: {
-        ...event,
-        payload: {
-          ...event.payload,
-          [field]: text
-        }
-      }
-    });
-  }
-
-  if (steps.length > 0) {
-    return steps;
-  }
-
-  return [{
-    type: "event",
-    event: {
-      ...event,
-      payload: {
-        ...event.payload,
-        [field]: stripInlineDelays(rawValue).trim()
-      }
-    }
-  }];
-}
-
-function playbackFieldForEvent(event: SessionEvent): string | null {
-  switch (event.type) {
-    case "agent.speak_player":
-    case "agent.speak_agent":
-      return "message";
-    case "agent.reasoning":
-      return "summary";
-    case "agent.stage_direction":
-      return "direction";
-    case "agent.story_effect":
-      return "description";
-    default:
-      return null;
-  }
-}
-
-function createInlinePauseEvent(event: SessionEvent, delayMs: number): SessionEvent {
-  const pauseState = createInlinePauseState(event);
-  return normalizeTimelineEvent({
-    sessionId: event.sessionId,
-    seq: event.seq,
-    type: "system.wait_scheduled",
-    source: "system",
-    agentId: event.agentId,
-    createdAt: new Date().toISOString(),
-    payload: {
-      speaker: event.payload.speaker,
-      reason: pauseState.meta,
-      delayMs,
-      mode: "inline_pause",
-      title: pauseState.title,
-      main: pauseState.main,
-      meta: pauseState.meta,
-      uiPauseId: `local-pause:${localPauseId += 1}`
-    }
-  });
-}
-
-function createInlinePauseState(event: SessionEvent): { title: string; main: string; meta?: string } {
-  const speaker = textOf(event.payload.speaker) || "对方";
-  switch (event.type) {
-    case "agent.speak_player":
-      return {
-        title: `${speaker} 停了一下`,
-        main: `${speaker} 把话音压住半拍，像是在等你把那层意思自己听清。`,
-        meta: "文本内节奏停顿"
-      };
-    case "agent.speak_agent":
-      return {
-        title: `${speaker} 稍作停顿`,
-        main: `${speaker} 把话留在空气里片刻，像是故意给场中每个人一点反应时间。`,
-        meta: "角色间对白停顿"
-      };
-    case "agent.stage_direction":
-      return {
-        title: "动作停在半空",
-        main: `${speaker} 的动作没有立刻接下去，气氛被有意拉长了一瞬。`,
-        meta: "舞台节奏停顿"
-      };
-    case "agent.story_effect":
-      return {
-        title: "气氛慢慢发酵",
-        main: "那一点变化没有立刻散去，反而在沉默里更明显地漫开。",
-        meta: "剧情效果停顿"
-      };
-    case "agent.reasoning":
-      return {
-        title: `${speaker} 还在拿捏节奏`,
-        main: `${speaker} 没有立刻把下一步亮出来，像是在等这一拍先落进你心里。`,
-        meta: "意图节奏停顿"
-      };
-    default:
-      return {
-        title: `${speaker} 停了一下`,
-        main: "空气里短暂安静了一瞬，像是故意把余味留得更久一点。",
-        meta: "文本内节奏停顿"
-      };
-  }
 }
 
 function normalizeTimelineEvent(event: SessionEvent): SessionEvent {

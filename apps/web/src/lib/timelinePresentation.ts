@@ -1,5 +1,5 @@
 import { isToolRequired, type AgentProfile, type SessionEvent } from "@dglab-ai/shared";
-import { stripInlineDelays } from "./inlineDelays";
+import { formatInlineDelayMs, splitInlineDelays, stripInlineDelays } from "./inlineDelays";
 
 export type PresentationDetail = {
   label: string;
@@ -53,20 +53,10 @@ export function buildTimelinePresentationItems(
         items.push(buildPlayerBodyItemStateItem(event, itemId));
         return items;
       case "player.message":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "player",
-          kicker: "玩家输入",
-          title: "你说",
-          main: textOf(event.payload.text),
-          tags: ["玩家"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(...expandInlineDelayItems(event, itemId, buildPlayerMessageItem));
         return items;
       case "agent.speak_player":
-        items.push(buildAgentSpeakPlayerItem(event, itemId));
+        items.push(...expandInlineDelayItems(event, itemId, buildAgentSpeakPlayerItem));
         return items;
       case "agent.device_control":
         const optionalTool = isOptionalToolEvent(event);
@@ -91,47 +81,16 @@ export function buildTimelinePresentationItems(
         });
         return items;
       case "agent.speak_agent":
-        items.push(buildAgentSpeakAgentItem(event, itemId, agentMap));
+        items.push(...expandInlineDelayItems(event, itemId, (nextEvent, nextItemId) => buildAgentSpeakAgentItem(nextEvent, nextItemId, agentMap)));
         return items;
       case "agent.reasoning":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "thought",
-          kicker: "意图摘要",
-          title: `${textOf(event.payload.speaker)} 的判断`,
-          main: textOf(event.payload.summary),
-          tags: ["可见推理"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(...expandInlineDelayItems(event, itemId, buildReasoningItem));
         return items;
       case "agent.stage_direction":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "action",
-          kicker: "舞台动作",
-          title: `${textOf(event.payload.speaker)} 的动作`,
-          main: textOf(event.payload.direction),
-          tags: ["动作"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(...expandInlineDelayItems(event, itemId, buildStageDirectionItem));
         return items;
       case "agent.story_effect":
-        items.push({
-          id: itemId,
-          seq: event.seq,
-          kind: "effect",
-          kicker: "剧情变化",
-          title: textOf(event.payload.label),
-          main: textOf(event.payload.description),
-          meta: event.payload.intensity !== undefined ? `强度：${textOf(event.payload.intensity)}` : undefined,
-          tags: ["效果"],
-          createdAt: event.createdAt,
-          timeLabel: formatTime(event.createdAt)
-        });
+        items.push(...expandInlineDelayItems(event, itemId, buildStoryEffectItem));
         return items;
       case "scene.updated":
         items.push({
@@ -538,13 +497,16 @@ function buildPauseItem(event: SessionEvent, itemId: string): PresentationItem {
     : `pause:${event.seq}:${event.createdAt}`;
   const reason = textOf(event.payload.reason);
   const explicitMeta = textOf(event.payload.meta);
+  const delayMs = typeof event.payload.delayMs === "number" && Number.isFinite(event.payload.delayMs)
+    ? event.payload.delayMs
+    : undefined;
   return {
     id: itemId,
     seq: event.seq,
     kind: "pause",
     kicker: "节奏控制",
     title: textOf(event.payload.title) || `${textOf(event.payload.speaker, "对方")} 停了一下`,
-    main: "",
+    main: delayMs !== undefined ? `约 ${formatInlineDelayMs(delayMs)} 后继续` : "",
     meta: explicitMeta || (reason ? `原因：${reason}` : undefined),
     tags: [],
     createdAt: event.createdAt,
@@ -564,6 +526,177 @@ function formatTime(value: string): string {
 function joinText(parts: Array<string | undefined>): string | undefined {
   const normalized = parts.filter((part): part is string => Boolean(part && part.trim()));
   return normalized.length > 0 ? normalized.join("；") : undefined;
+}
+
+function expandInlineDelayItems(
+  event: SessionEvent,
+  itemId: string,
+  buildTextItem: (event: SessionEvent, itemId: string) => PresentationItem
+): PresentationItem[] {
+  const field = inlineDelayFieldForEvent(event);
+  if (!field) {
+    return [buildTextItem(event, itemId)];
+  }
+
+  const rawValue = event.payload[field];
+  if (typeof rawValue !== "string" || !rawValue.includes("<delay>")) {
+    return [buildTextItem(event, itemId)];
+  }
+
+  const parts = splitInlineDelays(rawValue);
+  const items: PresentationItem[] = [];
+  let textIndex = 0;
+  let delayIndex = 0;
+
+  for (const part of parts) {
+    if (part.type === "delay") {
+      items.push(buildInlineDelayPauseItem(event, `${itemId}:delay:${delayIndex}`, part.delayMs, delayIndex));
+      delayIndex += 1;
+      continue;
+    }
+
+    const text = part.text.trim();
+    if (!text) {
+      continue;
+    }
+
+    items.push(buildTextItem({
+      ...event,
+      payload: {
+        ...event.payload,
+        [field]: text
+      }
+    }, `${itemId}:text:${textIndex}`));
+    textIndex += 1;
+  }
+
+  return items.length > 0
+    ? items
+    : [buildTextItem({
+      ...event,
+      payload: {
+        ...event.payload,
+        [field]: stripInlineDelays(rawValue).trim()
+      }
+    }, itemId)];
+}
+
+function inlineDelayFieldForEvent(event: SessionEvent): string | null {
+  switch (event.type) {
+    case "player.message":
+      return "text";
+    case "agent.speak_player":
+    case "agent.speak_agent":
+      return "message";
+    case "agent.reasoning":
+      return "summary";
+    case "agent.stage_direction":
+      return "direction";
+    case "agent.story_effect":
+      return "description";
+    default:
+      return null;
+  }
+}
+
+function inlineDelayMetaForEvent(event: SessionEvent): string {
+  switch (event.type) {
+    case "player.message":
+      return "玩家输入停顿";
+    case "agent.speak_player":
+      return "文本内节奏停顿";
+    case "agent.speak_agent":
+      return "角色间对白停顿";
+    case "agent.stage_direction":
+      return "舞台节奏停顿";
+    case "agent.story_effect":
+      return "剧情效果停顿";
+    case "agent.reasoning":
+      return "意图节奏停顿";
+    default:
+      return "文本内节奏停顿";
+  }
+}
+
+function buildInlineDelayPauseItem(
+  event: SessionEvent,
+  itemId: string,
+  delayMs: number,
+  delayIndex: number
+): PresentationItem {
+  return buildPauseItem({
+    sessionId: event.sessionId,
+    seq: event.seq,
+    type: "system.wait_scheduled",
+    source: "system",
+    agentId: event.agentId,
+    createdAt: event.createdAt,
+    payload: {
+      speaker: event.payload.speaker,
+      title: `约 ${formatInlineDelayMs(delayMs)} 后继续`,
+      meta: inlineDelayMetaForEvent(event),
+      delayMs,
+      mode: "inline_pause",
+      uiPauseId: `inline:${event.seq}:${event.createdAt}:${delayIndex}`
+    }
+  }, itemId);
+}
+
+function buildPlayerMessageItem(event: SessionEvent, itemId: string): PresentationItem {
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "player",
+    kicker: "玩家输入",
+    title: "你说",
+    main: textOf(event.payload.text),
+    tags: ["玩家"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
+}
+
+function buildReasoningItem(event: SessionEvent, itemId: string): PresentationItem {
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "thought",
+    kicker: "意图摘要",
+    title: `${textOf(event.payload.speaker)} 的判断`,
+    main: textOf(event.payload.summary),
+    tags: ["可见推理"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
+}
+
+function buildStageDirectionItem(event: SessionEvent, itemId: string): PresentationItem {
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "action",
+    kicker: "舞台动作",
+    title: `${textOf(event.payload.speaker)} 的动作`,
+    main: textOf(event.payload.direction),
+    tags: ["动作"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
+}
+
+function buildStoryEffectItem(event: SessionEvent, itemId: string): PresentationItem {
+  return {
+    id: itemId,
+    seq: event.seq,
+    kind: "effect",
+    kicker: "剧情变化",
+    title: textOf(event.payload.label),
+    main: textOf(event.payload.description),
+    meta: event.payload.intensity !== undefined ? `强度：${textOf(event.payload.intensity)}` : undefined,
+    tags: ["效果"],
+    createdAt: event.createdAt,
+    timeLabel: formatTime(event.createdAt)
+  };
 }
 
 function buildAgentSpeakPlayerItem(event: SessionEvent, itemId: string): PresentationItem {

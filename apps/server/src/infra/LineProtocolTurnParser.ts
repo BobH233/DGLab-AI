@@ -28,7 +28,10 @@ const PREVIEWABLE_TEXT_FIELDS = new Set([
   "speak_to_agent:args.message",
   "perform_stage_direction:args.direction",
   "apply_story_effect:args.description",
-  "emit_reasoning_summary:args.summary"
+  "emit_reasoning_summary:args.summary",
+  "update_scene_state:args.location",
+  "update_scene_state:args.phase",
+  "update_scene_state:args.summary"
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -217,7 +220,8 @@ export class LineProtocolTurnParser {
       payload: {
         turnId: this.turnId,
         index: this.currentActionIndex,
-        path
+        path,
+        value
       }
     });
 

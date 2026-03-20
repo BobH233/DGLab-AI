@@ -43,6 +43,18 @@ function pushTextSegment(parts: InlineDelayPart[], text: string): void {
   });
 }
 
+function mergeInlineDelayParts(parts: InlineDelayPart[]): InlineDelayPart[] {
+  const merged: InlineDelayPart[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      pushTextSegment(merged, part.text);
+      continue;
+    }
+    merged.push(part);
+  }
+  return merged;
+}
+
 function readDelayToken(source: string, start: number): {
   kind: "complete";
   end: number;
@@ -191,6 +203,14 @@ export function hasInlineDelays(source: string): boolean {
   return createDelayPattern().test(source);
 }
 
+export function formatInlineDelayMs(ms: number): string {
+  if (ms >= 1000) {
+    const seconds = Math.max(0.1, ms / 1000);
+    return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} 秒`;
+  }
+  return `${Math.max(0, Math.round(ms))} ms`;
+}
+
 export function createStreamingInlineDelayState(): StreamingInlineDelayState {
   return {
     visibleSegments: [],
@@ -204,7 +224,7 @@ export function appendStreamingInlineDelay(
 ): StreamingInlineDelayState {
   const consumed = consumeStreamingBuffer(`${state.pendingBuffer}${delta}`, false);
   return {
-    visibleSegments: [...state.visibleSegments, ...consumed.visibleSegments],
+    visibleSegments: mergeInlineDelayParts([...state.visibleSegments, ...consumed.visibleSegments]),
     pendingBuffer: consumed.pendingBuffer
   };
 }
@@ -212,7 +232,7 @@ export function appendStreamingInlineDelay(
 export function finalizeStreamingInlineDelay(state: StreamingInlineDelayState): StreamingInlineDelayState {
   const consumed = consumeStreamingBuffer(state.pendingBuffer, true);
   return {
-    visibleSegments: [...state.visibleSegments, ...consumed.visibleSegments],
+    visibleSegments: mergeInlineDelayParts([...state.visibleSegments, ...consumed.visibleSegments]),
     pendingBuffer: ""
   };
 }

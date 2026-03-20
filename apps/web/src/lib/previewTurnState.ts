@@ -11,6 +11,7 @@ export type PreviewAction = {
   tool?: string;
   targetScope?: string;
   textByPath: Record<string, StreamingInlineDelayState>;
+  valueByPath: Record<string, unknown>;
   completedFields: string[];
   completed: boolean;
 };
@@ -42,6 +43,7 @@ function ensureAction(state: PreviewTurnState, index: number): PreviewAction {
     action = {
       index,
       textByPath: {},
+      valueByPath: {},
       completedFields: [],
       completed: false
     };
@@ -127,6 +129,7 @@ export function applyPreviewEvent(
         actions: current.actions.map((action) => ({
           ...action,
           textByPath: { ...action.textByPath },
+          valueByPath: { ...action.valueByPath },
           completedFields: [...action.completedFields]
         }))
       };
@@ -149,7 +152,13 @@ export function applyPreviewEvent(
 
       if (type === "llm.action.field.completed") {
         const path = String(payload.path ?? "");
-        action.textByPath[path] = finalizeStreamingInlineDelay(ensureTextState(action, path));
+        const existingTextState = action.textByPath[path];
+        if (existingTextState) {
+          action.textByPath[path] = finalizeStreamingInlineDelay(existingTextState);
+        }
+        if (payload.value !== undefined) {
+          action.valueByPath[path] = payload.value;
+        }
         if (!action.completedFields.includes(path)) {
           action.completedFields.push(path);
         }

@@ -60,4 +60,61 @@ describe("LineProtocolTurnParser", () => {
       activeObjectives: ["继续施压", "逼你抬头"]
     });
   });
+
+  it("streams scene-state text fields and includes completed field values", () => {
+    const previewEvents: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_3",
+      emitPreviewEvent: (event) => {
+        previewEvents.push(event);
+      }
+    });
+
+    parser.push([
+      "@action {\"actorAgentId\":\"director\",\"tool\":\"update_scene_state\",\"targetScope\":\"scene\"}",
+      "@field args.phase",
+      "teasing",
+      "@endfield",
+      "@field args.location",
+      "会客室",
+      "@endfield",
+      "@field args.summary",
+      "你已经被他缓慢收紧的节奏牵住注意力。",
+      "@endfield",
+      "@field args.tension",
+      "7",
+      "@endfield",
+      "@field args.activeObjectives",
+      "[\"让你继续停留\",\"逼你给出更诚实的反应\"]",
+      "@endfield",
+      "@endaction",
+      "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerBodyItemState []",
+      "@done"
+    ].join("\n"));
+
+    parser.finish();
+
+    const streamedPaths = new Set(
+      previewEvents
+        .filter((event) => event.type === "llm.action.text.delta")
+        .map((event) => String(event.payload.path))
+    );
+
+    expect(streamedPaths).toEqual(new Set([
+      "args.phase",
+      "args.location",
+      "args.summary"
+    ]));
+    expect(previewEvents.filter((event) => event.type === "llm.action.field.completed").map((event) => ({
+      path: event.payload.path,
+      value: event.payload.value
+    }))).toEqual([
+      { path: "args.phase", value: "teasing" },
+      { path: "args.location", value: "会客室" },
+      { path: "args.summary", value: "你已经被他缓慢收紧的节奏牵住注意力。" },
+      { path: "args.tension", value: 7 },
+      { path: "args.activeObjectives", value: ["让你继续停留", "逼你给出更诚实的反应"] }
+    ]);
+  });
 });

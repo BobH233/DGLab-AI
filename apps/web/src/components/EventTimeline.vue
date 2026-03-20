@@ -23,29 +23,59 @@
       </div>
     </article>
     <article
-      v-for="action in previewActions"
-      :key="`preview-${previewTurn?.turnId}-${action.index}`"
+      v-for="entry in previewEntries"
+      :key="entry.id"
       class="timeline-item"
-      :data-kind="previewKind(action)"
+      :data-kind="entry.kind"
       data-preview="true"
-      :data-live="previewTurn?.status === 'streaming' ? 'true' : undefined"
+      :data-live="entry.live ? 'true' : undefined"
     >
       <div class="timeline-rail">
         <span class="timeline-dot" />
       </div>
-      <div :class="cardClassForPreview(action)">
+      <div v-if="entry.compact" class="timeline-compact">
+        <span class="timeline-compact__kicker">{{ entry.kicker }}</span>
+        <strong class="timeline-compact__title">{{ entry.title }}</strong>
+        <span v-if="entry.main" class="timeline-compact__main">{{ entry.main }}</span>
+        <span v-if="entry.meta" class="timeline-compact__meta">{{ entry.meta }}</span>
+        <span v-if="entry.status" class="timeline-compact__status">{{ entry.status }}</span>
+        <span v-if="entry.live" class="timeline-compact__dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      </div>
+      <div v-else :class="cardClassForPreview(entry.action)">
         <header class="event-header event-header--single">
           <div class="event-title-block">
-            <span class="event-kicker">{{ previewKicker(action) }}</span>
-            <strong>{{ previewTitle(action) }}</strong>
+            <span class="event-kicker">{{ previewKicker(entry.action) }}</span>
+            <strong>{{ previewTitle(entry.action) }}</strong>
           </div>
         </header>
         <div class="event-body">
-          <p v-if="previewHasText(action)" class="event-main">{{ previewText(action) }}</p>
-          <p v-else class="event-main event-main--placeholder">{{ previewPlaceholder(action) }}</p>
+          <template v-if="previewIsSceneState(entry.action)">
+            <div class="event-detail-list">
+              <p
+                v-for="detail in previewSceneDetails(entry.action)"
+                :key="detail.key"
+                class="event-detail-row"
+              >
+                <strong class="event-detail-label">{{ detail.label }}：</strong>
+                <span
+                  class="event-detail-value"
+                  :class="detail.pending ? 'event-detail-value--placeholder' : undefined"
+                >{{ detail.value }}</span>
+              </p>
+            </div>
+          </template>
+          <template v-else>
+            <p v-if="entry.main" class="event-main">{{ entry.main }}</p>
+            <p v-else class="event-main event-main--placeholder">{{ entry.placeholder }}</p>
+            <p v-if="entry.meta" class="event-meta">{{ entry.meta }}</p>
+          </template>
         </div>
-        <div v-if="previewTags(action).length" class="event-tags">
-          <span v-for="tag in previewTags(action)" :key="tag" class="event-tag">{{ tag }}</span>
+        <div v-if="previewTags(entry.action).length" class="event-tags">
+          <span v-for="tag in previewTags(entry.action)" :key="tag" class="event-tag">{{ tag }}</span>
         </div>
       </div>
     </article>
@@ -134,14 +164,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { AgentProfile, SessionEvent } from "@dglab-ai/shared";
 import {
   buildTimelinePresentationItems,
   type DeviceExecutionState,
   type PresentationItem
 } from "../lib/timelinePresentation";
-import type { InlineDelayPart } from "../lib/inlineDelays";
+import { formatInlineDelayMs, type InlineDelayPart } from "../lib/inlineDelays";
 import type { PreviewAction, PreviewTurnState } from "../lib/previewTurnState";
 
 type ActivePauseState = {
@@ -162,6 +192,34 @@ type PreviewStatusState = {
   live: boolean;
 };
 
+type PreviewDetailRow = {
+  key: string;
+  label: string;
+  value: string;
+  pending?: boolean;
+};
+
+type PreviewDelayProgress = {
+  revealedCount: number;
+  activeDelayIndex: number | null;
+  deadlineAt: number | null;
+  delayMs: number | null;
+};
+
+type PreviewEntry = {
+  id: string;
+  kind: PresentationItem["kind"];
+  kicker: string;
+  title: string;
+  main?: string;
+  meta?: string;
+  status?: string;
+  compact?: boolean;
+  live?: boolean;
+  action: PreviewAction;
+  placeholder?: string | null;
+};
+
 const props = defineProps<{
   events: SessionEvent[];
   activePause?: ActivePauseState | null;
@@ -177,8 +235,14 @@ const presentationItems = computed<PresentationItem[]>(() => {
 const agentNameById = computed(() => {
   return new Map((props.agents ?? []).map((agent) => [agent.id, agent.name]));
 });
-const previewActions = computed<PreviewAction[]>(() => {
-  return [...(props.previewTurn?.actions ?? [])].reverse();
+const previewDelayProgress = ref<Record<string, PreviewDelayProgress>>({});
+const previewClockNow = ref(Date.now());
+const previewEntries = computed<PreviewEntry[]>(() => {
+  const entries: PreviewEntry[] = [];
+  for (const action of props.previewTurn?.actions ?? []) {
+    entries.push(...buildPreviewEntries(action));
+  }
+  return entries.reverse();
 });
 const previewStatus = computed<PreviewStatusState | null>(() => {
   if (!props.previewTurn) {
@@ -210,6 +274,18 @@ const previewStatus = computed<PreviewStatusState | null>(() => {
     live: props.previewTurn.status === "streaming"
   };
 });
+let previewClockTimer: number | null = null;
+const previewDelayTimers = new Map<string, number>();
+
+watch(() => props.previewTurn, syncPreviewDelayProgress, {
+  deep: true,
+  immediate: true
+});
+
+onBeforeUnmount(() => {
+  clearPreviewDelayTimers();
+  stopPreviewClock();
+});
 
 function isLivePause(item: PresentationItem): boolean {
   return Boolean(item.pauseId) && item.pauseId === props.activePause?.id;
@@ -238,6 +314,10 @@ function buildCardClass(
   ];
 }
 
+function previewActionKey(action: PreviewAction): string {
+  return `${props.previewTurn?.turnId ?? "preview"}:${action.index}`;
+}
+
 function previewPrimaryPath(action: PreviewAction): string | null {
   switch (action.tool) {
     case "speak_to_player":
@@ -259,14 +339,37 @@ function previewSegments(action: PreviewAction): InlineDelayPart[] {
   if (!primaryPath) {
     return [];
   }
-  return action.textByPath[primaryPath]?.visibleSegments ?? [];
+  return previewSegmentsByPath(action, primaryPath);
 }
 
-function previewText(action: PreviewAction): string {
-  return previewSegments(action)
+function previewSegmentsByPath(action: PreviewAction, path: string): InlineDelayPart[] {
+  return action.textByPath[path]?.visibleSegments ?? [];
+}
+
+function previewTextByPath(action: PreviewAction, path: string): string {
+  return previewSegmentsByPath(action, path)
     .filter((segment): segment is Extract<InlineDelayPart, { type: "text" }> => segment.type === "text")
     .map((segment) => segment.text)
     .join("");
+}
+
+function previewCompletedValue(action: PreviewAction, path: string): unknown {
+  return action.valueByPath[path];
+}
+
+function formatPreviewValue(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => formatPreviewValue(item)).filter(Boolean).join(" / ");
+  }
+  return String(value);
+}
+
+function previewText(action: PreviewAction): string {
+  const primaryPath = previewPrimaryPath(action);
+  return primaryPath ? previewTextByPath(action, primaryPath) : "";
 }
 
 function previewHasText(action: PreviewAction): boolean {
@@ -286,8 +389,247 @@ function previewPlaceholder(action: PreviewAction): string | null {
       return "正在生成变化...";
     case "emit_reasoning_summary":
       return "正在生成摘要...";
+    case "update_scene_state":
+      return "正在同步场景状态...";
     default:
       return "正在编写参数...";
+  }
+}
+
+function buildPreviewEntries(action: PreviewAction): PreviewEntry[] {
+  if (previewIsSceneState(action)) {
+    return [{
+      id: `${previewActionKey(action)}:scene`,
+      kind: previewKind(action),
+      kicker: previewKicker(action),
+      title: previewTitle(action),
+      action
+    }];
+  }
+
+  const segments = previewSegments(action);
+  const progress = previewDelayProgress.value[previewActionKey(action)] ?? {
+    revealedCount: 0,
+    activeDelayIndex: null,
+    deadlineAt: null,
+    delayMs: null
+  };
+  const entries: PreviewEntry[] = [];
+  let textIndex = 0;
+  let delayIndex = 0;
+  let textBuffer = "";
+
+  const flushTextBuffer = () => {
+    const text = textBuffer.trim();
+    textBuffer = "";
+    if (!text) {
+      return;
+    }
+    entries.push({
+      id: `${previewActionKey(action)}:text:${textIndex}`,
+      kind: previewKind(action),
+      kicker: previewKicker(action),
+      title: previewTitle(action),
+      main: text,
+      meta: previewMeta(action),
+      action
+    });
+    textIndex += 1;
+  };
+
+  for (const segment of segments.slice(0, progress.revealedCount)) {
+    if (segment.type === "delay") {
+      flushTextBuffer();
+      entries.push(buildPreviewPauseEntry(action, segment.delayMs, delayIndex, false));
+      delayIndex += 1;
+      continue;
+    }
+    textBuffer += segment.text;
+  }
+
+  flushTextBuffer();
+
+  if (progress.activeDelayIndex !== null && segments[progress.activeDelayIndex]?.type === "delay") {
+    const activeDelaySegment = segments[progress.activeDelayIndex];
+    if (activeDelaySegment?.type === "delay") {
+      entries.push(buildPreviewPauseEntry(action, activeDelaySegment.delayMs, delayIndex, true, progress.deadlineAt));
+    }
+  }
+
+  if (entries.length > 0) {
+    return entries;
+  }
+
+  return [{
+    id: `${previewActionKey(action)}:placeholder`,
+    kind: previewKind(action),
+    kicker: previewKicker(action),
+    title: previewTitle(action),
+    action,
+    meta: previewMeta(action),
+    placeholder: previewPlaceholder(action)
+  }];
+}
+
+function buildPreviewPauseEntry(
+  action: PreviewAction,
+  delayMs: number,
+  delayIndex: number,
+  live: boolean,
+  deadlineAt?: number | null
+): PreviewEntry {
+  return {
+    id: `${previewActionKey(action)}:delay:${delayIndex}`,
+    kind: "pause",
+    kicker: "节奏控制",
+    title: `约 ${formatInlineDelayMs(delayMs)} 后继续`,
+    meta: previewPauseMeta(action),
+    status: live ? previewDelayCountdownLabel(deadlineAt, delayMs) : undefined,
+    compact: true,
+    live,
+    action
+  };
+}
+
+function previewPauseMeta(action: PreviewAction): string {
+  switch (action.tool) {
+    case "speak_to_player":
+      return "文本内节奏停顿";
+    case "speak_to_agent":
+      return "角色间对白停顿";
+    case "perform_stage_direction":
+      return "舞台节奏停顿";
+    case "apply_story_effect":
+      return "剧情效果停顿";
+    case "emit_reasoning_summary":
+      return "意图节奏停顿";
+    default:
+      return "文本内节奏停顿";
+  }
+}
+
+function previewDelayCountdownLabel(deadlineAt: number | null | undefined, delayMs: number): string {
+  if (!deadlineAt) {
+    return `约 ${formatInlineDelayMs(delayMs)} 后继续`;
+  }
+  const remaining = deadlineAt - previewClockNow.value;
+  return remaining > 0 ? `约 ${formatInlineDelayMs(remaining)} 后继续` : "即将继续";
+}
+
+function syncPreviewDelayProgress(): void {
+  const nextKeys = new Set<string>();
+
+  for (const action of props.previewTurn?.actions ?? []) {
+    const primaryPath = previewPrimaryPath(action);
+    if (!primaryPath) {
+      continue;
+    }
+
+    const key = previewActionKey(action);
+    nextKeys.add(key);
+    const existing = previewDelayProgress.value[key] ?? {
+      revealedCount: 0,
+      activeDelayIndex: null,
+      deadlineAt: null,
+      delayMs: null
+    };
+    previewDelayProgress.value[key] = existing;
+    advancePreviewDelayProgress(key, action);
+  }
+
+  for (const key of Object.keys(previewDelayProgress.value)) {
+    if (nextKeys.has(key)) {
+      continue;
+    }
+    clearPreviewDelayTimer(key);
+    delete previewDelayProgress.value[key];
+  }
+
+  syncPreviewClock();
+}
+
+function advancePreviewDelayProgress(key: string, action: PreviewAction): void {
+  const progress = previewDelayProgress.value[key];
+  if (!progress) {
+    return;
+  }
+
+  const segments = previewSegments(action);
+  while (progress.revealedCount < segments.length) {
+    const segment = segments[progress.revealedCount];
+    if (!segment) {
+      break;
+    }
+    if (segment.type === "text") {
+      progress.revealedCount += 1;
+      continue;
+    }
+    if (progress.activeDelayIndex !== progress.revealedCount) {
+      progress.activeDelayIndex = progress.revealedCount;
+      progress.delayMs = segment.delayMs;
+      progress.deadlineAt = Date.now() + segment.delayMs;
+      schedulePreviewDelay(key, segment.delayMs);
+    }
+    return;
+  }
+
+  progress.activeDelayIndex = null;
+  progress.delayMs = null;
+  progress.deadlineAt = null;
+  clearPreviewDelayTimer(key);
+}
+
+function schedulePreviewDelay(key: string, delayMs: number): void {
+  clearPreviewDelayTimer(key);
+  previewDelayTimers.set(key, window.setTimeout(() => {
+    const progress = previewDelayProgress.value[key];
+    if (!progress || progress.activeDelayIndex === null) {
+      return;
+    }
+    progress.revealedCount = Math.max(progress.revealedCount, progress.activeDelayIndex + 1);
+    progress.activeDelayIndex = null;
+    progress.delayMs = null;
+    progress.deadlineAt = null;
+    clearPreviewDelayTimer(key);
+    const action = props.previewTurn?.actions.find((item) => previewActionKey(item) === key);
+    if (action) {
+      advancePreviewDelayProgress(key, action);
+    }
+    syncPreviewClock();
+  }, delayMs));
+}
+
+function clearPreviewDelayTimer(key: string): void {
+  const timer = previewDelayTimers.get(key);
+  if (timer !== undefined) {
+    window.clearTimeout(timer);
+    previewDelayTimers.delete(key);
+  }
+}
+
+function clearPreviewDelayTimers(): void {
+  for (const key of previewDelayTimers.keys()) {
+    clearPreviewDelayTimer(key);
+  }
+}
+
+function syncPreviewClock(): void {
+  if (previewDelayTimers.size > 0) {
+    if (previewClockTimer === null) {
+      previewClockNow.value = Date.now();
+      previewClockTimer = window.setInterval(() => {
+        previewClockNow.value = Date.now();
+      }, 250);
+    }
+    return;
+  }
+  stopPreviewClock();
+}
+
+function stopPreviewClock(): void {
+  if (previewClockTimer !== null) {
+    window.clearInterval(previewClockTimer);
+    previewClockTimer = null;
   }
 }
 
@@ -302,6 +644,8 @@ function previewKind(action: PreviewAction): PresentationItem["kind"] {
       return "effect";
     case "emit_reasoning_summary":
       return "thought";
+    case "update_scene_state":
+      return "system";
     default:
       return "system";
   }
@@ -319,6 +663,8 @@ function previewTags(action: PreviewAction): string[] {
       return ["效果"];
     case "emit_reasoning_summary":
       return ["可见推理"];
+    case "update_scene_state":
+      return ["系统"];
     default:
       return ["系统"];
   }
@@ -336,6 +682,8 @@ function previewKicker(action: PreviewAction): string {
       return "剧情变化";
     case "emit_reasoning_summary":
       return "意图摘要";
+    case "update_scene_state":
+      return "场景状态";
     default:
       return "系统";
   }
@@ -358,15 +706,96 @@ function previewTitle(action: PreviewAction): string {
     case "perform_stage_direction":
       return `${actor} 的动作`;
     case "apply_story_effect":
-      return "剧情变化";
+      return formatPreviewValue(previewCompletedValue(action, "args.label")) || "剧情变化";
     case "emit_reasoning_summary":
       return `${actor} 的判断`;
+    case "update_scene_state":
+      return "场景已更新";
     default:
       return actor;
   }
 }
 
+function previewMeta(action: PreviewAction): string | undefined {
+  switch (action.tool) {
+    case "apply_story_effect": {
+      const intensity = formatPreviewValue(previewCompletedValue(action, "args.intensity"));
+      return intensity ? `强度：${intensity}` : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
 function cardClassForPreview(action: PreviewAction): string[] {
   return buildCardClass(previewKind(action));
+}
+
+function previewIsSceneState(action: PreviewAction): boolean {
+  return action.tool === "update_scene_state";
+}
+
+function previewSceneDetails(action: PreviewAction): PreviewDetailRow[] {
+  const rows: PreviewDetailRow[] = [
+    buildPreviewSceneTextRow(action, "args.phase", "阶段", "正在生成阶段..."),
+    buildPreviewSceneTextRow(action, "args.location", "地点", "正在生成地点..."),
+    buildPreviewSceneTextRow(action, "args.summary", "概要", "正在生成场景概要...")
+  ];
+
+  const tension = formatPreviewValue(previewCompletedValue(action, "args.tension"));
+  if (tension) {
+    rows.splice(2, 0, {
+      key: "args.tension",
+      label: "张力",
+      value: tension
+    });
+  }
+
+  const activeObjectives = previewCompletedValue(action, "args.activeObjectives");
+  if (Array.isArray(activeObjectives)) {
+    rows.push(
+      ...activeObjectives
+        .map((item, index) => ({
+          key: `args.activeObjectives.${index}`,
+          label: "目标",
+          value: formatPreviewValue(item)
+        }))
+        .filter((item) => item.value)
+    );
+  }
+
+  return rows;
+}
+
+function buildPreviewSceneTextRow(
+  action: PreviewAction,
+  path: string,
+  label: string,
+  placeholder: string
+): PreviewDetailRow {
+  const text = previewTextByPath(action, path).trim();
+  if (text) {
+    return {
+      key: path,
+      label,
+      value: text
+    };
+  }
+
+  const completedValue = formatPreviewValue(previewCompletedValue(action, path)).trim();
+  if (completedValue) {
+    return {
+      key: path,
+      label,
+      value: completedValue
+    };
+  }
+
+  return {
+    key: path,
+    label,
+    value: placeholder,
+    pending: true
+  };
 }
 </script>

@@ -761,6 +761,11 @@ a {
   white-space: pre-wrap;
 }
 
+.event-detail-value--placeholder {
+  color: #8a705f;
+  font-style: italic;
+}
+
 .event-meta {
   margin: 0;
   line-height: 1.6;

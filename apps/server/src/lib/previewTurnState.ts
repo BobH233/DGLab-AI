@@ -19,6 +19,7 @@ export type PreviewActionState = {
   tool?: string;
   targetScope?: string;
   textByPath: Record<string, StreamingInlineDelayState>;
+  valueByPath: Record<string, unknown>;
   completedFields: string[];
   completed: boolean;
 };
@@ -63,6 +64,18 @@ function pushTextSegment(parts: InlineDelayPart[], text: string): void {
     type: "text",
     text
   });
+}
+
+function mergeInlineDelayParts(parts: InlineDelayPart[]): InlineDelayPart[] {
+  const merged: InlineDelayPart[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      pushTextSegment(merged, part.text);
+      continue;
+    }
+    merged.push(part);
+  }
+  return merged;
 }
 
 function readDelayToken(source: string, start: number): {
@@ -180,7 +193,7 @@ function appendStreamingInlineDelay(
 ): StreamingInlineDelayState {
   const consumed = consumeStreamingBuffer(`${state.pendingBuffer}${delta}`, false);
   return {
-    visibleSegments: [...state.visibleSegments, ...consumed.visibleSegments],
+    visibleSegments: mergeInlineDelayParts([...state.visibleSegments, ...consumed.visibleSegments]),
     pendingBuffer: consumed.pendingBuffer
   };
 }
@@ -188,7 +201,7 @@ function appendStreamingInlineDelay(
 function finalizeStreamingInlineDelay(state: StreamingInlineDelayState): StreamingInlineDelayState {
   const consumed = consumeStreamingBuffer(state.pendingBuffer, true);
   return {
-    visibleSegments: [...state.visibleSegments, ...consumed.visibleSegments],
+    visibleSegments: mergeInlineDelayParts([...state.visibleSegments, ...consumed.visibleSegments]),
     pendingBuffer: ""
   };
 }
@@ -203,6 +216,7 @@ function ensureAction(state: PreviewTurnSnapshot, index: number): PreviewActionS
     action = {
       index,
       textByPath: {},
+      valueByPath: {},
       completedFields: [],
       completed: false
     };
@@ -288,6 +302,7 @@ export function applyPreviewSnapshotEvent(
         actions: current.actions.map((action) => ({
           ...action,
           textByPath: { ...action.textByPath },
+          valueByPath: { ...action.valueByPath },
           completedFields: [...action.completedFields]
         }))
       };
@@ -310,7 +325,13 @@ export function applyPreviewSnapshotEvent(
 
       if (type === "llm.action.field.completed") {
         const path = String(payload.path ?? "");
-        action.textByPath[path] = finalizeStreamingInlineDelay(ensureTextState(action, path));
+        const existingTextState = action.textByPath[path];
+        if (existingTextState) {
+          action.textByPath[path] = finalizeStreamingInlineDelay(existingTextState);
+        }
+        if (payload.value !== undefined) {
+          action.valueByPath[path] = payload.value;
+        }
         if (!action.completedFields.includes(path)) {
           action.completedFields.push(path);
         }
