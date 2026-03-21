@@ -2,6 +2,7 @@ import {
   actionBatchSchema,
   type ActionBatch
 } from "@dglab-ai/shared";
+import { isLlmDebugEnabled } from "../lib/llmDebug.js";
 import type { OrchestratorPreviewEvent } from "../types/contracts.js";
 
 type DraftAction = {
@@ -384,7 +385,7 @@ export class LineProtocolTurnParser {
         rawTextTail: truncateForDebug(this.rawParts.join("").slice(-2000), 1000)
       };
 
-      if (process.env.DEBUG_LLM === "1") {
+      if (isLlmDebugEnabled()) {
         console.error("[LLM DEBUG] line_protocol_control_json_parse_failed");
         console.error(JSON.stringify(debugPayload, null, 2));
       }

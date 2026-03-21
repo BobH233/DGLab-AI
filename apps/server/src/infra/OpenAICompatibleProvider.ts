@@ -2,6 +2,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { z } from "zod";
 import type { LlmConfig } from "@dglab-ai/shared";
 import { createId } from "../lib/ids.js";
+import { createLiveStreamDebugLogger, isLlmDebugEnabled } from "../lib/llmDebug.js";
 import type { ChatMessage, LLMProvider, LlmCallStore, ProviderUsage } from "../types/contracts.js";
 
 type CompletionPayload = {
@@ -127,7 +128,7 @@ type ResponsesStreamEventPayload = {
 class ResponsesApiUnsupportedError extends Error {}
 
 function debugLog(label: string, payload: unknown): void {
-  if (process.env.DEBUG_LLM !== "1") {
+  if (!isLlmDebugEnabled()) {
     return;
   }
   console.log(`[LLM DEBUG] ${label}`);
@@ -834,6 +835,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     const startedAt = new Date().toISOString();
     let usage: ProviderUsage | undefined;
+    let liveStreamStatus: "completed" | "error" = "completed";
+    const debugStream = createLiveStreamDebugLogger({
+      model: modelConfig.model,
+      strategy: "stream_text",
+      kind: typeof usageContext.kind === "string" ? usageContext.kind : undefined,
+      sessionId: typeof usageContext.sessionId === "string" ? usageContext.sessionId : undefined
+    });
+    const handleTextDelta = (delta: string): void => {
+      debugStream.writeTextDelta(delta);
+      onTextDelta?.(delta);
+    };
 
     const recordCall = async (status: "success" | "error", errorMessage?: string | null) => {
       if (!this.llmCallStore) {
@@ -906,7 +918,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           throw new Error(`Provider responses stream request failed: ${response.status} ${errorText}`);
         }
 
-        const streamed = await readResponsesStreamResponse(response, onTextDelta, onReasoningSummaryDelta);
+        const streamed = await readResponsesStreamResponse(response, handleTextDelta, onReasoningSummaryDelta);
         usage = buildUsageFromResponses(modelConfig.model, {
           input_tokens: streamed.usage?.prompt_tokens,
           output_tokens: streamed.usage?.completion_tokens,
@@ -961,7 +973,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         throw new Error(`Provider stream request failed: ${response.status} ${errorText}`);
       }
 
-      const streamed = await readStreamedTextResponse(response, onTextDelta);
+      const streamed = await readStreamedTextResponse(response, handleTextDelta);
       usage = buildUsage(modelConfig.model, {
         choices: [
           {
@@ -980,6 +992,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         usage
       };
     } catch (error) {
+      liveStreamStatus = "error";
       if (error instanceof DOMException && error.name === "AbortError") {
         const timeoutError = new Error(
           `Provider request timed out after ${effectiveTimeoutMs}ms for model ${modelConfig.model}`
@@ -990,6 +1003,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       await recordCall("error", error instanceof Error ? error.message : String(error));
       throw error;
     } finally {
+      debugStream.close(liveStreamStatus);
       clearTimeout(timeout);
     }
   }

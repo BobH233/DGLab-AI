@@ -1,8 +1,25 @@
 import type { EStimPulse, ToolContext } from "@dglab-ai/shared";
 
 const LOCAL_STORAGE_KEY = "dglabai.e_stim_config";
+export const ELECTRO_STIM_INTENSITY_CURVE_ANCHORS = [0, 25, 50, 75, 100] as const;
+
+const INTENSITY_CURVE_PRESET_OUTPUTS = {
+  linear: [0, 25, 50, 75, 100],
+  easeOut: [0, 40, 65, 85, 100],
+  easeIn: [0, 10, 30, 60, 100],
+  sCurve: [0, 12, 50, 88, 100]
+} as const;
 
 type ChannelKey = "a" | "b";
+export type ElectroStimIntensityCurvePreset = keyof typeof INTENSITY_CURVE_PRESET_OUTPUTS | "custom";
+export type ElectroStimIntensityCurvePoint = {
+  inputPercent: number;
+  outputPercent: number;
+};
+export type ElectroStimIntensityCurveConfig = {
+  preset: ElectroStimIntensityCurvePreset;
+  points: ElectroStimIntensityCurvePoint[];
+};
 
 type GameInfoResponse = {
   status: number;
@@ -37,6 +54,7 @@ export type ElectroStimLocalConfig = {
     a: string;
     b: string;
   };
+  intensityCurve: ElectroStimIntensityCurveConfig;
   availablePulses: EStimPulse[];
   allowedPulseIds: string[];
   lastValidatedAt?: string;
@@ -56,16 +74,120 @@ export function createDefaultElectroStimLocalConfig(): ElectroStimLocalConfig {
       a: "",
       b: ""
     },
+    intensityCurve: createPresetElectroStimIntensityCurve("linear"),
     availablePulses: [],
     allowedPulseIds: []
   };
 }
 
-export function loadElectroStimLocalConfig(): ElectroStimLocalConfig {
+function isCurvePreset(value: unknown): value is ElectroStimIntensityCurvePreset {
+  return value === "custom" || value === "linear" || value === "easeOut" || value === "easeIn" || value === "sCurve";
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function cloneIntensityCurvePoints(points: ElectroStimIntensityCurvePoint[]): ElectroStimIntensityCurvePoint[] {
+  return points.map((point) => ({
+    inputPercent: point.inputPercent,
+    outputPercent: point.outputPercent
+  }));
+}
+
+function normalizeIntensityCurvePoints(
+  points: unknown,
+  fallbackPoints: ElectroStimIntensityCurvePoint[]
+): ElectroStimIntensityCurvePoint[] {
+  const rawPoints = Array.isArray(points) ? points : [];
+  const rawOutputByInput = new Map<number, number>();
+  for (const rawPoint of rawPoints) {
+    if (
+      typeof rawPoint === "object"
+      && rawPoint
+      && typeof rawPoint.inputPercent === "number"
+      && typeof rawPoint.outputPercent === "number"
+    ) {
+      rawOutputByInput.set(clampPercent(rawPoint.inputPercent), clampPercent(rawPoint.outputPercent));
+    }
+  }
+
+  const normalized = fallbackPoints.map((fallbackPoint) => ({
+    inputPercent: fallbackPoint.inputPercent,
+    outputPercent: rawOutputByInput.get(fallbackPoint.inputPercent) ?? fallbackPoint.outputPercent
+  }));
+  normalized[0] = {
+    inputPercent: normalized[0].inputPercent,
+    outputPercent: 0
+  };
+  for (let index = 1; index < normalized.length; index += 1) {
+    normalized[index] = {
+      inputPercent: normalized[index].inputPercent,
+      outputPercent: Math.max(normalized[index - 1].outputPercent, clampPercent(normalized[index].outputPercent))
+    };
+  }
+  return normalized;
+}
+
+export function createPresetElectroStimIntensityCurve(
+  preset: Exclude<ElectroStimIntensityCurvePreset, "custom">
+): ElectroStimIntensityCurveConfig {
+  return {
+    preset,
+    points: ELECTRO_STIM_INTENSITY_CURVE_ANCHORS.map((inputPercent, index) => ({
+      inputPercent,
+      outputPercent: INTENSITY_CURVE_PRESET_OUTPUTS[preset][index]
+    }))
+  };
+}
+
+export function normalizeElectroStimIntensityCurve(
+  curve: Partial<ElectroStimIntensityCurveConfig> | undefined
+): ElectroStimIntensityCurveConfig {
+  const preset = isCurvePreset(curve?.preset) ? curve.preset : "linear";
+  const fallbackPreset = preset === "custom" ? "linear" : preset;
+  const fallbackCurve = createPresetElectroStimIntensityCurve(fallbackPreset);
+  return {
+    preset,
+    points: normalizeIntensityCurvePoints(curve?.points, fallbackCurve.points)
+  };
+}
+
+function cloneElectroStimLocalConfig(config: ElectroStimLocalConfig): ElectroStimLocalConfig {
+  return {
+    ...config,
+    channelPlacements: {
+      ...config.channelPlacements
+    },
+    intensityCurve: {
+      preset: config.intensityCurve.preset,
+      points: cloneIntensityCurvePoints(config.intensityCurve.points)
+    },
+    availablePulses: [...config.availablePulses],
+    allowedPulseIds: [...config.allowedPulseIds]
+  };
+}
+
+function getElectroStimStorage(): Pick<Storage, "getItem" | "setItem"> | null {
   if (typeof window === "undefined") {
+    return null;
+  }
+  const storage = window.localStorage as Partial<Storage> | undefined;
+  if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") {
+    return null;
+  }
+  return {
+    getItem: storage.getItem.bind(storage),
+    setItem: storage.setItem.bind(storage)
+  };
+}
+
+export function loadElectroStimLocalConfig(): ElectroStimLocalConfig {
+  const storage = getElectroStimStorage();
+  if (!storage) {
     return createDefaultElectroStimLocalConfig();
   }
-  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  const raw = storage.getItem(LOCAL_STORAGE_KEY);
   if (!raw) {
     return createDefaultElectroStimLocalConfig();
   }
@@ -78,6 +200,7 @@ export function loadElectroStimLocalConfig(): ElectroStimLocalConfig {
         ...createDefaultElectroStimLocalConfig().channelPlacements,
         ...(parsed.channelPlacements ?? {})
       },
+      intensityCurve: normalizeElectroStimIntensityCurve(parsed.intensityCurve),
       availablePulses: Array.isArray(parsed.availablePulses) ? parsed.availablePulses : [],
       allowedPulseIds: Array.isArray(parsed.allowedPulseIds) ? parsed.allowedPulseIds : []
     };
@@ -87,10 +210,11 @@ export function loadElectroStimLocalConfig(): ElectroStimLocalConfig {
 }
 
 export function saveElectroStimLocalConfig(config: ElectroStimLocalConfig): void {
-  if (typeof window === "undefined") {
+  const storage = getElectroStimStorage();
+  if (!storage) {
     return;
   }
-  window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+  storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cloneElectroStimLocalConfig(config)));
 }
 
 export function parseGameConnectionCode(gameConnectionCode: string): { clientId: string; baseUrl: string } | null {
@@ -253,6 +377,37 @@ function roundStrengthFromPercent(limit: number | undefined, intensityPercent: n
   return Math.max(0, Math.round((limit * intensityPercent) / 100));
 }
 
+export function mapIntensityPercentThroughCurve(
+  curve: ElectroStimIntensityCurveConfig,
+  intensityPercent: number | undefined
+): number | undefined {
+  if (typeof intensityPercent !== "number") {
+    return undefined;
+  }
+  const clampedInput = clampPercent(intensityPercent);
+  const points = normalizeElectroStimIntensityCurve(curve).points;
+  if (clampedInput <= points[0].inputPercent) {
+    return points[0].outputPercent;
+  }
+  for (let index = 1; index < points.length; index += 1) {
+    const previousPoint = points[index - 1];
+    const nextPoint = points[index];
+    if (clampedInput > nextPoint.inputPercent) {
+      continue;
+    }
+    const progress = (clampedInput - previousPoint.inputPercent) / (nextPoint.inputPercent - previousPoint.inputPercent);
+    return clampPercent(previousPoint.outputPercent + (nextPoint.outputPercent - previousPoint.outputPercent) * progress);
+  }
+  return points[points.length - 1].outputPercent;
+}
+
+function mapIntensityPercentForConfig(
+  config: ElectroStimLocalConfig,
+  intensityPercent: number | undefined
+): number | undefined {
+  return mapIntensityPercentThroughCurve(config.intensityCurve, intensityPercent);
+}
+
 function resolvePulseId(config: ElectroStimLocalConfig, pulseName: string | undefined): string | undefined {
   if (!pulseName) {
     return undefined;
@@ -279,6 +434,7 @@ export async function applyElectroStimToolEvent(
 
   try {
     const currentInfo = await fetchElectroStimGameInfo(config);
+    const mappingNotes: string[] = [];
     if (command === "set") {
       const strengthChannels: Record<string, unknown> = {};
       const pulseChannels: Record<string, unknown> = {};
@@ -290,15 +446,26 @@ export async function applyElectroStimToolEvent(
         if (channel === "b" && !config.bChannelEnabled) {
           throw new Error("B 通道当前未启用，无法执行该控制。");
         }
+        const requestedIntensityPercent = typeof channelPayload.intensityPercent === "number"
+          ? clampPercent(channelPayload.intensityPercent)
+          : undefined;
+        const mappedIntensityPercent = mapIntensityPercentForConfig(config, requestedIntensityPercent);
         const actualStrength = roundStrengthFromPercent(
           currentInfo.clientStrength?.[channel]?.limit,
-          typeof channelPayload.intensityPercent === "number" ? channelPayload.intensityPercent : undefined
+          mappedIntensityPercent
         );
         if (actualStrength !== undefined) {
           strengthChannels[channel] = {
             strength: { set: actualStrength },
             randomStrength: { set: 0 }
           };
+          if (
+            typeof requestedIntensityPercent === "number"
+            && typeof mappedIntensityPercent === "number"
+            && requestedIntensityPercent !== mappedIntensityPercent
+          ) {
+            mappingNotes.push(`${channel.toUpperCase()} ${requestedIntensityPercent}% -> ${mappedIntensityPercent}%`);
+          }
         }
         const pulseId = resolvePulseId(
           config,
@@ -346,19 +513,26 @@ export async function applyElectroStimToolEvent(
         if (typeof channelPayload.pulseName === "string" && !pulseId) {
           throw new Error(`找不到波形“${channelPayload.pulseName}”对应的 pulseId。`);
         }
+        const requestedIntensityPercent = typeof channelPayload.intensityPercent === "number"
+          ? clampPercent(channelPayload.intensityPercent)
+          : undefined;
+        const mappedIntensityPercent = mapIntensityPercentForConfig(config, requestedIntensityPercent);
+        const fireStrength = roundStrengthFromPercent(
+          currentInfo.clientStrength?.[channel]?.limit,
+          mappedIntensityPercent
+        );
         fireChannels[channel] = {
           ...(typeof channelPayload.enabled === "boolean" ? { enabled: channelPayload.enabled } : {}),
-          ...(roundStrengthFromPercent(
-            currentInfo.clientStrength?.[channel]?.limit,
-            typeof channelPayload.intensityPercent === "number" ? channelPayload.intensityPercent : undefined
-          ) !== undefined ? {
-            strength: roundStrengthFromPercent(
-              currentInfo.clientStrength?.[channel]?.limit,
-              typeof channelPayload.intensityPercent === "number" ? channelPayload.intensityPercent : undefined
-            )
-          } : {}),
+          ...(fireStrength !== undefined ? { strength: fireStrength } : {}),
           ...(pulseId ? { pulseId } : {})
         };
+        if (
+          typeof requestedIntensityPercent === "number"
+          && typeof mappedIntensityPercent === "number"
+          && requestedIntensityPercent !== mappedIntensityPercent
+        ) {
+          mappingNotes.push(`${channel.toUpperCase()} ${requestedIntensityPercent}% -> ${mappedIntensityPercent}%`);
+        }
       }
       await requestLocalApi(config, `/api/v2/game/${connection.clientId}/action/fire`, {
         method: "POST",
@@ -378,7 +552,9 @@ export async function applyElectroStimToolEvent(
     const nextInfo = await fetchElectroStimGameInfo(config);
     return {
       status: "success",
-      detail: "已调用本地电击器接口。",
+      detail: mappingNotes.length > 0
+        ? `已调用本地电击器接口，并应用力度曲线映射：${mappingNotes.join("，")}。`
+        : "已调用本地电击器接口。",
       toolContext: buildElectroStimToolContext(config, nextInfo)
     };
   } catch (error) {

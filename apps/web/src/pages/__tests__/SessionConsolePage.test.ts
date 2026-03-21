@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import type { Session, SessionEvent } from "@dglab-ai/shared";
+import { defaultToolStates, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SessionConsolePage from "../SessionConsolePage.vue";
 
@@ -12,6 +12,17 @@ const apiMocks = vi.hoisted(() => ({
   updateTimer: vi.fn(),
   requestAutoTick: vi.fn<() => Promise<Session>>()
 }));
+
+const localStorageState = new Map<string, string>();
+const localStorageMock = {
+  getItem: vi.fn((key: string) => localStorageState.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageState.set(key, value);
+  }),
+  removeItem: vi.fn((key: string) => {
+    localStorageState.delete(key);
+  })
+};
 
 vi.mock("../../api", () => ({
   api: {
@@ -148,6 +159,18 @@ describe("SessionConsolePage", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
     vi.resetAllMocks();
+    localStorageState.clear();
+    localStorageMock.getItem.mockImplementation((key: string) => localStorageState.get(key) ?? null);
+    localStorageMock.setItem.mockImplementation((key: string, value: string) => {
+      localStorageState.set(key, value);
+    });
+    localStorageMock.removeItem.mockImplementation((key: string) => {
+      localStorageState.delete(key);
+    });
+    Object.defineProperty(window, "localStorage", {
+      value: localStorageMock,
+      configurable: true
+    });
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     apiMocks.getEvents.mockResolvedValue([]);
@@ -187,6 +210,148 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).toContain("下一次计划触发时间");
     expect(normalizedText(wrapper)).toContain("玩家身体道具");
     expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
+  });
+
+  it("renders the floating e-stim viewer when the current session enables the tool", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const iframe = wrapper.find('[data-testid="e-stim-floating-overlay"] iframe');
+    expect(iframe.exists()).toBe(true);
+    expect(iframe.attributes("src")).toBe(
+      "http://localhost:8920/viewer.html?clientId=488b55d9-acb2-4e3f-bd36-b05547b30c10&layout=dual#/"
+    );
+  });
+
+  it("restores the floating e-stim viewer position from local storage", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    window.localStorage.setItem("dglabai.e_stim_overlay_position", JSON.stringify({
+      x: 140,
+      y: 210
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const overlay = wrapper.get('[data-testid="e-stim-floating-overlay"]');
+    expect(overlay.attributes("style")).toContain("left: 140px;");
+    expect(overlay.attributes("style")).toContain("top: 210px;");
+  });
+
+  it("keeps the floating e-stim viewer hidden when the current session has not enabled the tool", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: false
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="e-stim-floating-overlay"]').exists()).toBe(false);
   });
 
   it("strips inline delay tags from the session summary header", async () => {

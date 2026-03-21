@@ -30,6 +30,13 @@ function toPercent(current: number | undefined, limit: number | undefined): stri
   return `${Math.round((current / limit) * 100)}%`;
 }
 
+function formatFireStrengthCap(fireStrengthLimit: number | undefined, limit: number | undefined): string | undefined {
+  if (typeof fireStrengthLimit !== "number") {
+    return undefined;
+  }
+  return `Fire strength cap: ${toPercent(fireStrengthLimit, limit)}`;
+}
+
 function joinNonEmpty(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part && part.trim())).join("；");
 }
@@ -278,7 +285,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
           eStim.channelPlacements.a ? `Placement: ${eStim.channelPlacements.a}` : undefined,
           eStim.runtime?.a ? `Current strength: ${eStim.runtime.a.strength}/${eStim.runtime.a.limit} (about ${toPercent(eStim.runtime.a.strength, eStim.runtime.a.limit)})` : "Current strength: not synced",
           eStim.runtime?.a?.currentPulseName ? `Current pulse: ${eStim.runtime.a.currentPulseName}` : undefined,
-          eStim.runtime?.a?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.a.fireStrengthLimit}` : undefined
+          formatFireStrengthCap(eStim.runtime?.a?.fireStrengthLimit, eStim.runtime?.a?.limit)
         ]);
         const channelBEnabled = eStim.bChannelEnabled;
         const channelBLine = !channelBEnabled
@@ -288,7 +295,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
             eStim.channelPlacements.b ? `Placement: ${eStim.channelPlacements.b}` : undefined,
             eStim.runtime?.b ? `Current strength: ${eStim.runtime.b.strength}/${eStim.runtime.b.limit} (about ${toPercent(eStim.runtime.b.strength, eStim.runtime.b.limit)})` : "Current strength: not synced",
             eStim.runtime?.b?.currentPulseName ? `Current pulse: ${eStim.runtime.b.currentPulseName}` : undefined,
-            eStim.runtime?.b?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.b.fireStrengthLimit}` : undefined
+            formatFireStrengthCap(eStim.runtime?.b?.fireStrengthLimit, eStim.runtime?.b?.limit)
           ]);
 
         return [

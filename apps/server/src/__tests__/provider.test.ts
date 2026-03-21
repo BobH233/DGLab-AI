@@ -19,6 +19,7 @@ const modelConfig = {
 describe("OpenAICompatibleProvider", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("falls back to plain JSON prompting when json_schema response_format is unsupported", async () => {
@@ -309,6 +310,54 @@ describe("OpenAICompatibleProvider", () => {
     expect(result.rawText).toContain("@done");
     expect(result.reasoningSummary).toContain("先试探她现在会不会躲。");
     expect(result.usage.totalTokens).toBe(22);
+  });
+
+  it("prints streamed text deltas to stdout when LLM_DEBUG=1", async () => {
+    vi.stubEnv("LLM_DEBUG", "1");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      [
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"@action {\\\"actorAgentId\\\":\\\"director\\\",\\\"tool\\\":\\\"speak_to_player\\\"}\\n\"}",
+        "",
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"@done\"}",
+        "",
+        "event: response.completed",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":15,\"total_tokens\":22}}}",
+        "",
+        "data: [DONE]"
+      ].join("\n"),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream"
+        }
+      }
+    ));
+
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const provider = new OpenAICompatibleProvider();
+
+    await provider.streamText({
+      modelConfig,
+      messages: [
+        {
+          role: "system",
+          content: "Return line protocol"
+        }
+      ],
+      usageContext: {
+        kind: "ensemble-turn",
+        sessionId: "session_test"
+      }
+    });
+
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining("[LLM STREAM START] stream_text"));
+    expect(stdoutWrite).toHaveBeenCalledWith("@action {\"actorAgentId\":\"director\",\"tool\":\"speak_to_player\"}\n");
+    expect(stdoutWrite).toHaveBeenCalledWith("@done");
+    expect(stdoutWrite).toHaveBeenCalledWith("\n");
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining("[LLM STREAM END] completed stream_text"));
   });
 
   it("extracts the first complete JSON object after think blocks", async () => {
