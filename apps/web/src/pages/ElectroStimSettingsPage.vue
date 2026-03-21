@@ -82,7 +82,7 @@
             <h3>力度曲线映射</h3>
             <p class="soft-note">剧情和 agent 给出的 0-100% 强度会先走这条曲线，再换算成真实下发到本地设备的力度。</p>
           </div>
-          <span class="soft-pill">{{ activeCurvePresetLabel }}</span>
+          <span class="soft-pill e-stim-curve-pill">{{ activeCurvePresetLabel }}</span>
         </div>
 
         <div class="e-stim-curve-presets">
@@ -101,33 +101,34 @@
 
         <div class="e-stim-curve-preview">
           <div class="e-stim-curve-chart">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="力度曲线预览">
+            <svg :viewBox="`0 0 ${curveChartSvgWidth} ${curveChartSvgHeight}`" aria-label="力度曲线预览">
               <line
-                v-for="gridLine in intensityCurveGridLines"
-                :key="`x-${gridLine}`"
-                :x1="gridLine"
-                y1="0"
-                :x2="gridLine"
-                y2="100"
+                v-for="gridLine in intensityCurveVerticalGridLines"
+                :key="`x-${gridLine.key}`"
+                :x1="gridLine.position"
+                :y1="curveChartBounds.top"
+                :x2="gridLine.position"
+                :y2="curveChartBounds.bottom"
                 class="e-stim-curve-gridline"
               />
               <line
-                v-for="gridLine in intensityCurveGridLines"
-                :key="`y-${gridLine}`"
-                x1="0"
-                :y1="gridLine"
-                x2="100"
-                :y2="gridLine"
+                v-for="gridLine in intensityCurveHorizontalGridLines"
+                :key="`y-${gridLine.key}`"
+                :x1="curveChartBounds.left"
+                :y1="gridLine.position"
+                :x2="curveChartBounds.right"
+                :y2="gridLine.position"
                 class="e-stim-curve-gridline"
               />
-              <polyline points="0,100 100,0" class="e-stim-curve-baseline" />
-              <polyline :points="intensityCurveSvgPoints" class="e-stim-curve-path" />
+              <path :d="intensityCurveAreaPath" class="e-stim-curve-area" />
+              <path :d="intensityCurveBaselinePath" class="e-stim-curve-baseline" />
+              <path :d="intensityCurvePath" class="e-stim-curve-path" />
               <circle
-                v-for="point in form.intensityCurve.points"
+                v-for="point in intensityCurveChartPoints"
                 :key="point.inputPercent"
-                :cx="point.inputPercent"
-                :cy="100 - point.outputPercent"
-                r="2.6"
+                :cx="point.x"
+                :cy="point.y"
+                r="6"
                 class="e-stim-curve-point"
               />
             </svg>
@@ -269,9 +270,16 @@ const intensityCurvePresetOptions = [
 
 const parsedConnection = computed(() => parseGameConnectionCode(form.gameConnectionCode));
 const selectedPulseCount = computed(() => form.allowedPulseIds.length);
+const curveChartSvgWidth = 360;
+const curveChartSvgHeight = 220;
+const curveChartBounds = {
+  left: 12,
+  right: 336,
+  top: 12,
+  bottom: 188
+};
 const intensityCurveGridLines = [0, 25, 50, 75, 100];
 const activeCurvePresetLabel = computed(() => intensityCurvePresetOptions.find((item) => item.id === form.intensityCurve.preset)?.label ?? "自定义");
-const intensityCurveSvgPoints = computed(() => form.intensityCurve.points.map((point) => `${point.inputPercent},${100 - point.outputPercent}`).join(" "));
 const intensityCurveSamples = computed(() => ELECTRO_STIM_INTENSITY_CURVE_ANCHORS.map((inputPercent) => ({
   inputPercent,
   outputPercent: mapIntensityPercentThroughCurve(form.intensityCurve, inputPercent) ?? inputPercent
@@ -281,6 +289,37 @@ const editableIntensityCurvePoints = computed(() => form.intensityCurve.points.m
   locked: index === 0,
   minOutput: index === 0 ? 0 : form.intensityCurve.points[index - 1]?.outputPercent ?? 0
 })));
+const intensityCurveVerticalGridLines = computed(() => intensityCurveGridLines.map((value) => ({
+  key: value,
+  position: curveChartBounds.left + ((curveChartBounds.right - curveChartBounds.left) * value) / 100
+})));
+const intensityCurveHorizontalGridLines = computed(() => intensityCurveGridLines.map((value) => ({
+  key: value,
+  position: curveChartBounds.bottom - ((curveChartBounds.bottom - curveChartBounds.top) * value) / 100
+})));
+const intensityCurveChartPoints = computed(() => form.intensityCurve.points.map((point) => ({
+  ...point,
+  x: curveChartBounds.left + ((curveChartBounds.right - curveChartBounds.left) * point.inputPercent) / 100,
+  y: curveChartBounds.bottom - ((curveChartBounds.bottom - curveChartBounds.top) * point.outputPercent) / 100
+})));
+const intensityCurvePath = computed(() => intensityCurveChartPoints.value.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" "));
+const intensityCurveBaselinePath = computed(() => {
+  const startX = curveChartBounds.left;
+  const startY = curveChartBounds.bottom;
+  const endX = curveChartBounds.right;
+  const endY = curveChartBounds.top;
+  return `M ${startX} ${startY} L ${endX} ${endY}`;
+});
+const intensityCurveAreaPath = computed(() => {
+  const points = intensityCurveChartPoints.value;
+  if (points.length === 0) {
+    return "";
+  }
+  const commands = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const lastPoint = points[points.length - 1];
+  const firstPoint = points[0];
+  return `${commands} L ${lastPoint.x} ${curveChartBounds.bottom} L ${firstPoint.x} ${curveChartBounds.bottom} Z`;
+});
 
 function togglePulse(pulseId: string, event: Event) {
   const checked = (event.target as HTMLInputElement).checked;

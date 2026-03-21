@@ -286,6 +286,27 @@ a {
     linear-gradient(180deg, rgba(247, 251, 253, 0.96), rgba(255, 255, 255, 0.94));
 }
 
+.e-stim-curve-card .section-head {
+  flex-wrap: wrap;
+  align-items: start;
+}
+
+.e-stim-curve-card .section-head > div:first-child {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.e-stim-curve-pill {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+  word-break: keep-all;
+  font-size: 0.86rem;
+  padding: 9px 14px;
+}
+
 .e-stim-curve-presets {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -358,28 +379,35 @@ a {
 
 .e-stim-curve-gridline {
   stroke: rgba(78, 120, 145, 0.14);
-  stroke-width: 0.8;
+  stroke-width: 1;
+}
+
+.e-stim-curve-area {
+  fill: rgba(45, 110, 157, 0.08);
 }
 
 .e-stim-curve-baseline {
   fill: none;
   stroke: rgba(78, 120, 145, 0.24);
-  stroke-width: 1.2;
-  stroke-dasharray: 4 4;
+  stroke-width: 4;
+  stroke-dasharray: 12 10;
+  stroke-linecap: round;
 }
 
 .e-stim-curve-path {
   fill: none;
   stroke: #2d6e9d;
-  stroke-width: 2.6;
+  stroke-width: 8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 6px 10px rgba(45, 110, 157, 0.14));
 }
 
 .e-stim-curve-point {
   fill: #2d6e9d;
   stroke: #f7fbff;
-  stroke-width: 1.5;
+  stroke-width: 4;
+  filter: drop-shadow(0 4px 8px rgba(45, 110, 157, 0.18));
 }
 
 .e-stim-curve-axis {
@@ -402,7 +430,7 @@ a {
 
 .e-stim-curve-samples {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
   gap: 10px;
 }
 
@@ -418,13 +446,20 @@ a {
     rgba(250, 252, 254, 0.96);
 }
 
+.e-stim-curve-sample-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .e-stim-curve-sample-card span {
   color: var(--text-soft);
   font-size: 0.88rem;
+  white-space: nowrap;
 }
 
 .e-stim-curve-sample-card strong {
   font-size: 1.05rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .e-stim-curve-row {
