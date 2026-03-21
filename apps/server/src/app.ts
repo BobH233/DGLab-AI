@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
@@ -26,8 +27,10 @@ export async function createServerApp() {
   );
   await store.init();
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const webDistDir = path.resolve(currentDir, "../../web/dist");
+  const promptDir = path.resolve(currentDir, "prompts");
   const promptService = new FilePromptTemplateService(
-    path.resolve(currentDir, "prompts")
+    promptDir
   );
   const provider = new OpenAICompatibleProvider(store);
   const channel = new WebChannelAdapter();
@@ -58,6 +61,17 @@ export async function createServerApp() {
   app.use("/api/config", createConfigRoutes(configService));
   app.use("/api/llm-calls", createLlmCallRoutes(llmCallService));
   app.use("/api/sessions", createSessionRoutes(sessionService, channel));
+
+  if (existsSync(webDistDir)) {
+    app.use(express.static(webDistDir));
+    app.get("/{*path}", (request, response, next) => {
+      if (request.path.startsWith("/api")) {
+        next();
+        return;
+      }
+      response.sendFile(path.join(webDistDir, "index.html"));
+    });
+  }
 
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     if (isHttpError(error)) {

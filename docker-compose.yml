@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dglab-ai:local
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      PORT: "3001"
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB: dglab_ai
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    container_name: dglab-ai-mongodb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    volumes:
+      - mongodb-data:/data/db
+
+volumes:
+  mongodb-data:
