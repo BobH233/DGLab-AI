@@ -9,6 +9,7 @@ const config: LlmConfig = {
   apiKey: "test",
   model: "test-model",
   temperature: 0.7,
+  reasoningEffort: "medium",
   maxTokens: 500,
   topP: 1,
   requestTimeoutMs: 1000,
@@ -161,6 +162,49 @@ class FakeProvider {
     return {
       data: this.batch as T,
       rawText: JSON.stringify(this.batch),
+      usage: {
+        model: "test-model",
+        promptTokens: 12,
+        completionTokens: 18,
+        totalTokens: 30,
+        calls: 1,
+        lastModel: "test-model",
+        lastUpdatedAt: new Date().toISOString()
+      }
+    };
+  }
+
+  async streamText({ onTextDelta }: { onTextDelta?: (delta: string) => void }) {
+    this.calls += 1;
+    const rawText = [
+      ...this.batch.actions.flatMap((action) => {
+        const lines = [
+          `@action ${JSON.stringify({
+            actorAgentId: action.actorAgentId,
+            tool: action.tool,
+            whyVisible: action.whyVisible,
+            targetScope: action.targetScope
+          })}`
+        ];
+        for (const [key, value] of Object.entries(action.args)) {
+          lines.push(`@field args.${key}`);
+          if (typeof value === "string") {
+            lines.push(value);
+          } else {
+            lines.push(JSON.stringify(value));
+          }
+          lines.push("@endfield");
+        }
+        lines.push("@endaction");
+        return lines;
+      }),
+      `@turnControl ${JSON.stringify(this.batch.turnControl)}`,
+      `@playerBodyItemState ${JSON.stringify(this.batch.playerBodyItemState)}`,
+      "@done"
+    ].join("\n");
+    onTextDelta?.(rawText);
+    return {
+      rawText,
       usage: {
         model: "test-model",
         promptTokens: 12,

@@ -206,7 +206,7 @@ npm run dev:web
 
 ### 前端
 
-- `VITE_API_BASE`：默认 `http://localhost:3001/api`
+- `VITE_API_BASE`：默认 `/api`
 
 ## 常用脚本
 
@@ -216,6 +216,78 @@ npm run dev:server
 npm run dev:web
 npm test
 ```
+
+## Docker 部署
+
+项目现在支持单容器部署：
+
+- 前端会先构建成静态资源
+- 后端在生产环境中同时托管 `/api/*` 和前端页面
+- 最终镜像只需要启动一个 Node 进程
+
+本地构建镜像：
+
+```bash
+docker build -t dglab-ai:latest .
+```
+
+本地运行镜像：
+
+```bash
+docker run --rm -p 3001:3001 \
+  -e MONGODB_URI=mongodb://host.docker.internal:27017 \
+  -e MONGODB_DB=dglab_ai \
+  dglab-ai:latest
+```
+
+启动后可直接访问：
+
+- `http://localhost:3001`
+
+如果部署到 Linux 服务器且 MongoDB 不在宿主机同网络，需要把 `MONGODB_URI` 改成实际可访问地址。
+
+如果希望把应用和 MongoDB 一起启动，可以直接使用 [docker-compose.yml](/Users/bobh/Documents/Coding/DGLabAI/docker-compose.yml)：
+
+```bash
+docker compose up -d --build
+```
+
+这会同时启动：
+
+- `app`：DGLabAI 单容器前后端服务
+- `mongodb`：项目依赖的 MongoDB 7
+
+默认访问地址：
+
+- Web / API：`http://localhost:3001`
+- MongoDB：`mongodb://localhost:27017`
+
+停止并清理容器：
+
+```bash
+docker compose down
+```
+
+## GitHub Actions 自动构建镜像
+
+仓库新增了 [`.github/workflows/docker-image.yml`](/Users/bobh/Documents/Coding/DGLabAI/.github/workflows/docker-image.yml)，当 `main` 分支发生 push 时会自动：
+
+- 构建最新 Docker 镜像
+- 推送到 GitHub Container Registry
+- 产出 `latest` 和提交 SHA 两类 tag
+
+默认镜像地址格式为：
+
+```text
+ghcr.io/<owner>/<repo>:latest
+ghcr.io/<owner>/<repo>:sha-<commit>
+```
+
+启用时请确认：
+
+- GitHub Actions 已开启
+- 仓库允许发布 GitHub Packages
+- 如果仓库或包是私有的，部署机器拉取镜像时需要具备对应的 GHCR 访问权限
 
 ## 当前实现边界
 

@@ -6,11 +6,13 @@
         <h2>{{ session.title }}</h2>
         <p class="console-summary">{{ displaySummary }}</p>
         <div v-if="isTickInFlight" class="thinking-indicator" role="status" aria-live="polite">
-          <strong>Thinking</strong>
-          <span class="thinking-indicator__dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
+          <span class="thinking-indicator__label">
+            <strong>正在思考中</strong>
+            <span class="thinking-indicator__dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </span>
         </div>
         <div v-if="latestTickFailure" class="inline-alert inline-alert--error">
@@ -65,12 +67,19 @@
           </div>
           <span class="soft-pill">{{ displayedEventCount }} 条事件</span>
         </div>
+        <div v-if="liveReasoningSummary" class="reasoning-live-banner" role="status" aria-live="polite">
+          <span class="reasoning-live-banner__kicker">思路摘要</span>
+          <div ref="reasoningBannerBody" class="reasoning-live-banner__body">
+            <p>{{ liveReasoningSummary }}</p>
+          </div>
+        </div>
         <EventTimeline
           :events="events"
           :active-pause="activePause"
           :automation-status="automationTimelineStatus"
           :device-execution-states="deviceExecutionStates"
           :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
+          :preview-turn="previewTurn"
         />
       </section>
 
@@ -188,12 +197,45 @@
         </section>
       </aside>
     </div>
+
+    <section
+      v-if="showElectroStimViewer"
+      ref="electroStimOverlay"
+      class="e-stim-floating-overlay"
+      :style="electroStimOverlayStyle"
+      data-testid="e-stim-floating-overlay"
+    >
+      <header
+        class="e-stim-floating-overlay__dragbar"
+        @pointerdown="handleElectroStimDragStart"
+        @pointermove="handleElectroStimDragMove"
+        @pointerup="handleElectroStimDragEnd"
+        @pointercancel="handleElectroStimDragEnd"
+      >
+        <div class="e-stim-floating-overlay__dragtext">
+          <span class="eyebrow">Local Viewer</span>
+          <strong>情趣电击器面板</strong>
+          <span class="e-stim-floating-overlay__draghint">拖动这里移动浮窗</span>
+        </div>
+        <small v-if="electroStimViewerConnection">{{ electroStimViewerConnection.clientId }}</small>
+      </header>
+      <div class="e-stim-floating-overlay__frame">
+        <iframe
+          :src="electroStimViewerUrl"
+          title="情趣电击器双通道监视窗"
+          class="e-stim-floating-overlay__iframe"
+          allowtransparency="true"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+        />
+      </div>
+    </section>
   </section>
 </template>
 
 <script setup lang="ts">
 import { isToolEnabled, type Session, type SessionEvent, type ToolContext } from "@dglab-ai/shared";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api";
 import EventTimeline from "../components/EventTimeline.vue";
@@ -204,33 +246,42 @@ import {
   parseGameConnectionCode,
   syncElectroStimToolContext
 } from "../lib/eStim";
-import { hasInlineDelays, splitInlineDelays, stripInlineDelays } from "../lib/inlineDelays";
+import { stripInlineDelays } from "../lib/inlineDelays";
+import {
+  applyPreviewEvent,
+  previewTurnFromSnapshot,
+  shouldClearPreviewOnCommittedEvent,
+  type PreviewTurnState
+} from "../lib/previewTurnState";
 
 type ActivePauseState = {
   id: string;
   countdownLabel: string;
 };
 
-type PlaybackStep =
-  | {
-    type: "event";
-    event: SessionEvent;
-  }
-  | {
-    type: "pause";
-    delayMs: number;
-    event: SessionEvent;
-  };
-
 type DeviceExecutionState = {
   status: "pending" | "success" | "simulated" | "error";
   detail: string;
 };
 
+type DragState = {
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+type ElectroStimOverlayPosition = {
+  x: number;
+  y: number;
+};
+
+const ELECTRO_STIM_OVERLAY_POSITION_KEY = "dglabai.e_stim_overlay_position";
+
 const route = useRoute();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
 const activePause = ref<ActivePauseState | null>(null);
+const previewTurn = ref<PreviewTurnState | null>(null);
 const message = ref("");
 const sending = ref(false);
 const retrying = ref(false);
@@ -243,6 +294,14 @@ const liveTickInFlight = ref(false);
 const pendingAutomationCooldown = ref(false);
 const playbackCooldownUntil = ref<number | null>(null);
 const deviceExecutionStates = ref<Record<string, DeviceExecutionState>>({});
+const reasoningBannerBody = ref<HTMLDivElement | null>(null);
+const electroStimOverlay = ref<HTMLDivElement | null>(null);
+const electroStimLocalConfig = ref(loadElectroStimLocalConfig());
+const electroStimOverlayPosition = ref<ElectroStimOverlayPosition>({
+  x: 24,
+  y: 132
+});
+const electroStimDragState = ref<DragState | null>(null);
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
@@ -250,7 +309,6 @@ let automationClockTimer: number | null = null;
 let queueRunning = false;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
-let localPauseId = 0;
 const liveQueue: SessionEvent[] = [];
 
 const agentCards = computed(() => {
@@ -264,9 +322,31 @@ const agentCards = computed(() => {
 });
 const displaySummary = computed(() => stripInlineDelays(session.value?.storyState.summary ?? ""));
 const playerBodyItemState = computed(() => session.value?.playerBodyItemState ?? []);
+const liveReasoningSummary = computed(() => stripInlineDelays(previewTurn.value?.reasoningSummaryText ?? "").trim());
+const electroStimViewerConnection = computed(() => parseGameConnectionCode(electroStimLocalConfig.value.gameConnectionCode));
+const showElectroStimViewer = computed(() => sessionUsesElectroStimTool() && Boolean(electroStimViewerConnection.value));
+const electroStimViewerUrl = computed(() => {
+  const connection = electroStimViewerConnection.value;
+  if (!connection) {
+    return "";
+  }
+  const viewerUrl = new URL("/viewer.html", `${connection.baseUrl}/`);
+  viewerUrl.searchParams.set("clientId", connection.clientId);
+  viewerUrl.searchParams.set("layout", "dual");
+  viewerUrl.hash = "/";
+  return viewerUrl.toString();
+});
+const electroStimOverlayStyle = computed(() => ({
+  left: `${electroStimOverlayPosition.value.x}px`,
+  top: `${electroStimOverlayPosition.value.y}px`
+}));
 
 const displayedEventCount = computed(() => events.value.length);
-const isTickInFlight = computed(() => liveTickInFlight.value || Boolean(session.value?.timerState.inFlight));
+const isTickInFlight = computed(() => (
+  liveTickInFlight.value
+  || Boolean(session.value?.timerState.inFlight)
+  || previewTurn.value?.status === "streaming"
+));
 const automationDueAt = computed(() => {
   if (!session.value || !session.value.timerState.enabled) {
     return null;
@@ -381,11 +461,17 @@ async function maybeRequestAutoTick() {
 async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
-  syncSession(await api.getSession(id));
-  events.value = (await api.getEvents(id)).map(normalizeTimelineEvent);
+  previewTurn.value = null;
   deviceExecutionStates.value = {};
-  liveTickInFlight.value = hasOpenTick(events.value);
+  refreshElectroStimLocalConfig();
   connectStream(id);
+  const [nextSession, nextEvents] = await Promise.all([
+    api.getSession(id),
+    api.getEvents(id)
+  ]);
+  syncSession(nextSession);
+  events.value = mergeTimelineEvents(events.value, nextEvents.map(normalizeTimelineEvent));
+  liveTickInFlight.value = hasOpenTick(events.value) || Boolean(nextSession.timerState.inFlight);
 }
 
 function connectStream(sessionId: string) {
@@ -398,8 +484,33 @@ function connectStream(sessionId: string) {
   stream.addEventListener("event.appended", (event) => {
     const payload = JSON.parse((event as MessageEvent).data) as { event: SessionEvent };
     trackLiveTick(payload.event);
+    if (shouldClearPreviewOnCommittedEvent(payload.event.type)) {
+      previewTurn.value = null;
+    }
     enqueueLiveEvent(payload.event);
   });
+  stream.addEventListener("llm.preview.snapshot", (event) => {
+    const payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
+    previewTurn.value = previewTurnFromSnapshot(payload);
+  });
+  for (const eventType of [
+    "llm.turn.started",
+    "llm.action.started",
+    "llm.action.meta",
+    "llm.action.text.delta",
+    "llm.action.field.completed",
+    "llm.action.completed",
+    "llm.reasoning_summary.delta",
+    "llm.turn.control",
+    "llm.turn.player_body_item_state",
+    "llm.turn.completed",
+    "llm.turn.failed"
+  ]) {
+    stream.addEventListener(eventType, (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
+      previewTurn.value = applyPreviewEvent(previewTurn.value, eventType, payload);
+    });
+  }
   stream.addEventListener("error", () => {
     error.value = "实时连接已断开，请刷新页面重试。";
   });
@@ -437,18 +548,8 @@ async function flushLiveQueue() {
         await runPause(next, Number(next.payload.delayMs ?? 0), generation);
         continue;
       }
-      for (const step of expandPlaybackSteps(next)) {
-        if (generation !== playbackGeneration) {
-          return;
-        }
-        if (step.type === "pause") {
-          events.value = [...events.value, step.event];
-          await runPause(step.event, step.delayMs, generation);
-          continue;
-        }
-        events.value = [...events.value, step.event];
-        void maybeExecuteDeviceControl(step.event);
-      }
+      events.value = [...events.value, next];
+      void maybeExecuteDeviceControl(next);
     }
   } finally {
     queueRunning = false;
@@ -521,6 +622,7 @@ function clearLivePlayback() {
   liveQueue.length = 0;
   queueRunning = false;
   liveTickInFlight.value = false;
+  previewTurn.value = null;
   pendingAutomationCooldown.value = false;
   playbackCooldownUntil.value = null;
   clearActivePause();
@@ -609,146 +711,6 @@ function formatClockTime(value: string): string {
   });
 }
 
-function expandPlaybackSteps(event: SessionEvent): PlaybackStep[] {
-  const field = playbackFieldForEvent(event);
-  if (!field) {
-    return [{
-      type: "event",
-      event
-    }];
-  }
-
-  const rawValue = event.payload[field];
-  if (typeof rawValue !== "string" || !hasInlineDelays(rawValue)) {
-    return [{
-      type: "event",
-      event
-    }];
-  }
-
-  const steps: PlaybackStep[] = [];
-  for (const part of splitInlineDelays(rawValue)) {
-    if (part.type === "delay") {
-      steps.push({
-        type: "pause",
-        delayMs: part.delayMs,
-        event: createInlinePauseEvent(event, part.delayMs)
-      });
-      continue;
-    }
-
-    const text = part.text.trim();
-    if (!text) {
-      continue;
-    }
-    steps.push({
-      type: "event",
-      event: {
-        ...event,
-        payload: {
-          ...event.payload,
-          [field]: text
-        }
-      }
-    });
-  }
-
-  if (steps.length > 0) {
-    return steps;
-  }
-
-  return [{
-    type: "event",
-    event: {
-      ...event,
-      payload: {
-        ...event.payload,
-        [field]: stripInlineDelays(rawValue).trim()
-      }
-    }
-  }];
-}
-
-function playbackFieldForEvent(event: SessionEvent): string | null {
-  switch (event.type) {
-    case "agent.speak_player":
-    case "agent.speak_agent":
-      return "message";
-    case "agent.reasoning":
-      return "summary";
-    case "agent.stage_direction":
-      return "direction";
-    case "agent.story_effect":
-      return "description";
-    default:
-      return null;
-  }
-}
-
-function createInlinePauseEvent(event: SessionEvent, delayMs: number): SessionEvent {
-  const pauseState = createInlinePauseState(event);
-  return normalizeTimelineEvent({
-    sessionId: event.sessionId,
-    seq: event.seq,
-    type: "system.wait_scheduled",
-    source: "system",
-    agentId: event.agentId,
-    createdAt: new Date().toISOString(),
-    payload: {
-      speaker: event.payload.speaker,
-      reason: pauseState.meta,
-      delayMs,
-      mode: "inline_pause",
-      title: pauseState.title,
-      main: pauseState.main,
-      meta: pauseState.meta,
-      uiPauseId: `local-pause:${localPauseId += 1}`
-    }
-  });
-}
-
-function createInlinePauseState(event: SessionEvent): { title: string; main: string; meta?: string } {
-  const speaker = textOf(event.payload.speaker) || "对方";
-  switch (event.type) {
-    case "agent.speak_player":
-      return {
-        title: `${speaker} 停了一下`,
-        main: `${speaker} 把话音压住半拍，像是在等你把那层意思自己听清。`,
-        meta: "文本内节奏停顿"
-      };
-    case "agent.speak_agent":
-      return {
-        title: `${speaker} 稍作停顿`,
-        main: `${speaker} 把话留在空气里片刻，像是故意给场中每个人一点反应时间。`,
-        meta: "角色间对白停顿"
-      };
-    case "agent.stage_direction":
-      return {
-        title: "动作停在半空",
-        main: `${speaker} 的动作没有立刻接下去，气氛被有意拉长了一瞬。`,
-        meta: "舞台节奏停顿"
-      };
-    case "agent.story_effect":
-      return {
-        title: "气氛慢慢发酵",
-        main: "那一点变化没有立刻散去，反而在沉默里更明显地漫开。",
-        meta: "剧情效果停顿"
-      };
-    case "agent.reasoning":
-      return {
-        title: `${speaker} 还在拿捏节奏`,
-        main: `${speaker} 没有立刻把下一步亮出来，像是在等这一拍先落进你心里。`,
-        meta: "意图节奏停顿"
-      };
-    default:
-      return {
-        title: `${speaker} 停了一下`,
-        main: "空气里短暂安静了一瞬，像是故意把余味留得更久一点。",
-        meta: "文本内节奏停顿"
-      };
-  }
-}
-
 function normalizeTimelineEvent(event: SessionEvent): SessionEvent {
   if (event.type !== "system.wait_scheduled") {
     return event;
@@ -767,6 +729,21 @@ function isSameTimelineEvent(left: SessionEvent, right: SessionEvent): boolean {
   return left.seq === right.seq && left.type === right.type && left.createdAt === right.createdAt;
 }
 
+function mergeTimelineEvents(existing: SessionEvent[], incoming: SessionEvent[]): SessionEvent[] {
+  const merged = [...existing];
+  for (const event of incoming) {
+    if (!merged.some((item) => isSameTimelineEvent(item, event))) {
+      merged.push(event);
+    }
+  }
+  return merged.sort((left, right) => {
+    if (left.seq !== right.seq) {
+      return left.seq - right.seq;
+    }
+    return Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  });
+}
+
 function pauseEventId(event: SessionEvent): string {
   return typeof event.payload.uiPauseId === "string" && event.payload.uiPauseId.trim()
     ? event.payload.uiPauseId
@@ -775,6 +752,130 @@ function pauseEventId(event: SessionEvent): string {
 
 function deviceExecutionKey(event: SessionEvent): string {
   return `${event.seq}:${event.type}:${event.createdAt}`;
+}
+
+function refreshElectroStimLocalConfig() {
+  electroStimLocalConfig.value = loadElectroStimLocalConfig();
+}
+
+function getOverlayStorage(): Pick<Storage, "getItem" | "setItem"> | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const storage = window.localStorage as Partial<Storage> | undefined;
+  if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") {
+    return null;
+  }
+  return {
+    getItem: storage.getItem.bind(storage),
+    setItem: storage.setItem.bind(storage)
+  };
+}
+
+function loadStoredElectroStimOverlayPosition(): ElectroStimOverlayPosition | null {
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return null;
+  }
+  const raw = storage.getItem(ELECTRO_STIM_OVERLAY_POSITION_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<ElectroStimOverlayPosition>;
+    if (typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+      return null;
+    }
+    return {
+      x: parsed.x,
+      y: parsed.y
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistElectroStimOverlayPosition(position: ElectroStimOverlayPosition) {
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return;
+  }
+  storage.setItem(ELECTRO_STIM_OVERLAY_POSITION_KEY, JSON.stringify(position));
+}
+
+function clampElectroStimOverlayPosition(nextX: number, nextY: number): { x: number; y: number } {
+  if (typeof window === "undefined") {
+    return { x: nextX, y: nextY };
+  }
+  const margin = window.innerWidth <= 680 ? 12 : 20;
+  const width = electroStimOverlay.value?.offsetWidth ?? Math.min(520, Math.max(280, window.innerWidth - (margin * 2)));
+  const height = electroStimOverlay.value?.offsetHeight ?? 380;
+  const maxX = Math.max(margin, window.innerWidth - width - margin);
+  const maxY = Math.max(margin, window.innerHeight - height - margin);
+  return {
+    x: Math.min(Math.max(margin, nextX), maxX),
+    y: Math.min(Math.max(margin, nextY), maxY)
+  };
+}
+
+function syncElectroStimOverlayWithinViewport() {
+  electroStimOverlayPosition.value = clampElectroStimOverlayPosition(
+    electroStimOverlayPosition.value.x,
+    electroStimOverlayPosition.value.y
+  );
+  persistElectroStimOverlayPosition(electroStimOverlayPosition.value);
+}
+
+function resetElectroStimOverlayPosition() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const storedPosition = loadStoredElectroStimOverlayPosition();
+  const margin = window.innerWidth <= 680 ? 12 : 20;
+  const width = electroStimOverlay.value?.offsetWidth ?? Math.min(520, Math.max(280, window.innerWidth - (margin * 2)));
+  electroStimOverlayPosition.value = clampElectroStimOverlayPosition(
+    storedPosition?.x ?? (window.innerWidth - width - margin),
+    storedPosition?.y ?? 120
+  );
+  persistElectroStimOverlayPosition(electroStimOverlayPosition.value);
+}
+
+function handleElectroStimDragStart(event: PointerEvent) {
+  if (event.button !== 0) {
+    return;
+  }
+  electroStimDragState.value = {
+    pointerId: event.pointerId,
+    offsetX: event.clientX - electroStimOverlayPosition.value.x,
+    offsetY: event.clientY - electroStimOverlayPosition.value.y
+  };
+  const handle = event.currentTarget as HTMLElement | null;
+  handle?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleElectroStimDragMove(event: PointerEvent) {
+  const dragState = electroStimDragState.value;
+  if (!dragState || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+  electroStimOverlayPosition.value = clampElectroStimOverlayPosition(
+    event.clientX - dragState.offsetX,
+    event.clientY - dragState.offsetY
+  );
+}
+
+function handleElectroStimDragEnd(event: PointerEvent) {
+  const dragState = electroStimDragState.value;
+  if (!dragState || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+  const handle = event.currentTarget as HTMLElement | null;
+  if (handle?.hasPointerCapture?.(event.pointerId)) {
+    handle.releasePointerCapture(event.pointerId);
+  }
+  electroStimDragState.value = null;
+  persistElectroStimOverlayPosition(electroStimOverlayPosition.value);
 }
 
 function sessionUsesElectroStimTool(): boolean {
@@ -894,7 +995,32 @@ watch(() => route.params.id, () => {
   void loadSession();
 });
 
+watch(showElectroStimViewer, async (value) => {
+  if (!value) {
+    electroStimDragState.value = null;
+    return;
+  }
+  await nextTick();
+  resetElectroStimOverlayPosition();
+});
+
+watch(liveReasoningSummary, async (value) => {
+  if (!value) {
+    return;
+  }
+  await nextTick();
+  const element = reasoningBannerBody.value;
+  if (!element) {
+    return;
+  }
+  element.scrollTop = element.scrollHeight;
+});
+
 onMounted(() => {
+  refreshElectroStimLocalConfig();
+  window.addEventListener("focus", refreshElectroStimLocalConfig);
+  window.addEventListener("storage", refreshElectroStimLocalConfig);
+  window.addEventListener("resize", syncElectroStimOverlayWithinViewport);
   automationClockTimer = window.setInterval(() => {
     automationNow.value = Date.now();
     void maybeRequestAutoTick();
@@ -905,6 +1031,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stream?.close();
   clearLivePlayback();
+  window.removeEventListener("focus", refreshElectroStimLocalConfig);
+  window.removeEventListener("storage", refreshElectroStimLocalConfig);
+  window.removeEventListener("resize", syncElectroStimOverlayWithinViewport);
   if (automationClockTimer !== null) {
     window.clearInterval(automationClockTimer);
     automationClockTimer = null;

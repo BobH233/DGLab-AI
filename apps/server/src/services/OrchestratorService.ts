@@ -11,10 +11,12 @@ import {
   type ToolContext
 } from "@dglab-ai/shared";
 import { z } from "zod";
+import { LineProtocolTurnParser } from "../infra/LineProtocolTurnParser.js";
 import { createId } from "../lib/ids.js";
 import type {
   LLMProvider,
   OrchestratorService,
+  OrchestratorPreviewEvent,
   OrchestratorTurnResult,
   PromptTemplateService,
   ToolRegistry
@@ -172,97 +174,80 @@ function toolReferenceForPrompt(toolRegistry: ToolRegistry, toolStates?: Record<
 
 function toolExamplesForPrompt(): string {
   return [
-    "Example batch 1:",
-    "```json",
-    JSON.stringify({
-      actions: [
-        {
-          actorAgentId: "director",
-          tool: "perform_stage_direction",
-          args: {
-            direction: "你看见他先是漫不经心地看了你一会儿，然后把酒杯轻轻推到你手边，像是在等你先接住这份暗示。"
-          }
-        },
-        {
-          actorAgentId: "director",
-          tool: "speak_to_player",
-          args: {
-            message: "别急着躲开。<delay>900</delay>先看着我，让我听听你真正想说的那一句。"
-          }
-        },
-        {
-          actorAgentId: "support_1",
-          tool: "speak_to_agent",
-          args: {
-            targetAgentId: "director",
-            message: "气氛已经起来了。<delay>700</delay>别让这一刻断掉。"
-          }
-        }
-      ],
-      turnControl: {
-        continue: true,
-        endStory: false,
-        needsHandoff: false
-      },
-      playerBodyItemState: ["你现在戴着一副遮光眼罩"]
-    }, null, 2),
+    "Example streamed turn 1:",
+    "```text",
+    "@action {\"actorAgentId\":\"director\",\"tool\":\"perform_stage_direction\",\"targetScope\":\"scene\"}",
+    "@field args.direction",
+    "你看见他先是漫不经心地看了你一会儿，然后把酒杯轻轻推到你手边，像是在等你先接住这份暗示。",
+    "@endfield",
+    "@endaction",
+    "",
+    "@action {\"actorAgentId\":\"director\",\"tool\":\"speak_to_player\",\"targetScope\":\"player\"}",
+    "@field args.message",
+    "别急着躲开。<delay>900</delay>先看着我，让我听听你真正想说的那一句。",
+    "@endfield",
+    "@endaction",
+    "",
+    "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerBodyItemState [\"你现在戴着一副遮光眼罩\"]",
+    "@done",
     "```",
-    "Example batch 2:",
-    "```json",
-    JSON.stringify({
-      actions: [
-        {
-          actorAgentId: "support_1",
-          tool: "apply_story_effect",
-          args: {
-            label: "暧昧升温",
-            description: "你感觉空气里的温度在短暂沉默后悄悄抬高，连目光碰到一起都像多停了一拍。",
-            intensity: 6
-          }
-        },
-        {
-          actorAgentId: "director",
-          tool: "update_scene_state",
-          args: {
-            location: "会客室",
-            phase: "teasing",
-            tension: 7,
-            summary: "你已经被他若即若离的试探牵住心神，整场对话正慢慢滑进带着情趣的暧昧节奏里。",
-            activeObjectives: ["让你继续留在这场暧昧对话里", "引出你更坦率的回应"]
-          }
-        }
-      ],
-      turnControl: {
-        continue: true,
-        endStory: false,
-        needsHandoff: false
-      },
-      playerBodyItemState: [
-        "你现在戴着一副遮光眼罩",
-        "你现在双手被红色绳子捆在身后"
-      ]
-    }, null, 2),
+    "Example streamed turn 2:",
+    "```text",
+    "@action {\"actorAgentId\":\"support_1\",\"tool\":\"apply_story_effect\",\"targetScope\":\"scene\"}",
+    "@field args.label",
+    "\"暧昧升温\"",
+    "@endfield",
+    "@field args.description",
+    "你感觉空气里的温度在短暂沉默后悄悄抬高，连目光碰到一起都像多停了一拍。",
+    "@endfield",
+    "@field args.intensity",
+    "6",
+    "@endfield",
+    "@endaction",
+    "",
+    "@action {\"actorAgentId\":\"director\",\"tool\":\"update_scene_state\",\"targetScope\":\"scene\"}",
+    "@field args.location",
+    "\"会客室\"",
+    "@endfield",
+    "@field args.phase",
+    "\"teasing\"",
+    "@endfield",
+    "@field args.tension",
+    "7",
+    "@endfield",
+    "@field args.summary",
+    "\"你已经被他若即若离的试探牵住心神，整场对话正慢慢滑进带着情趣的暧昧节奏里。\"",
+    "@endfield",
+    "@field args.activeObjectives",
+    "[\"让你继续留在这场暧昧对话里\",\"引出你更坦率的回应\"]",
+    "@endfield",
+    "@endaction",
+    "",
+    "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerBodyItemState [\"你现在戴着一副遮光眼罩\",\"你现在双手被红色绳子捆在身后\"]",
+    "@done",
     "```",
-    "Example batch 3:",
-    "```json",
-    JSON.stringify({
-      actions: [
-        {
-          actorAgentId: "director",
-          tool: "end_story",
-          args: {
-            summary: "你终于顺着这场暧昧的牵引，把最后一点迟疑也慢慢放了下来。",
-            resolution: "夜色和呼吸一起放缓，故事停在情绪仍未散尽的余韵里。"
-          }
-        }
-      ],
-      turnControl: {
-        continue: false,
-        endStory: true,
-        needsHandoff: false
-      },
-      playerBodyItemState: []
-    }, null, 2),
+    "Example streamed turn 3:",
+    "```text",
+    "@action {\"actorAgentId\":\"director\",\"tool\":\"control_e_stim_toy\",\"targetScope\":\"scene\"}",
+    "@field args.command",
+    "\"fire\"",
+    "@endfield",
+    "@field args.durationMs",
+    "3500",
+    "@endfield",
+    "@field args.override",
+    "true",
+    "@endfield",
+    "@field args.channels",
+    "{\"a\":{\"enabled\":true,\"intensityPercent\":45,\"pulseName\":\"压缩\"},\"b\":{\"enabled\":true,\"intensityPercent\":40,\"pulseName\":\"颗粒摩擦\"}}",
+    "@endfield",
+    "@endaction",
+    "",
+    "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerBodyItemState [\"你现在戴着一副遮光眼罩\"]",
+    "@done",
     "```"
   ].join("\n");
 }
@@ -369,7 +354,11 @@ export class DefaultOrchestratorService implements OrchestratorService {
     session: Session,
     reason: string,
     contextBundle: NarrativeContextBundle,
-    config: LlmConfig
+    config: LlmConfig,
+    options?: {
+      turnId?: string;
+      onPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
+    }
   ): Promise<OrchestratorTurnResult> {
     const events: Array<Omit<SessionEvent, "seq" | "sessionId">> = [];
     const usageCalls: OrchestratorTurnResult["usageCalls"] = [];
@@ -403,7 +392,12 @@ export class DefaultOrchestratorService implements OrchestratorService {
       playerMessagesHistory: contextBundle.playerMessagesBlock,
       tickContext: contextBundle.tickContextBlock
     });
-    const response = await this.provider.completeJson({
+    const turnId = options?.turnId ?? createId("tick");
+    const parser = new LineProtocolTurnParser({
+      turnId,
+      emitPreviewEvent: options?.onPreviewEvent
+    });
+    const response = await this.provider.streamText({
       modelConfig: config,
       messages: [
         {
@@ -412,15 +406,37 @@ export class DefaultOrchestratorService implements OrchestratorService {
         },
         {
           role: "user",
-          content: "Emit one shared multi-agent action batch as JSON."
+          content: "Emit one shared multi-agent action batch using the line protocol."
         }
       ],
-      schema: actionBatchSchema,
-      schemaName: "ensemble_action_batch",
       usageContext: {
         kind: "ensemble-turn",
         sessionId: session.id,
         agentIds: agents.map((agent) => agent.id)
+      },
+      onTextDelta: (delta) => {
+        parser.push(delta);
+      },
+      onReasoningSummaryDelta: (delta) => {
+        options?.onPreviewEvent?.({
+          type: "llm.reasoning_summary.delta",
+          payload: {
+            turnId,
+            delta
+          }
+        });
+      }
+    });
+    const parsed = parser.finish();
+    const actionBatch = actionBatchSchema.parse(parsed.data);
+    options?.onPreviewEvent?.({
+      type: "llm.turn.completed",
+      payload: {
+        turnId,
+        model: response.usage.model,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens
       }
     });
     const usageId = createId("usage");
@@ -457,9 +473,9 @@ export class DefaultOrchestratorService implements OrchestratorService {
       }
     });
     const previousPlayerBodyItemState = [...session.playerBodyItemState];
-    const nextPlayerBodyItemState = normalizePlayerBodyItemState(response.data.playerBodyItemState);
+    const nextPlayerBodyItemState = normalizePlayerBodyItemState(actionBatch.playerBodyItemState);
     session.playerBodyItemState = nextPlayerBodyItemState;
-    for (const action of response.data.actions) {
+    for (const action of actionBatch.actions) {
       // Try to find actor by ID first
       let actor = agentById.get(action.actorAgentId);
       
@@ -500,7 +516,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
         }
       });
     }
-    if (response.data.turnControl.endStory && !hasEnded()) {
+    if (actionBatch.turnControl.endStory && !hasEnded()) {
       session.status = "ended";
     }
     return {

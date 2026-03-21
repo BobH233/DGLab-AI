@@ -1,0 +1,13 @@
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/*/dist
+packages/*/dist
+.git
+.github
+coverage
+*.log
+.DS_Store
+doc
+dev_doc
+third_party_doc

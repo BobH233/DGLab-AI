@@ -10,7 +10,7 @@ import type {
   UpdateDraftRequest
 } from "@dglab-ai/shared";
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:3001/api";
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {

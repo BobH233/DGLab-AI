@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import type { Session, SessionEvent } from "@dglab-ai/shared";
+import { defaultToolStates, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SessionConsolePage from "../SessionConsolePage.vue";
 
@@ -12,6 +12,17 @@ const apiMocks = vi.hoisted(() => ({
   updateTimer: vi.fn(),
   requestAutoTick: vi.fn<() => Promise<Session>>()
 }));
+
+const localStorageState = new Map<string, string>();
+const localStorageMock = {
+  getItem: vi.fn((key: string) => localStorageState.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageState.set(key, value);
+  }),
+  removeItem: vi.fn((key: string) => {
+    localStorageState.delete(key);
+  })
+};
 
 vi.mock("../../api", () => ({
   api: {
@@ -34,8 +45,29 @@ vi.mock("vue-router", () => ({
 }));
 
 class FakeEventSource {
-  constructor(_url: string) {}
-  addEventListener() {}
+  static instances: FakeEventSource[] = [];
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+
+  constructor(_url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  emit(type: string, payload: Record<string, unknown>) {
+    const listeners = this.listeners.get(type) ?? [];
+    const event = {
+      data: JSON.stringify(payload)
+    } as MessageEvent;
+    for (const listener of listeners) {
+      listener(event);
+    }
+  }
+
   close() {}
 }
 
@@ -127,6 +159,19 @@ describe("SessionConsolePage", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
     vi.resetAllMocks();
+    localStorageState.clear();
+    localStorageMock.getItem.mockImplementation((key: string) => localStorageState.get(key) ?? null);
+    localStorageMock.setItem.mockImplementation((key: string, value: string) => {
+      localStorageState.set(key, value);
+    });
+    localStorageMock.removeItem.mockImplementation((key: string) => {
+      localStorageState.delete(key);
+    });
+    Object.defineProperty(window, "localStorage", {
+      value: localStorageMock,
+      configurable: true
+    });
+    FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     apiMocks.getEvents.mockResolvedValue([]);
     apiMocks.requestAutoTick.mockResolvedValue(createSession({
@@ -165,6 +210,148 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).toContain("下一次计划触发时间");
     expect(normalizedText(wrapper)).toContain("玩家身体道具");
     expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
+  });
+
+  it("renders the floating e-stim viewer when the current session enables the tool", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const iframe = wrapper.find('[data-testid="e-stim-floating-overlay"] iframe');
+    expect(iframe.exists()).toBe(true);
+    expect(iframe.attributes("src")).toBe(
+      "http://localhost:8920/viewer.html?clientId=488b55d9-acb2-4e3f-bd36-b05547b30c10&layout=dual#/"
+    );
+  });
+
+  it("restores the floating e-stim viewer position from local storage", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    window.localStorage.setItem("dglabai.e_stim_overlay_position", JSON.stringify({
+      x: 140,
+      y: 210
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const overlay = wrapper.get('[data-testid="e-stim-floating-overlay"]');
+    expect(overlay.attributes("style")).toContain("left: 140px;");
+    expect(overlay.attributes("style")).toContain("top: 210px;");
+  });
+
+  it("keeps the floating e-stim viewer hidden when the current session has not enabled the tool", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: false
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="e-stim-floating-overlay"]').exists()).toBe(false);
   });
 
   it("strips inline delay tags from the session summary header", async () => {
@@ -221,7 +408,7 @@ describe("SessionConsolePage", () => {
 
     await flushPromises();
 
-    expect(normalizedText(wrapper)).toContain("Thinking");
+    expect(normalizedText(wrapper)).toContain("正在思考中");
     expect(normalizedText(wrapper)).toContain("约 5.0 秒 后自动推进");
     expect(normalizedText(wrapper)).toContain("如果计时到点，会顺延 5.0 秒，不会并发触发");
   });
@@ -253,5 +440,364 @@ describe("SessionConsolePage", () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(apiMocks.requestAutoTick).toHaveBeenCalledWith("session_1", undefined);
+  });
+
+  it("subscribes to the stream before initial data finishes loading so the first preview is not missed", async () => {
+    let resolveSession!: (value: Session) => void;
+    let resolveEvents!: (value: SessionEvent[]) => void;
+    apiMocks.getSession.mockImplementation(() => new Promise((resolve) => {
+      resolveSession = resolve;
+    }));
+    apiMocks.getEvents.mockImplementation(() => new Promise((resolve) => {
+      resolveEvents = resolve;
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_1",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.reasoning_summary.delta", {
+      turnId: "tick_1",
+      delta: "先判断她会不会继续嘴硬。"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_1",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "speak_to_player",
+      targetScope: "player"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.text.delta", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.message",
+      delta: "先看着我。"
+    });
+
+    resolveSession(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+    resolveEvents([]);
+
+    await flushPromises();
+
+    expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("先判断她会不会继续嘴硬。");
+    expect(normalizedText(wrapper)).toContain("先看着我。");
+    expect(normalizedText(wrapper)).toContain("对你说");
+  });
+
+  it("restores an in-flight preview snapshot after reconnect", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.preview.snapshot", {
+      previewTurn: {
+        turnId: "tick_1",
+        status: "streaming",
+        model: "gpt-5.4",
+        reasoningSummaryText: "我先顺着她的情绪往前推一点。",
+        actions: [
+          {
+            index: 0,
+            actorAgentId: "director_1",
+            tool: "speak_to_player",
+            targetScope: "player",
+            textByPath: {
+              "args.message": {
+                visibleSegments: [
+                  {
+                    type: "text",
+                    text: "刷新后也能接着看。"
+                  }
+                ],
+                pendingBuffer: ""
+              }
+            },
+            valueByPath: {},
+            completedFields: [],
+            completed: false
+          }
+        ]
+      }
+    });
+
+    await flushPromises();
+
+    expect(normalizedText(wrapper)).toContain("正在思考中");
+    expect(normalizedText(wrapper)).toContain("我先顺着她的情绪往前推一点。");
+    expect(normalizedText(wrapper)).toContain("刷新后也能接着看。");
+    expect(normalizedText(wrapper)).toContain("对你说");
+  });
+
+  it("hides the live reasoning summary once the streaming tick is committed", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_3",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.reasoning_summary.delta", {
+      turnId: "tick_3",
+      delta: "先确认这一轮该怎么收束。"
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).toContain("先确认这一轮该怎么收束。");
+
+    FakeEventSource.instances[0]?.emit("event.appended", {
+      event: {
+        sessionId: "session_1",
+        seq: 1,
+        type: "system.tick_completed",
+        source: "system",
+        createdAt: "2026-03-17T12:00:02.000Z",
+        payload: {
+          reason: "player_message",
+          status: "active"
+        }
+      }
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).not.toContain("先确认这一轮该怎么收束。");
+  });
+
+  it("updates the page-level preview card when e-stim field-completed events arrive", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_1",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_1",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "control_e_stim_toy",
+      targetScope: "scene"
+    });
+
+    await flushPromises();
+    expect(normalizedText(wrapper)).toContain("正在编写控制参数");
+
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.command",
+      value: "fire"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.durationMs",
+      value: 2500
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.override",
+      value: true
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_1",
+      index: 0,
+      path: "args.channels",
+      value: {
+        a: {
+          enabled: true,
+          intensityPercent: 35,
+          pulseName: "快速按捏"
+        },
+        b: {
+          enabled: false
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const text = normalizedText(wrapper);
+    expect(text).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(text).toContain("一键开火");
+    expect(text).toContain("2500 ms");
+    expect(text).toContain("覆盖模式");
+    expect(text).toContain("A 通道");
+    expect(text).toContain("B 通道");
+    expect(text).not.toContain("正在编写控制参数");
+  });
+
+  it("updates the page-level preview card when e-stim params arrive as a single args object", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_2",
+      model: "gpt-5.4"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.meta", {
+      turnId: "tick_2",
+      index: 0,
+      actorAgentId: "director_1",
+      tool: "control_e_stim_toy",
+      targetScope: "scene"
+    });
+    FakeEventSource.instances[0]?.emit("llm.action.field.completed", {
+      turnId: "tick_2",
+      index: 0,
+      path: "args",
+      value: {
+        command: "fire",
+        durationMs: 3500,
+        override: true,
+        channels: {
+          a: {
+            enabled: true,
+            intensityPercent: 45,
+            pulseName: "压缩"
+          },
+          b: {
+            enabled: true,
+            intensityPercent: 40,
+            pulseName: "颗粒摩擦"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const text = normalizedText(wrapper);
+    expect(text).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(text).toContain("一键开火");
+    expect(text).toContain("3500 ms");
+    expect(text).toContain("A 通道");
+    expect(text).toContain("波形 压缩");
+    expect(text).toContain("B 通道");
+    expect(text).toContain("波形 颗粒摩擦");
+    expect(text).not.toContain("正在编写控制参数");
   });
 });

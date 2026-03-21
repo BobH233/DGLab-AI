@@ -241,20 +241,20 @@ describe("createDefaultToolRegistry", () => {
           a: {
             enabled: true,
             strength: 4,
-            limit: 20,
+            limit: 88,
             tempStrength: 0,
             currentPulseId: "pulse_1",
             currentPulseName: "呼吸",
-            fireStrengthLimit: 30
+            fireStrengthLimit: 70
           },
           b: {
             enabled: true,
             strength: 6,
-            limit: 20,
+            limit: 131,
             tempStrength: 0,
             currentPulseId: "pulse_2",
             currentPulseName: "敲击",
-            fireStrengthLimit: 25
+            fireStrengthLimit: 70
           }
         }
       }
@@ -274,6 +274,10 @@ describe("createDefaultToolRegistry", () => {
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Channel B");
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 臀部");
     expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Placement: 大腿两侧");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Fire strength cap: 80%");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("Fire strength cap: 53%");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("never emit `@field args`");
+    expect(contributions.find((entry) => entry.toolId === "control_e_stim_toy")?.prompt).toContain("`@field args.command`, `@field args.durationMs`, `@field args.override`, `@field args.channels`");
 
     await registry.execute({
       session,

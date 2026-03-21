@@ -135,7 +135,8 @@ describe("EventTimeline", () => {
       }
     });
 
-    expect(wrapper.text()).toContain("先别躲。看着我。");
+    expect(wrapper.text()).toContain("先别躲。");
+    expect(wrapper.text()).toContain("看着我。");
     expect(wrapper.text()).not.toContain("<delay>");
   });
 
@@ -355,6 +356,36 @@ describe("EventTimeline", () => {
     expect(items[1]?.attributes("data-kind")).toBe("pause");
     expect(items[1]?.text()).toContain("动作停在半空");
     expect(items[2]?.text()).toContain("第一段。");
+  });
+
+  it("splits a single delayed dialogue event into two bubbles with a pause note in between", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 13,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date("2026-03-16T10:00:00.000Z").toISOString(),
+            payload: {
+              speaker: "八重神子",
+              message: "第一段。<delay>800</delay>第二段。"
+            }
+          }
+        ]
+      }
+    });
+
+    const items = wrapper.findAll(".timeline-item");
+
+    expect(items).toHaveLength(3);
+    expect(items[0]?.text()).toContain("第二段。");
+    expect(items[1]?.attributes("data-kind")).toBe("pause");
+    expect(items[1]?.text()).toContain("约 800 ms 后继续");
+    expect(items[2]?.text()).toContain("第一段。");
+    expect(wrapper.text()).not.toContain("<delay>");
   });
 
   it("renders tick and usage events as compact timeline notes", () => {

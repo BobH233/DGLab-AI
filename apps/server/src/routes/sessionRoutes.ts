@@ -112,13 +112,17 @@ export function createSessionRoutes(sessionService: SessionService, channel: Cha
   router.get("/:id/stream", async (request, response, next) => {
     try {
       const session = await sessionService.getSession(request.params.id);
+      const previewSnapshot = sessionService.getPreviewSnapshot(session.id);
       response.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive"
       });
-      response.write(`event: ready\ndata: ${JSON.stringify({ sessionId: session.id })}\n\n`);
       channel.attach(session.id, response);
+      response.write(`event: ready\ndata: ${JSON.stringify({ sessionId: session.id })}\n\n`);
+      if (previewSnapshot) {
+        response.write(`event: llm.preview.snapshot\ndata: ${JSON.stringify({ previewTurn: previewSnapshot })}\n\n`);
+      }
       request.on("close", () => {
         channel.detach(session.id, response);
       });

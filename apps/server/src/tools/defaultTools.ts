@@ -30,6 +30,13 @@ function toPercent(current: number | undefined, limit: number | undefined): stri
   return `${Math.round((current / limit) * 100)}%`;
 }
 
+function formatFireStrengthCap(fireStrengthLimit: number | undefined, limit: number | undefined): string | undefined {
+  if (typeof fireStrengthLimit !== "number") {
+    return undefined;
+  }
+  return `Fire strength cap: ${toPercent(fireStrengthLimit, limit)}`;
+}
+
 function joinNonEmpty(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part && part.trim())).join("；");
 }
@@ -239,6 +246,9 @@ export function createDefaultToolRegistry(): ToolRegistry {
           "Treat `command:\"set\"` and `command:\"fire\"` differently. `set` is for sustained adjustment: keeping pressure steady, gradually increasing it, or changing wave shape as part of ongoing control.",
           "For `command:\"set\"`, send only `command` plus `channels`. Do not include `durationMs`, `override`, or channel-level `enabled`.",
           "For `command:\"fire\"`, `durationMs` is required, `override` is allowed, and channel-level `enabled` may be used.",
+          "When streaming this tool, never emit a single `@field args` block. Emit canonical field blocks such as `@field args.command`, `@field args.durationMs`, `@field args.override`, and `@field args.channels` instead.",
+          "Use a fixed field order for `command:\"fire\"`: `args.command`, then `args.durationMs`, then `args.override`, then `args.channels`, then `@endaction`.",
+          "Use a fixed field order for `command:\"set\"`: `args.command`, then `args.channels`, then `@endaction`.",
           "`command:\"fire\"` is a timed burst: it rapidly jumps to the requested strength, holds the requested wave for `durationMs`, and is better for sudden punishment, sharper control, interruption, forced compliance, or moments where you want the player to feel a more volatile and uncertain loss of control.",
           "Do not spam `fire`. Use it when the dramatic goal specifically calls for a short, decisive escalation or a punishing display of authority; otherwise prefer `set` for more measured pacing.",
           "You are free to adjust channels independently: you can target only Channel A, only Channel B, or both in the same call. For example, `{\"command\":\"set\",\"channels\":{\"a\":{\"intensityPercent\":20}}}` adjusts only Channel A. This flexibility lets you apply asymmetric pressure or control specific body zones independently."
@@ -275,7 +285,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
           eStim.channelPlacements.a ? `Placement: ${eStim.channelPlacements.a}` : undefined,
           eStim.runtime?.a ? `Current strength: ${eStim.runtime.a.strength}/${eStim.runtime.a.limit} (about ${toPercent(eStim.runtime.a.strength, eStim.runtime.a.limit)})` : "Current strength: not synced",
           eStim.runtime?.a?.currentPulseName ? `Current pulse: ${eStim.runtime.a.currentPulseName}` : undefined,
-          eStim.runtime?.a?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.a.fireStrengthLimit}` : undefined
+          formatFireStrengthCap(eStim.runtime?.a?.fireStrengthLimit, eStim.runtime?.a?.limit)
         ]);
         const channelBEnabled = eStim.bChannelEnabled;
         const channelBLine = !channelBEnabled
@@ -285,7 +295,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
             eStim.channelPlacements.b ? `Placement: ${eStim.channelPlacements.b}` : undefined,
             eStim.runtime?.b ? `Current strength: ${eStim.runtime.b.strength}/${eStim.runtime.b.limit} (about ${toPercent(eStim.runtime.b.strength, eStim.runtime.b.limit)})` : "Current strength: not synced",
             eStim.runtime?.b?.currentPulseName ? `Current pulse: ${eStim.runtime.b.currentPulseName}` : undefined,
-            eStim.runtime?.b?.fireStrengthLimit !== undefined ? `Fire strength cap: ${eStim.runtime.b.fireStrengthLimit}` : undefined
+            formatFireStrengthCap(eStim.runtime?.b?.fireStrengthLimit, eStim.runtime?.b?.limit)
           ]);
 
         return [
@@ -294,6 +304,10 @@ export function createDefaultToolRegistry(): ToolRegistry {
           channelALine,
           channelBLine,
           "When calling `control_e_stim_toy`, use only the pulse name in `pulseName`. Do not output the underlying `pulseId`; the frontend will map names to real ids.",
+          "Important output formatting rule: never emit `@field args` for `control_e_stim_toy`.",
+          "Instead, emit one field block per canonical path. For `fire`, use exactly: `@field args.command`, `@field args.durationMs`, `@field args.override`, `@field args.channels`.",
+          "For `set`, use exactly: `@field args.command`, `@field args.channels`.",
+          "Do not merge `command`, `durationMs`, `override`, and `channels` into one JSON body under `args`.",
           "`command: \"set\"` is for sustained intensity adjustments or normal pulse switching, letting pressure rise gradually, hold steady, or change with fine control.",
           "`command: \"fire\"` is a time-limited burst. Once triggered, it rapidly drives the target channel to the requested intensity, keeps the requested pulse for `durationMs`, and then ends the burst.",
           "Use `fire` for short escalations, abrupt interruption, explicit punishment, forced compliance, increased uncertainty, or stronger demonstrations of control when the player relaxes, hesitates, talks back, provokes, or resists.",

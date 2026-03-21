@@ -9,6 +9,7 @@ const config: LlmConfig = {
   apiKey: "test",
   model: "test-model",
   temperature: 0.7,
+  reasoningEffort: "medium",
   maxTokens: 500,
   topP: 1,
   requestTimeoutMs: 1000,
@@ -49,6 +50,10 @@ class FakeProvider {
         lastUpdatedAt: new Date().toISOString()
       }
     };
+  }
+
+  async streamText() {
+    return Promise.reject(new Error("streamText should not be called in world builder normalization tests"));
   }
 }
 

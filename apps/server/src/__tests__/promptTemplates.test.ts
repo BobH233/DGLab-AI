@@ -72,7 +72,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("must contain only the words spoken to the player");
     expect(prompt).toContain("split it across tools");
     expect(prompt).toContain("Use only the exact tool ids and argument keys shown in the Tool reference above.");
-    expect(prompt).not.toContain("control_e_stim_toy");
+    expect(prompt).toContain("Do not collapse a multi-property args object into a single root field like `@field args`");
+    expect(prompt).toContain("For `control_e_stim_toy`, never emit a single `@field args` block containing the whole JSON object.");
   });
 
   it("keeps the shared safety preamble aligned with adult romantic but non-explicit storytelling", async () => {
