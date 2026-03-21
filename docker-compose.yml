@@ -1,9 +1,6 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: dglab-ai:local
+    image: ghcr.io/bobh233/dglab-ai:latest
     depends_on:
       mongodb:
         condition: service_healthy
@@ -12,11 +9,13 @@ services:
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DB: dglab_ai
     ports:
-      - "3001:3001"
+      - "17039:3001"
     restart: unless-stopped
+    networks:
+      - dglab-ai-network
 
   mongodb:
-    image: mongo:7.0
+    image: mongo:7
     container_name: dglab-ai-mongodb
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
@@ -26,7 +25,10 @@ services:
       start_period: 10s
     restart: unless-stopped
     volumes:
-      - mongodb-data:/data/db
+      - ${MONGO_DATA_PATH:-./mongo_data}:/data/db
+    networks:
+      - dglab-ai-network
 
-volumes:
-  mongodb-data:
+networks:
+  dglab-ai-network:
+    driver: bridge
