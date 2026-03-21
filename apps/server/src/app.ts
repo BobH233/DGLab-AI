@@ -64,7 +64,7 @@ export async function createServerApp() {
 
   if (existsSync(webDistDir)) {
     app.use(express.static(webDistDir));
-    app.get("/{*path}", (request, response, next) => {
+    app.get("*", (request, response, next) => {
       if (request.path.startsWith("/api")) {
         next();
         return;
