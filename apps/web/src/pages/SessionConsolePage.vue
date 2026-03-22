@@ -294,6 +294,7 @@ type ElectroStimOverlayPosition = {
 };
 
 const ELECTRO_STIM_OVERLAY_POSITION_KEY = "dglabai.e_stim_overlay_position";
+const ELECTRO_STIM_OVERLAY_COLLAPSED_KEY = "dglabai.e_stim_overlay_collapsed";
 
 const route = useRoute();
 const session = ref<Session | null>(null);
@@ -320,7 +321,7 @@ const electroStimOverlayPosition = ref<ElectroStimOverlayPosition>({
   y: 132
 });
 const electroStimDragState = ref<DragState | null>(null);
-const isElectroStimViewerCollapsed = ref(false);
+const isElectroStimViewerCollapsed = ref(loadStoredElectroStimOverlayCollapsed());
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
@@ -822,6 +823,22 @@ function persistElectroStimOverlayPosition(position: ElectroStimOverlayPosition)
   storage.setItem(ELECTRO_STIM_OVERLAY_POSITION_KEY, JSON.stringify(position));
 }
 
+function loadStoredElectroStimOverlayCollapsed(): boolean {
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return false;
+  }
+  return storage.getItem(ELECTRO_STIM_OVERLAY_COLLAPSED_KEY) === "true";
+}
+
+function persistElectroStimOverlayCollapsed(collapsed: boolean) {
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return;
+  }
+  storage.setItem(ELECTRO_STIM_OVERLAY_COLLAPSED_KEY, String(collapsed));
+}
+
 function clampElectroStimOverlayPosition(nextX: number, nextY: number): { x: number; y: number } {
   if (typeof window === "undefined") {
     return { x: nextX, y: nextY };
@@ -1034,14 +1051,15 @@ watch(() => route.params.id, () => {
 watch(showElectroStimViewer, async (value) => {
   if (!value) {
     electroStimDragState.value = null;
-    isElectroStimViewerCollapsed.value = false;
     return;
   }
+  isElectroStimViewerCollapsed.value = loadStoredElectroStimOverlayCollapsed();
   await nextTick();
   resetElectroStimOverlayPosition();
 });
 
 watch(isElectroStimViewerCollapsed, async () => {
+  persistElectroStimOverlayCollapsed(isElectroStimViewerCollapsed.value);
   if (!showElectroStimViewer.value) {
     return;
   }

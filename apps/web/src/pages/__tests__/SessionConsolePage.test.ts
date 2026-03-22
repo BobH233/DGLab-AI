@@ -369,6 +369,55 @@ describe("SessionConsolePage", () => {
     expect(wrapper.find('[data-testid="e-stim-floating-overlay"] iframe').exists()).toBe(false);
     expect(wrapper.get('[data-testid="e-stim-floating-overlay"]').classes()).toContain("e-stim-floating-overlay--collapsed");
     expect(normalizedText(wrapper)).toContain("点击展开 / 拖动");
+    expect(window.localStorage.getItem("dglabai.e_stim_overlay_collapsed")).toBe("true");
+  });
+
+  it("restores the floating e-stim viewer collapsed state from local storage", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    window.localStorage.setItem("dglabai.e_stim_overlay_collapsed", "true");
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const overlay = wrapper.get('[data-testid="e-stim-floating-overlay"]');
+    expect(overlay.classes()).toContain("e-stim-floating-overlay--collapsed");
+    expect(overlay.find("iframe").exists()).toBe(false);
+    expect(normalizedText(wrapper)).toContain("点击展开 / 拖动");
   });
 
   it("keeps the floating e-stim viewer expanded after a real drag", async () => {
