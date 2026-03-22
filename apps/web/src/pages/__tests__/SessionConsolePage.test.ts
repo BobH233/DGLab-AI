@@ -310,6 +310,135 @@ describe("SessionConsolePage", () => {
     expect(overlay.attributes("style")).toContain("top: 210px;");
   });
 
+  it("collapses the floating e-stim viewer when the drag bar is clicked without dragging", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const dragbar = wrapper.get(".e-stim-floating-overlay__dragbar");
+    await dragbar.trigger("pointerdown", {
+      button: 0,
+      pointerId: 7,
+      clientX: 220,
+      clientY: 160
+    });
+    await dragbar.trigger("pointerup", {
+      button: 0,
+      pointerId: 7,
+      clientX: 220,
+      clientY: 160
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="e-stim-floating-overlay"] iframe').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="e-stim-floating-overlay"]').classes()).toContain("e-stim-floating-overlay--collapsed");
+    expect(normalizedText(wrapper)).toContain("点击展开 / 拖动");
+  });
+
+  it("keeps the floating e-stim viewer expanded after a real drag", async () => {
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
+      bChannelEnabled: true,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession({
+      llmConfigSnapshot: {
+        provider: "openai-compatible",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        temperature: 0.9,
+        reasoningEffort: "medium",
+        maxTokens: 1200,
+        topP: 1,
+        requestTimeoutMs: 120000,
+        toolStates: {
+          ...defaultToolStates(),
+          control_e_stim_toy: true
+        }
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const overlay = wrapper.get('[data-testid="e-stim-floating-overlay"]');
+    const dragbar = wrapper.get(".e-stim-floating-overlay__dragbar");
+    await dragbar.trigger("pointerdown", {
+      button: 0,
+      pointerId: 9,
+      clientX: 220,
+      clientY: 160
+    });
+    await dragbar.trigger("pointermove", {
+      pointerId: 9,
+      clientX: 260,
+      clientY: 200
+    });
+    await dragbar.trigger("pointerup", {
+      button: 0,
+      pointerId: 9,
+      clientX: 260,
+      clientY: 200
+    });
+    await flushPromises();
+
+    expect(overlay.find("iframe").exists()).toBe(true);
+    expect(overlay.classes()).not.toContain("e-stim-floating-overlay--collapsed");
+    expect(overlay.attributes("style")).not.toContain("left: 24px;");
+    expect(overlay.attributes("style")).not.toContain("top: 132px;");
+  });
+
   it("keeps the floating e-stim viewer hidden when the current session has not enabled the tool", async () => {
     window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
       gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
@@ -354,13 +483,13 @@ describe("SessionConsolePage", () => {
     expect(wrapper.find('[data-testid="e-stim-floating-overlay"]').exists()).toBe(false);
   });
 
-  it("strips inline delay tags from the session summary header", async () => {
+  it("strips inline display tags from the session summary header", async () => {
     apiMocks.getSession.mockResolvedValue(createSession({
       storyState: {
         location: "study",
         phase: "teasing",
         tension: 6,
-        summary: "先别急。<delay>800</delay>抬头看我。",
+        summary: "先别急。<delay>800</delay><emo_inst>excited</emo_inst>抬头看我。",
         activeObjectives: []
       }
     }));

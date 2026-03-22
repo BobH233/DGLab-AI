@@ -202,24 +202,39 @@
       v-if="showElectroStimViewer"
       ref="electroStimOverlay"
       class="e-stim-floating-overlay"
+      :class="{ 'e-stim-floating-overlay--collapsed': isElectroStimViewerCollapsed }"
       :style="electroStimOverlayStyle"
       data-testid="e-stim-floating-overlay"
     >
       <header
         class="e-stim-floating-overlay__dragbar"
+        role="button"
+        :aria-expanded="!isElectroStimViewerCollapsed"
         @pointerdown="handleElectroStimDragStart"
         @pointermove="handleElectroStimDragMove"
         @pointerup="handleElectroStimDragEnd"
         @pointercancel="handleElectroStimDragEnd"
       >
-        <div class="e-stim-floating-overlay__dragtext">
-          <span class="eyebrow">Local Viewer</span>
-          <strong>情趣电击器面板</strong>
-          <span class="e-stim-floating-overlay__draghint">拖动这里移动浮窗</span>
+        <div
+          v-if="isElectroStimViewerCollapsed"
+          class="e-stim-floating-overlay__collapsed-pill"
+        >
+          <span class="e-stim-floating-overlay__mini-icon" aria-hidden="true">E</span>
+          <div class="e-stim-floating-overlay__dragtext">
+            <strong>电击器</strong>
+            <span class="e-stim-floating-overlay__draghint">点击展开 / 拖动</span>
+          </div>
         </div>
-        <small v-if="electroStimViewerConnection">{{ electroStimViewerConnection.clientId }}</small>
+        <template v-else>
+          <div class="e-stim-floating-overlay__dragtext">
+            <span class="eyebrow">Local Viewer</span>
+            <strong>情趣电击器面板</strong>
+            <span class="e-stim-floating-overlay__draghint">点击收起，拖动这里移动浮窗</span>
+          </div>
+          <small v-if="electroStimViewerConnection">{{ electroStimViewerConnection.clientId }}</small>
+        </template>
       </header>
-      <div class="e-stim-floating-overlay__frame">
+      <div v-if="!isElectroStimViewerCollapsed" class="e-stim-floating-overlay__frame">
         <iframe
           :src="electroStimViewerUrl"
           title="情趣电击器双通道监视窗"
@@ -266,8 +281,11 @@ type DeviceExecutionState = {
 
 type DragState = {
   pointerId: number;
+  startX: number;
+  startY: number;
   offsetX: number;
   offsetY: number;
+  moved: boolean;
 };
 
 type ElectroStimOverlayPosition = {
@@ -302,6 +320,7 @@ const electroStimOverlayPosition = ref<ElectroStimOverlayPosition>({
   y: 132
 });
 const electroStimDragState = ref<DragState | null>(null);
+const isElectroStimViewerCollapsed = ref(false);
 let stream: EventSource | null = null;
 let playbackTimer: number | null = null;
 let countdownTimer: number | null = null;
@@ -846,8 +865,11 @@ function handleElectroStimDragStart(event: PointerEvent) {
   }
   electroStimDragState.value = {
     pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
     offsetX: event.clientX - electroStimOverlayPosition.value.x,
-    offsetY: event.clientY - electroStimOverlayPosition.value.y
+    offsetY: event.clientY - electroStimOverlayPosition.value.y,
+    moved: false
   };
   const handle = event.currentTarget as HTMLElement | null;
   handle?.setPointerCapture?.(event.pointerId);
@@ -859,13 +881,21 @@ function handleElectroStimDragMove(event: PointerEvent) {
   if (!dragState || dragState.pointerId !== event.pointerId) {
     return;
   }
+  if (!dragState.moved) {
+    const deltaX = Math.abs(event.clientX - dragState.startX);
+    const deltaY = Math.abs(event.clientY - dragState.startY);
+    if (Math.max(deltaX, deltaY) < 6) {
+      return;
+    }
+    dragState.moved = true;
+  }
   electroStimOverlayPosition.value = clampElectroStimOverlayPosition(
     event.clientX - dragState.offsetX,
     event.clientY - dragState.offsetY
   );
 }
 
-function handleElectroStimDragEnd(event: PointerEvent) {
+async function handleElectroStimDragEnd(event: PointerEvent) {
   const dragState = electroStimDragState.value;
   if (!dragState || dragState.pointerId !== event.pointerId) {
     return;
@@ -875,6 +905,12 @@ function handleElectroStimDragEnd(event: PointerEvent) {
     handle.releasePointerCapture(event.pointerId);
   }
   electroStimDragState.value = null;
+  if (!dragState.moved) {
+    isElectroStimViewerCollapsed.value = !isElectroStimViewerCollapsed.value;
+    await nextTick();
+    syncElectroStimOverlayWithinViewport();
+    return;
+  }
   persistElectroStimOverlayPosition(electroStimOverlayPosition.value);
 }
 
@@ -998,10 +1034,19 @@ watch(() => route.params.id, () => {
 watch(showElectroStimViewer, async (value) => {
   if (!value) {
     electroStimDragState.value = null;
+    isElectroStimViewerCollapsed.value = false;
     return;
   }
   await nextTick();
   resetElectroStimOverlayPosition();
+});
+
+watch(isElectroStimViewerCollapsed, async () => {
+  if (!showElectroStimViewer.value) {
+    return;
+  }
+  await nextTick();
+  syncElectroStimOverlayWithinViewport();
 });
 
 watch(liveReasoningSummary, async (value) => {

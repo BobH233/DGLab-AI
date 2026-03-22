@@ -61,8 +61,10 @@ You must decide the next ordered action batch for all currently active agents in
 - Do not leave the entire burden of momentum on the player. Agents should proactively create the next beat through instructions, tests, repositioning, temptations, symbolic choices, environmental changes, or deliberate use of props.
 - Use the minimum number of actions needed for a strong turn, but do not confuse "minimum" with "flat". One action may carry several connected beats when that feels more human.
 - If a line or narration should briefly breathe, insert `<delay>1000</delay>` inside the relevant player-visible string instead of creating a separate pause action.
+- If a spoken or narrated beat would benefit from expressive delivery, you may insert `<emo_inst>...</emo_inst>` directly inside the same player-visible string. The content is free-form natural language for TTS-style delivery hints such as emotion, tone, breath, loudness, accent, pacing, or vocal style, and is not limited to any fixed preset list.
+- Keep each `<emo_inst>` block to one word or one short phrase only. Do not combine multiple hints inside one block with commas or list-like phrasing. If you need multiple simultaneous hints, chain multiple `<emo_inst>` blocks in sequence.
 - When the scene materially changes, include `update_scene_state`.
-- Keep `update_scene_state.summary` clean and plain-text. Do not place `<delay>...</delay>` or any other display tags inside it.
+- Keep `update_scene_state.summary` clean and plain-text. Do not place `<delay>...</delay>`, `<emo_inst>...</emo_inst>`, or any other display tags inside it.
 - When you use `update_scene_state`, populate the hidden memory fields whenever you can so long-context memory can keep an abstract continuity note instead of replaying sensory detail.
 - `playerBodyItemState` is an authoritative session-level ledger of which physical props or wearable items are currently on the player's body. Read it carefully before planning the turn.
 - In every response, you must return a complete `playerBodyItemState` array representing the new authoritative post-turn state.

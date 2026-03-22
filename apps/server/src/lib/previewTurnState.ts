@@ -4,6 +4,10 @@ export type InlineDelayPart =
     text: string;
   }
   | {
+    type: "emotion";
+    value: string;
+  }
+  | {
     type: "delay";
     delayMs: number;
   };
@@ -139,6 +143,91 @@ function readDelayToken(source: string, start: number): {
   };
 }
 
+function readEmotionToken(source: string, start: number): {
+  kind: "complete";
+  end: number;
+  value: string;
+} | {
+  kind: "pending";
+} | {
+  kind: "invalid";
+} {
+  const openTag = "<emo_inst>";
+  const closeTag = "</emo_inst>";
+  const tail = source.slice(start);
+  const lowerTail = tail.toLowerCase();
+
+  if (tail.length < openTag.length) {
+    return openTag.startsWith(lowerTail)
+      ? { kind: "pending" }
+      : { kind: "invalid" };
+  }
+
+  if (!lowerTail.startsWith(openTag)) {
+    return { kind: "invalid" };
+  }
+
+  const contentStart = start + openTag.length;
+  const lowerSource = source.toLowerCase();
+  const closeIndex = lowerSource.indexOf(closeTag, contentStart);
+  if (closeIndex === -1) {
+    return { kind: "pending" };
+  }
+
+  const value = source.slice(contentStart, closeIndex).trim();
+  if (!value) {
+    return { kind: "invalid" };
+  }
+
+  return {
+    kind: "complete",
+    end: closeIndex + closeTag.length,
+    value
+  };
+}
+
+function readInlineToken(source: string, start: number): {
+  kind: "complete";
+  end: number;
+  part: Exclude<InlineDelayPart, { type: "text" }>;
+} | {
+  kind: "pending";
+} | {
+  kind: "invalid";
+} {
+  const delayToken = readDelayToken(source, start);
+  if (delayToken.kind === "complete") {
+    return {
+      kind: "complete",
+      end: delayToken.end,
+      part: {
+        type: "delay",
+        delayMs: delayToken.delayMs
+      }
+    };
+  }
+  if (delayToken.kind === "pending") {
+    return delayToken;
+  }
+
+  const emotionToken = readEmotionToken(source, start);
+  if (emotionToken.kind === "complete") {
+    return {
+      kind: "complete",
+      end: emotionToken.end,
+      part: {
+        type: "emotion",
+        value: emotionToken.value
+      }
+    };
+  }
+  if (emotionToken.kind === "pending") {
+    return emotionToken;
+  }
+
+  return { kind: "invalid" };
+}
+
 function consumeStreamingBuffer(source: string, flushAll: boolean): StreamingInlineDelayState {
   const visibleSegments: InlineDelayPart[] = [];
   let textBuffer = "";
@@ -153,14 +242,11 @@ function consumeStreamingBuffer(source: string, flushAll: boolean): StreamingInl
     }
 
     textBuffer += source.slice(index, nextTagStart);
-    const token = readDelayToken(source, nextTagStart);
+    const token = readInlineToken(source, nextTagStart);
     if (token.kind === "complete") {
       pushTextSegment(visibleSegments, textBuffer);
       textBuffer = "";
-      visibleSegments.push({
-        type: "delay",
-        delayMs: token.delayMs
-      });
+      visibleSegments.push(token.part);
       index = token.end;
       continue;
     }

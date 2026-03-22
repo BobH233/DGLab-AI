@@ -242,13 +242,13 @@ describe("SessionPrintPage", () => {
     expect(wrapper.text()).not.toContain("推进失败");
   });
 
-  it("strips inline delay tags from the printed session summary", async () => {
+  it("strips inline display tags from the printed session summary", async () => {
     apiMocks.getSession.mockResolvedValue(createSession({
       storyState: {
         location: "studio",
         phase: "opening",
         tension: 4,
-        summary: "这里是当前场景摘要。<delay>800</delay>第二句也要正常显示。",
+        summary: "这里是当前场景摘要。<delay>800</delay><emo_inst>excited tone</emo_inst>第二句也要正常显示。",
         activeObjectives: []
       }
     }));

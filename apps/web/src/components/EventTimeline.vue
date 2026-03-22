@@ -69,7 +69,15 @@
             </div>
           </template>
           <template v-else>
-            <p v-if="entry.main" class="event-main">{{ entry.main }}</p>
+            <p v-if="hasInlineMain(entry.mainParts, entry.main)" class="event-main">
+              <template v-if="entry.mainParts?.length">
+                <template v-for="(part, index) in entry.mainParts" :key="`${entry.id}:main:${index}`">
+                  <span v-if="part.type === 'text'">{{ part.text }}</span>
+                  <span v-else class="event-inline-tag">{{ part.value }}</span>
+                </template>
+              </template>
+              <template v-else>{{ entry.main }}</template>
+            </p>
             <p v-else class="event-main event-main--placeholder">{{ entry.placeholder }}</p>
             <div v-if="entry.details?.length" class="event-detail-list">
               <p
@@ -148,7 +156,15 @@
           <span>#{{ item.seq }} · {{ item.timeLabel }}</span>
         </header>
         <div class="event-body">
-          <p v-if="item.main" class="event-main">{{ item.main }}</p>
+          <p v-if="hasInlineMain(item.mainParts, item.main)" class="event-main">
+            <template v-if="item.mainParts?.length">
+              <template v-for="(part, index) in item.mainParts" :key="`${item.id}:main:${index}`">
+                <span v-if="part.type === 'text'">{{ part.text }}</span>
+                <span v-else class="event-inline-tag">{{ part.value }}</span>
+              </template>
+            </template>
+            <template v-else>{{ item.main }}</template>
+          </p>
           <div v-if="item.diffLines?.length" class="event-diff" aria-label="状态差异">
             <p
               v-for="line in item.diffLines"
@@ -184,7 +200,16 @@ import {
   type DeviceExecutionState,
   type PresentationItem
 } from "../lib/timelinePresentation";
-import { formatInlineDelayMs, type InlineDelayPart } from "../lib/inlineDelays";
+import {
+  extractInlineDisplayParts,
+  formatInlineDelayMs,
+  hasInlineDisplayContent,
+  inlineDisplayPartsToText,
+  pushInlineDisplayPart,
+  trimInlineDisplayParts,
+  type InlineDelayPart,
+  type InlineDisplayPart
+} from "../lib/inlineDelays";
 import type { PreviewAction, PreviewTurnState } from "../lib/previewTurnState";
 
 type ActivePauseState = {
@@ -226,6 +251,7 @@ type PreviewEntry = {
   kicker: string;
   title: string;
   main?: string;
+  mainParts?: InlineDisplayPart[];
   details?: PreviewDetailRow[];
   meta?: string;
   status?: string;
@@ -314,6 +340,10 @@ function cardClass(item: PresentationItem): string[] {
   return buildCardClass(item.kind, item.variant, item.optionalTool);
 }
 
+function hasInlineMain(parts?: InlineDisplayPart[], text?: string): boolean {
+  return Boolean(parts?.length || text);
+}
+
 function buildCardClass(
   kind: PresentationItem["kind"],
   variant?: PresentationItem["variant"],
@@ -361,11 +391,12 @@ function previewSegmentsByPath(action: PreviewAction, path: string): InlineDelay
   return action.textByPath[path]?.visibleSegments ?? [];
 }
 
+function previewDisplayPartsByPath(action: PreviewAction, path: string): InlineDisplayPart[] {
+  return trimInlineDisplayParts(extractInlineDisplayParts(previewSegmentsByPath(action, path)));
+}
+
 function previewTextByPath(action: PreviewAction, path: string): string {
-  return previewSegmentsByPath(action, path)
-    .filter((segment): segment is Extract<InlineDelayPart, { type: "text" }> => segment.type === "text")
-    .map((segment) => segment.text)
-    .join("");
+  return inlineDisplayPartsToText(previewDisplayPartsByPath(action, path));
 }
 
 function previewCompletedValue(action: PreviewAction, path: string): unknown {
@@ -388,7 +419,8 @@ function previewText(action: PreviewAction): string {
 }
 
 function previewHasText(action: PreviewAction): boolean {
-  return previewText(action).trim().length > 0;
+  const primaryPath = previewPrimaryPath(action);
+  return primaryPath ? hasInlineDisplayContent(previewDisplayPartsByPath(action, primaryPath)) : false;
 }
 
 function previewPlaceholder(action: PreviewAction): string | null {
@@ -449,12 +481,12 @@ function buildPreviewEntries(action: PreviewAction): PreviewEntry[] {
   const entries: PreviewEntry[] = [];
   let textIndex = 0;
   let delayIndex = 0;
-  let textBuffer = "";
+  let displayPartsBuffer: InlineDisplayPart[] = [];
 
   const flushTextBuffer = () => {
-    const text = textBuffer.trim();
-    textBuffer = "";
-    if (!text) {
+    const mainParts = trimInlineDisplayParts(displayPartsBuffer);
+    displayPartsBuffer = [];
+    if (!hasInlineDisplayContent(mainParts)) {
       return;
     }
     entries.push({
@@ -462,7 +494,8 @@ function buildPreviewEntries(action: PreviewAction): PreviewEntry[] {
       kind: previewKind(action),
       kicker: previewKicker(action),
       title: previewTitle(action),
-      main: text,
+      main: inlineDisplayPartsToText(mainParts),
+      mainParts,
       meta: previewMeta(action),
       action
     });
@@ -476,7 +509,7 @@ function buildPreviewEntries(action: PreviewAction): PreviewEntry[] {
       delayIndex += 1;
       continue;
     }
-    textBuffer += segment.text;
+    pushInlineDisplayPart(displayPartsBuffer, segment);
   }
 
   flushTextBuffer();
@@ -596,7 +629,7 @@ function advancePreviewDelayProgress(key: string, action: PreviewAction): void {
     if (!segment) {
       break;
     }
-    if (segment.type === "text") {
+    if (segment.type !== "delay") {
       progress.revealedCount += 1;
       continue;
     }

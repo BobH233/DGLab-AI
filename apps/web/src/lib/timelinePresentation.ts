@@ -1,5 +1,15 @@
 import { isToolRequired, type AgentProfile, type SessionEvent } from "@dglab-ai/shared";
-import { formatInlineDelayMs, splitInlineDelays, stripInlineDelays } from "./inlineDelays";
+import {
+  extractInlineDisplayParts,
+  formatInlineDelayMs,
+  hasInlineDisplayContent,
+  inlineDisplayPartsToText,
+  pushInlineDisplayPart,
+  splitInlineDelays,
+  stripInlineDelays,
+  trimInlineDisplayParts,
+  type InlineDisplayPart
+} from "./inlineDelays";
 
 export type PresentationDetail = {
   label: string;
@@ -19,6 +29,7 @@ export type PresentationItem = {
   kicker: string;
   title: string;
   main: string;
+  mainParts?: InlineDisplayPart[];
   details?: PresentationDetail[];
   diffLines?: PresentationDiffLine[];
   meta?: string;
@@ -528,6 +539,18 @@ function joinText(parts: Array<string | undefined>): string | undefined {
   return normalized.length > 0 ? normalized.join("；") : undefined;
 }
 
+function withInlineDisplayParts(item: PresentationItem, parts: InlineDisplayPart[]): PresentationItem {
+  const normalized = trimInlineDisplayParts(parts);
+  if (normalized.length === 0) {
+    return item;
+  }
+  return {
+    ...item,
+    main: inlineDisplayPartsToText(normalized),
+    mainParts: normalized
+  };
+}
+
 function expandInlineDelayItems(
   event: SessionEvent,
   itemId: string,
@@ -539,7 +562,7 @@ function expandInlineDelayItems(
   }
 
   const rawValue = event.payload[field];
-  if (typeof rawValue !== "string" || !rawValue.includes("<delay>")) {
+  if (typeof rawValue !== "string" || !rawValue.includes("<")) {
     return [buildTextItem(event, itemId)];
   }
 
@@ -547,28 +570,35 @@ function expandInlineDelayItems(
   const items: PresentationItem[] = [];
   let textIndex = 0;
   let delayIndex = 0;
+  let displayPartsBuffer: InlineDisplayPart[] = [];
+
+  const flushDisplayParts = () => {
+    const normalizedParts = trimInlineDisplayParts(displayPartsBuffer);
+    displayPartsBuffer = [];
+    if (!hasInlineDisplayContent(normalizedParts)) {
+      return;
+    }
+    items.push(withInlineDisplayParts(buildTextItem({
+      ...event,
+      payload: {
+        ...event.payload,
+        [field]: inlineDisplayPartsToText(normalizedParts)
+      }
+    }, `${itemId}:text:${textIndex}`), normalizedParts));
+    textIndex += 1;
+  };
 
   for (const part of parts) {
     if (part.type === "delay") {
+      flushDisplayParts();
       items.push(buildInlineDelayPauseItem(event, `${itemId}:delay:${delayIndex}`, part.delayMs, delayIndex));
       delayIndex += 1;
       continue;
     }
-
-    const text = part.text.trim();
-    if (!text) {
-      continue;
-    }
-
-    items.push(buildTextItem({
-      ...event,
-      payload: {
-        ...event.payload,
-        [field]: text
-      }
-    }, `${itemId}:text:${textIndex}`));
-    textIndex += 1;
+    pushInlineDisplayPart(displayPartsBuffer, part);
   }
+
+  flushDisplayParts();
 
   return items.length > 0
     ? items

@@ -1,8 +1,15 @@
-export type InlineDelayPart =
+export type InlineDisplayPart =
   | {
     type: "text";
     text: string;
   }
+  | {
+    type: "emotion";
+    value: string;
+  };
+
+export type InlineDelayPart =
+  | InlineDisplayPart
   | {
     type: "delay";
     delayMs: number;
@@ -14,6 +21,7 @@ export type StreamingInlineDelayState = {
 };
 
 const INLINE_DELAY_PATTERN = /<delay>\s*(\d+)\s*<\/delay>/gi;
+const INLINE_EMOTION_PATTERN = /<emo_inst>([\s\S]*?)<\/emo_inst>/gi;
 const MIN_DELAY_MS = 200;
 const MAX_DELAY_MS = 60_000;
 
@@ -43,6 +51,20 @@ function pushTextSegment(parts: InlineDelayPart[], text: string): void {
   });
 }
 
+export function pushInlineDisplayPart(parts: InlineDisplayPart[], part: InlineDisplayPart): void {
+  if (part.type === "text") {
+    if (!part.text) {
+      return;
+    }
+    const last = parts[parts.length - 1];
+    if (last?.type === "text") {
+      last.text += part.text;
+      return;
+    }
+  }
+  parts.push(part);
+}
+
 function mergeInlineDelayParts(parts: InlineDelayPart[]): InlineDelayPart[] {
   const merged: InlineDelayPart[] = [];
   for (const part of parts) {
@@ -53,6 +75,10 @@ function mergeInlineDelayParts(parts: InlineDelayPart[]): InlineDelayPart[] {
     merged.push(part);
   }
   return merged;
+}
+
+function createEmotionPattern(): RegExp {
+  return new RegExp(INLINE_EMOTION_PATTERN.source, INLINE_EMOTION_PATTERN.flags);
 }
 
 function readDelayToken(source: string, start: number): {
@@ -115,6 +141,91 @@ function readDelayToken(source: string, start: number): {
   };
 }
 
+function readEmotionToken(source: string, start: number): {
+  kind: "complete";
+  end: number;
+  value: string;
+} | {
+  kind: "pending";
+} | {
+  kind: "invalid";
+} {
+  const openTag = "<emo_inst>";
+  const closeTag = "</emo_inst>";
+  const tail = source.slice(start);
+  const lowerTail = tail.toLowerCase();
+
+  if (tail.length < openTag.length) {
+    return openTag.startsWith(lowerTail)
+      ? { kind: "pending" }
+      : { kind: "invalid" };
+  }
+
+  if (!lowerTail.startsWith(openTag)) {
+    return { kind: "invalid" };
+  }
+
+  const contentStart = start + openTag.length;
+  const lowerSource = source.toLowerCase();
+  const closeIndex = lowerSource.indexOf(closeTag, contentStart);
+  if (closeIndex === -1) {
+    return { kind: "pending" };
+  }
+
+  const value = source.slice(contentStart, closeIndex).trim();
+  if (!value) {
+    return { kind: "invalid" };
+  }
+
+  return {
+    kind: "complete",
+    end: closeIndex + closeTag.length,
+    value
+  };
+}
+
+function readInlineToken(source: string, start: number): {
+  kind: "complete";
+  end: number;
+  part: Exclude<InlineDelayPart, { type: "text" }>;
+} | {
+  kind: "pending";
+} | {
+  kind: "invalid";
+} {
+  const delayToken = readDelayToken(source, start);
+  if (delayToken.kind === "complete") {
+    return {
+      kind: "complete",
+      end: delayToken.end,
+      part: {
+        type: "delay",
+        delayMs: delayToken.delayMs
+      }
+    };
+  }
+  if (delayToken.kind === "pending") {
+    return delayToken;
+  }
+
+  const emotionToken = readEmotionToken(source, start);
+  if (emotionToken.kind === "complete") {
+    return {
+      kind: "complete",
+      end: emotionToken.end,
+      part: {
+        type: "emotion",
+        value: emotionToken.value
+      }
+    };
+  }
+  if (emotionToken.kind === "pending") {
+    return emotionToken;
+  }
+
+  return { kind: "invalid" };
+}
+
 function consumeStreamingBuffer(source: string, flushAll: boolean): StreamingInlineDelayState {
   const visibleSegments: InlineDelayPart[] = [];
   let textBuffer = "";
@@ -129,14 +240,11 @@ function consumeStreamingBuffer(source: string, flushAll: boolean): StreamingInl
     }
 
     textBuffer += source.slice(index, nextTagStart);
-    const token = readDelayToken(source, nextTagStart);
+    const token = readInlineToken(source, nextTagStart);
     if (token.kind === "complete") {
       pushTextSegment(visibleSegments, textBuffer);
       textBuffer = "";
-      visibleSegments.push({
-        type: "delay",
-        delayMs: token.delayMs
-      });
+      visibleSegments.push(token.part);
       index = token.end;
       continue;
     }
@@ -158,49 +266,18 @@ function consumeStreamingBuffer(source: string, flushAll: boolean): StreamingInl
 }
 
 export function splitInlineDelays(source: string): InlineDelayPart[] {
-  const parts: InlineDelayPart[] = [];
-  const pattern = createDelayPattern();
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(source)) !== null) {
-    const text = source.slice(lastIndex, match.index);
-    if (text) {
-      parts.push({
-        type: "text",
-        text
-      });
-    }
-    parts.push({
-      type: "delay",
-      delayMs: clampDelayMs(Number(match[1]))
-    });
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < source.length) {
-    parts.push({
-      type: "text",
-      text: source.slice(lastIndex)
-    });
-  }
-
-  if (parts.length === 0) {
-    return [{
-      type: "text",
-      text: source
-    }];
-  }
-
-  return parts;
+  return consumeStreamingBuffer(source, true).visibleSegments;
 }
 
 export function stripInlineDelays(source: string): string {
-  return source.replace(createDelayPattern(), "");
+  return source
+    .replace(createDelayPattern(), "")
+    .replace(createEmotionPattern(), "")
+    .trim();
 }
 
 export function hasInlineDelays(source: string): boolean {
-  return createDelayPattern().test(source);
+  return createDelayPattern().test(source) || createEmotionPattern().test(source);
 }
 
 export function formatInlineDelayMs(ms: number): string {
@@ -216,6 +293,75 @@ export function createStreamingInlineDelayState(): StreamingInlineDelayState {
     visibleSegments: [],
     pendingBuffer: ""
   };
+}
+
+export function extractInlineDisplayParts(parts: InlineDelayPart[]): InlineDisplayPart[] {
+  const extracted: InlineDisplayPart[] = [];
+  for (const part of parts) {
+    if (part.type === "delay") {
+      continue;
+    }
+    pushInlineDisplayPart(extracted, part);
+  }
+  return extracted;
+}
+
+export function trimInlineDisplayParts(parts: InlineDisplayPart[]): InlineDisplayPart[] {
+  const trimmed = parts.map((part) => ({ ...part }));
+  while (trimmed[0]?.type === "text") {
+    const nextText = trimmed[0].text.replace(/^\s+/, "");
+    if (nextText) {
+      trimmed[0].text = nextText;
+      break;
+    }
+    trimmed.shift();
+  }
+  while (trimmed[trimmed.length - 1]?.type === "text") {
+    const lastIndex = trimmed.length - 1;
+    const lastPart = trimmed[lastIndex];
+    if (!lastPart || lastPart.type !== "text") {
+      break;
+    }
+    const nextText = lastPart.text.replace(/\s+$/, "");
+    if (nextText) {
+      trimmed[lastIndex] = {
+        ...lastPart,
+        text: nextText
+      };
+      break;
+    }
+    trimmed.pop();
+  }
+  return trimmed.reduce<InlineDisplayPart[]>((merged, part) => {
+    const previous = merged[merged.length - 1];
+    if (
+      part.type === "text"
+      && !part.text.trim()
+      && previous?.type === "emotion"
+    ) {
+      return merged;
+    }
+    if (
+      part.type === "emotion"
+      && previous?.type === "text"
+      && !previous.text.trim()
+    ) {
+      merged.pop();
+    }
+    pushInlineDisplayPart(merged, part);
+    return merged;
+  }, []);
+}
+
+export function inlineDisplayPartsToText(parts: InlineDisplayPart[]): string {
+  return parts
+    .filter((part): part is Extract<InlineDisplayPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+export function hasInlineDisplayContent(parts: InlineDisplayPart[]): boolean {
+  return parts.some((part) => part.type === "emotion" || part.text.trim().length > 0);
 }
 
 export function appendStreamingInlineDelay(

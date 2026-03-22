@@ -122,6 +122,58 @@ describe("EventTimeline preview", () => {
     expect(previewStatus.text()).toContain("gpt-5.4");
   });
 
+  it("renders inline emotion instructions in preview bubbles without breaking the sentence", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        previewTurn: {
+          turnId: "tick_emo",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "speak_to_player",
+              targetScope: "player",
+              textByPath: {
+                "args.message": {
+                  visibleSegments: [
+                    {
+                      type: "text",
+                      text: "你好呀"
+                    },
+                    {
+                      type: "emotion",
+                      value: "excited"
+                    },
+                    {
+                      type: "text",
+                      text: "终于又见到你了呢！"
+                    }
+                  ],
+                  pendingBuffer: ""
+                }
+              },
+              valueByPath: {},
+              completedFields: [],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewDialogue = wrapper.find('.timeline-item[data-preview="true"][data-kind="dialogue"] .event-card');
+    const inlineTag = wrapper.find(".event-inline-tag");
+
+    expect(previewDialogue.exists()).toBe(true);
+    expect(inlineTag.exists()).toBe(true);
+    expect(inlineTag.text()).toBe("excited");
+    expect(previewDialogue.text()).toContain("你好呀");
+    expect(previewDialogue.text()).toContain("终于又见到你了呢！");
+  });
+
   it("renders update_scene_state as a streaming scene-state card", () => {
     const wrapper = mount(EventTimeline, {
       props: {

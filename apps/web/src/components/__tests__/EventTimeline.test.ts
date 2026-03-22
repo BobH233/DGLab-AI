@@ -140,6 +140,37 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).not.toContain("<delay>");
   });
 
+  it("renders inline emotion instructions as small tags inside the same bubble", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 3,
+            type: "agent.speak_player",
+            source: "agent",
+            agentId: "director",
+            createdAt: new Date().toISOString(),
+            payload: {
+              speaker: "钟离",
+              message: "你好呀<emo_inst>excited</emo_inst>终于又见到你了呢！"
+            }
+          }
+        ]
+      }
+    });
+
+    const dialogueCard = wrapper.find('.timeline-item[data-kind="dialogue"] .event-card');
+    const inlineTag = wrapper.find(".event-inline-tag");
+
+    expect(dialogueCard.exists()).toBe(true);
+    expect(inlineTag.exists()).toBe(true);
+    expect(inlineTag.text()).toBe("excited");
+    expect(dialogueCard.text()).toContain("你好呀");
+    expect(dialogueCard.text()).toContain("终于又见到你了呢！");
+    expect(dialogueCard.text()).not.toContain("<emo_inst>");
+  });
+
   it("renders simulated device control events in the timeline", () => {
     const wrapper = mount(EventTimeline, {
       props: {

@@ -472,7 +472,7 @@ describe("createDefaultToolRegistry", () => {
     });
   });
 
-  it("strips inline delay tags from update_scene_state summary before storing it", async () => {
+  it("strips inline display tags from update_scene_state summary before storing it", async () => {
     const registry = createDefaultToolRegistry();
     const session = createSession();
     const events: Array<Record<string, unknown>> = [];
@@ -485,7 +485,7 @@ describe("createDefaultToolRegistry", () => {
         events.push(event as Record<string, unknown>);
       }
     }, "update_scene_state", {
-      summary: "你一句试探没能糊弄过去。<delay>800</delay>她们顺势把你逼得更近。"
+      summary: "你一句试探没能糊弄过去。<delay>800</delay><emo_inst>lower voice</emo_inst>她们顺势把你逼得更近。"
     });
 
     expect(session.storyState.summary).toBe("你一句试探没能糊弄过去。她们顺势把你逼得更近。");

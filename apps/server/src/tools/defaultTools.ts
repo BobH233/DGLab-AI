@@ -9,9 +9,13 @@ function clampTension(value: number): number {
 }
 
 const INLINE_DELAY_PATTERN = /<delay>\s*\d+\s*<\/delay>/gi;
+const INLINE_EMOTION_PATTERN = /<emo_inst>[\s\S]*?<\/emo_inst>/gi;
 
-function stripInlineDelayTags(value: string): string {
-  return value.replace(INLINE_DELAY_PATTERN, "").trim();
+function stripInlineDisplayTags(value: string): string {
+  return value
+    .replace(INLINE_DELAY_PATTERN, "")
+    .replace(INLINE_EMOTION_PATTERN, "")
+    .trim();
 }
 
 type VibeToyRuntimeState = {
@@ -557,7 +561,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
         const sanitizedArgs = args.summary
           ? {
               ...args,
-              summary: stripInlineDelayTags(args.summary)
+              summary: stripInlineDisplayTags(args.summary)
             }
           : args;
         context.session.storyState = {
@@ -590,18 +594,22 @@ export function createDefaultToolRegistry(): ToolRegistry {
         example: "{\"tool\":\"end_story\",\"args\":{\"summary\":\"你终于顺着这场暧昧的牵引，把最后一点迟疑也慢慢放了下来。\",\"resolution\":\"夜色和呼吸一起放缓，故事停在情绪仍未散尽的余韵里。\"}}"
       },
       async execute(context, args: { summary: string; resolution: string }) {
+        const sanitizedArgs = {
+          summary: stripInlineDisplayTags(args.summary),
+          resolution: stripInlineDisplayTags(args.resolution)
+        };
         context.session.status = "ended";
         context.session.storyState = {
           ...context.session.storyState,
           phase: "ending",
-          summary: args.summary
+          summary: sanitizedArgs.summary
         };
         context.addEvent({
           type: "system.story_ended",
           source: "system",
           agentId: context.agent.id,
           createdAt: context.now,
-          payload: args
+          payload: sanitizedArgs
         });
         return {
           stopProcessing: true

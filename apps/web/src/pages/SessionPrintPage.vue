@@ -145,7 +145,15 @@
                 <span>{{ formatDateTime(item.createdAt) }}</span>
               </div>
             </header>
-            <p v-if="item.main" class="print-timeline-item__main">{{ item.main }}</p>
+            <p v-if="item.mainParts?.length || item.main" class="print-timeline-item__main">
+              <template v-if="item.mainParts?.length">
+                <template v-for="(part, index) in item.mainParts" :key="`${item.id}:print-main:${index}`">
+                  <span v-if="part.type === 'text'">{{ part.text }}</span>
+                  <span v-else class="print-inline-tag">{{ part.value }}</span>
+                </template>
+              </template>
+              <template v-else>{{ item.main }}</template>
+            </p>
             <div v-if="item.diffLines?.length" class="print-timeline-item__diff">
               <p v-for="line in item.diffLines" :key="`${item.id}-${line.prefix}-${line.value}`" :data-prefix="line.prefix">
                 <strong>{{ line.prefix }}</strong> {{ line.value }}

@@ -46,6 +46,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Current player body item state");
     expect(prompt).toContain("Current live tool runtime state for this turn only");
     expect(prompt).toContain("ephemeral turn-only context");
+    expect(prompt).toContain("<emo_inst>...</emo_inst>");
+    expect(prompt).toContain("Keep each `<emo_inst>` block to one word or one short phrase only");
     expect(prompt).toContain("must return a complete `playerBodyItemState` array");
     expect(prompt).toContain("trust recent raw turns");
     expect(prompt).toContain("authoritative ledger");
@@ -65,6 +67,12 @@ describe("prompt templates", () => {
     expect(prompt).toContain("Tool calls are presentation containers, not a restriction on fictional scene content");
     expect(prompt).toContain("Do not stall waiting for the player to invent the next move");
     expect(prompt).toContain("<delay>1000</delay>");
+    expect(prompt).toContain("<emo_inst>...</emo_inst>");
+    expect(prompt).toContain("free-form natural language");
+    expect(prompt).toContain("absolutely not limited to these examples");
+    expect(prompt).toContain("Do not pack multiple hints into one `<emo_inst>` block");
+    expect(prompt).toContain("chain multiple `<emo_inst>` blocks in sequence");
+    expect(prompt).toContain("<emo_inst>professional broadcast tone</emo_inst> <emo_inst>low volume</emo_inst>");
     expect(prompt).toContain("`update_scene_state.summary` must stay plain readable narration");
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
     expect(prompt).toContain("do not skip from intent to completion");
