@@ -5,9 +5,11 @@ import cors from "cors";
 import express from "express";
 import { OpenAICompatibleProvider } from "./infra/OpenAICompatibleProvider.js";
 import { MongoSessionStore } from "./infra/mongo.js";
+import { apiAuthMiddleware } from "./lib/auth.js";
 import { FilePromptTemplateService } from "./infra/PromptTemplateService.js";
 import { WebChannelAdapter } from "./infra/WebChannelAdapter.js";
 import { isHttpError } from "./lib/errors.js";
+import { createAuthRoutes } from "./routes/authRoutes.js";
 import { createConfigRoutes } from "./routes/configRoutes.js";
 import { createLlmCallRoutes } from "./routes/llmCallRoutes.js";
 import { createSessionRoutes } from "./routes/sessionRoutes.js";
@@ -55,6 +57,8 @@ export async function createServerApp() {
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
 
+  app.use("/api/auth", createAuthRoutes());
+  app.use("/api", apiAuthMiddleware);
   app.get("/api/health", (_request, response) => {
     response.json({ ok: true });
   });

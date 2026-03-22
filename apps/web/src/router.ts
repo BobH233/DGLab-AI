@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { getSavedAuthPassword } from "./auth";
 import HomePage from "./pages/HomePage.vue";
 import DraftReviewPage from "./pages/DraftReviewPage.vue";
 import SessionConsolePage from "./pages/SessionConsolePage.vue";
@@ -7,10 +8,19 @@ import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 import ElectroStimSettingsPage from "./pages/ElectroStimSettingsPage.vue";
 import LlmCallHistoryPage from "./pages/LlmCallHistoryPage.vue";
+import LoginPage from "./pages/LoginPage.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: "/login",
+      component: LoginPage,
+      meta: {
+        public: true,
+        standalone: true
+      }
+    },
     {
       path: "/",
       component: HomePage
@@ -47,4 +57,21 @@ export const router = createRouter({
       component: ElectroStimSettingsPage
     }
   ]
+});
+
+router.beforeEach((to) => {
+  if (to.meta.public === true) {
+    return true;
+  }
+
+  if (getSavedAuthPassword()) {
+    return true;
+  }
+
+  return {
+    path: "/login",
+    query: {
+      redirect: to.fullPath
+    }
+  };
 });

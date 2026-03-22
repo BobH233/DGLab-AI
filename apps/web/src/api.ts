@@ -9,25 +9,52 @@ import type {
   ToolContext,
   UpdateDraftRequest
 } from "@dglab-ai/shared";
+import { getSavedAuthPassword, notifyAuthRequired } from "./auth";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+type ApiRequestInit = RequestInit & {
+  authPassword?: string;
+  skipAuthRedirect?: boolean;
+};
+
+async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
+  const {
+    authPassword: explicitAuthPassword,
+    skipAuthRedirect,
+    headers: initHeaders,
+    ...requestInit
+  } = init ?? {};
+
+  const headers = new Headers(initHeaders);
+  headers.set("Content-Type", "application/json");
+  const authPassword = explicitAuthPassword ?? getSavedAuthPassword();
+  if (authPassword) {
+    headers.set("x-auth-password", authPassword);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    ...init
+    ...requestInit,
+    headers
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ message: response.statusText }));
+    if (response.status === 401 && !skipAuthRedirect) {
+      notifyAuthRequired();
+    }
     throw new Error(payload.message ?? response.statusText);
   }
   return response.json() as Promise<T>;
 }
 
 export const api = {
+  login(password: string): Promise<{ ok: true }> {
+    return request<{ ok: true }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+      skipAuthRedirect: true
+    });
+  },
   getAppConfig(): Promise<AppConfig> {
     return request<AppConfig>("/config");
   },
@@ -113,6 +140,10 @@ export const api = {
     return request<MemoryDebugResponse>(`/sessions/${id}/memory-debug`);
   },
   streamUrl(id: string): string {
-    return `${API_BASE}/sessions/${id}/stream`;
+    const authPassword = getSavedAuthPassword();
+    if (!authPassword) {
+      return `${API_BASE}/sessions/${id}/stream`;
+    }
+    return `${API_BASE}/sessions/${id}/stream?authPassword=${encodeURIComponent(authPassword)}`;
   }
 };

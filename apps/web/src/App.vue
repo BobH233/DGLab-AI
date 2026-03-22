@@ -36,6 +36,9 @@
           <RouterLink to="/settings">配置</RouterLink>
           <RouterLink to="/devices/e-stim">郊狼配置</RouterLink>
         </nav>
+        <button v-if="authStore.isAuthenticated.value" class="button ghost" @click="handleLogout">
+          退出登录
+        </button>
       </div>
     </header>
     <main class="page-shell">
@@ -45,12 +48,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "./auth";
 import { useConfigStore } from "./configStore";
 
 const configStore = useConfigStore();
+const authStore = useAuthStore();
 const route = useRoute();
+const router = useRouter();
 const switching = ref(false);
 const appConfig = computed(() => configStore.appConfig.value);
 const isStandaloneRoute = computed(() => route.meta.standalone === true);
@@ -68,7 +74,23 @@ async function handleBackendChange(event: Event) {
   }
 }
 
-onMounted(() => {
+async function handleLogout() {
+  authStore.clearAuthPassword();
+  await router.push("/login");
+}
+
+function loadConfigIfNeeded() {
+  if (!authStore.isAuthenticated.value || route.meta.public === true || configStore.appConfig.value) {
+    return;
+  }
   void configStore.ensureConfigLoaded();
+}
+
+watch(() => [route.fullPath, authStore.isAuthenticated.value], () => {
+  loadConfigIfNeeded();
+});
+
+onMounted(() => {
+  loadConfigIfNeeded();
 });
 </script>
