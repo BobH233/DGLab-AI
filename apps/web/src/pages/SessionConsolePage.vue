@@ -111,9 +111,15 @@
               <h3>输入区</h3>
             </div>
           </div>
-          <textarea v-model="message" class="field textarea composer" rows="7" placeholder="输入你希望传达给场景中角色的话。" />
+          <textarea
+            v-model="message"
+            class="field textarea composer"
+            rows="7"
+            placeholder="输入你希望传达给场景中角色的话。"
+            @keydown="handleComposerKeydown"
+          />
           <div class="actions actions--spread">
-            <span class="soft-note">消息会发送给当前会话中的全部智能体</span>
+            <span class="soft-note">Enter 发送，Shift + Enter 换行。消息会发送给当前会话中的全部智能体</span>
             <button class="button primary" :disabled="sending || !message.trim()" @click="sendMessage">
               {{ sending ? "发送中..." : "发送消息" }}
             </button>
@@ -1011,6 +1017,20 @@ async function sendMessage() {
   } finally {
     sending.value = false;
   }
+}
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+  if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) {
+    return;
+  }
+  event.preventDefault();
+  if (sending.value || !message.value.trim()) {
+    return;
+  }
+  void sendMessage();
 }
 
 async function retryTick() {

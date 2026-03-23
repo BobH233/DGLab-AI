@@ -212,6 +212,72 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
   });
 
+  it("submits the composer when Enter is pressed", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+    apiMocks.postMessage.mockResolvedValue(undefined);
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea.composer");
+    await textarea.setValue("  现在过来。  ");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true
+    });
+    textarea.element.dispatchEvent(event);
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(apiMocks.postMessage).toHaveBeenCalledTimes(1);
+    expect(apiMocks.postMessage.mock.calls[0]?.[0]).toBe("session_1");
+    expect(apiMocks.postMessage.mock.calls[0]?.[1]).toBe("现在过来。");
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("keeps Shift+Enter available for multiline input", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea.composer");
+    await textarea.setValue("第一行");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    textarea.element.dispatchEvent(event);
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(apiMocks.postMessage).not.toHaveBeenCalled();
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("第一行");
+  });
+
   it("renders the floating e-stim viewer when the current session enables the tool", async () => {
     window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
       gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",
