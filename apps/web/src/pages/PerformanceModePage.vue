@@ -127,10 +127,47 @@
           <p class="soft-note">
             这个间隔会加入虚拟总时长，用于模拟上一张卡片结束后到下一张开始前的停顿。
           </p>
+          <label class="toggle-row performance-toggle-row">
+            <div>
+              <strong>朗读舞台动作</strong>
+              <p>关闭后会跳过所有“舞台动作”卡片，并立即重算总时长、当前时间和进度条。</p>
+            </div>
+            <input
+              v-model="includeStageDirections"
+              data-testid="performance-stage-direction-toggle"
+              type="checkbox"
+            />
+          </label>
+          <label class="toggle-row performance-toggle-row">
+            <div>
+              <strong>朗读剧情变化</strong>
+              <p>关闭后会跳过所有“剧情变化”卡片，全文播放会按新的时间轴继续。</p>
+            </div>
+            <input
+              v-model="includeStoryEffects"
+              data-testid="performance-story-effect-toggle"
+              type="checkbox"
+            />
+          </label>
+          <div
+            class="inline-alert"
+            :class="selectionReadyForPlayback ? 'inline-alert--success' : 'inline-alert--info'"
+          >
+            <strong>{{ selectionPlaybackTitle }}</strong>
+            <p>{{ selectionPlaybackMessage }}</p>
+          </div>
           <div class="performance-metric-grid performance-metric-grid--compact">
             <article class="performance-metric-card">
+              <span>参与播放</span>
+              <strong>{{ selectedReadableCount }}</strong>
+            </article>
+            <article class="performance-metric-card">
+              <span>已跳过</span>
+              <strong>{{ skippedReadableCount }}</strong>
+            </article>
+            <article class="performance-metric-card">
               <span>总时长</span>
-              <strong>{{ totalDurationLabel }}</strong>
+              <strong data-testid="performance-total-duration">{{ totalDurationLabel }}</strong>
             </article>
             <article class="performance-metric-card">
               <span>当前</span>
@@ -155,6 +192,7 @@
             :ref="(element) => registerCardElement(item.readable.id, element)"
             class="performance-card"
             :data-active="activeReadableId === item.readable.id ? 'true' : undefined"
+            :data-included="isReadableIncluded(item) ? 'true' : 'false'"
             :data-ready="item.readyForPlayback ? 'true' : undefined"
             @click="jumpToReadable(item.readable.id)"
             @dblclick="previewReadable(item.readable.id)"
@@ -186,6 +224,7 @@
             </p>
             <footer class="performance-card__foot">
               <span>{{ item.readyForPlayback ? formatDuration(item.durationMs ?? 0) : "未就绪" }}</span>
+              <span v-if="!isReadableIncluded(item)" class="soft-pill">已跳过朗读</span>
               <span v-if="item.readable.seq">#{{ item.readable.seq }}</span>
             </footer>
           </article>
@@ -196,12 +235,13 @@
       </section>
     </div>
 
-    <section class="panel performance-player" :data-disabled="!ttsPerformance.readyForFullPlayback ? 'true' : undefined">
+    <section class="panel performance-player" :data-disabled="!selectionReadyForPlayback ? 'true' : undefined">
       <div class="performance-player__row">
         <button
+          data-testid="performance-play-toggle"
           class="button primary"
           type="button"
-          :disabled="!ttsPerformance.readyForFullPlayback || playbackBusy"
+          :disabled="!selectionReadyForPlayback || playbackBusy"
           @click="togglePlayback"
         >
           {{ isPlaying ? "暂停" : "播放" }}
@@ -229,7 +269,8 @@
       />
       <div class="performance-player__status">
         <span v-if="playbackError" class="error-text">{{ playbackError }}</span>
-        <span v-else-if="!ttsPerformance.readyForFullPlayback" class="soft-note">先完成全文 TTS 缓存，播放条才会启用。</span>
+        <span v-else-if="selectedReadableCount === 0" class="soft-note">当前筛选下没有可播放卡片，请至少保留一种朗读类型。</span>
+        <span v-else-if="!selectionReadyForPlayback" class="soft-note">当前筛选下仍有卡片未缓存，关闭不需要的类型后会立刻按新时间轴重新计算。</span>
         <span v-else-if="playbackBusy" class="soft-note">正在准备当前卡片的音频…</span>
         <span v-else class="soft-note">拖动进度条时，时间线会自动滚动到对应卡片；双击已缓存卡片可单独试听。</span>
       </div>
@@ -252,10 +293,21 @@ import { extractInlineDisplayParts, splitInlineDelays, trimInlineDisplayParts, t
 
 type TrackItem = SessionTtsReadableState & {
   index: number;
+  sourceIndex: number;
   startMs: number;
   audioEndMs: number;
   endMs: number;
 };
+
+type PlaybackSettings = {
+  includeStageDirections: boolean;
+  includeStoryEffects: boolean;
+  gapMs: number;
+};
+
+type TrackSlot =
+  | { type: "segment"; item: TrackItem; offsetMs: number }
+  | { type: "gap"; item: TrackItem; offsetMs: number };
 
 const route = useRoute();
 const session = ref<Session | null>(null);
@@ -263,6 +315,8 @@ const ttsPerformance = ref<SessionTtsPerformanceState | null>(null);
 const error = ref("");
 const playbackError = ref("");
 const gapMs = ref(500);
+const includeStageDirections = ref(true);
+const includeStoryEffects = ref(true);
 const playheadMs = ref(0);
 const seekValue = ref(0);
 const isPlaying = ref(false);
@@ -287,27 +341,34 @@ const audioUrlCache = new Map<string, string>();
 const cardElements = new Map<string, HTMLElement>();
 
 const trackItems = computed<TrackItem[]>(() => {
-  const items = ttsPerformance.value?.items ?? [];
-  let cursor = 0;
-  return items.map((item, index) => {
-    const durationMs = item.durationMs ?? 0;
-    const startMs = cursor;
-    const audioEndMs = startMs + durationMs;
-    const endMs = audioEndMs + (index === items.length - 1 ? 0 : gapMs.value);
-    cursor = endMs;
-    return {
-      ...item,
-      index,
-      startMs,
-      audioEndMs,
-      endMs
-    };
-  });
+  return buildTrackItems(ttsPerformance.value?.items ?? [], currentPlaybackSettings());
 });
 
 const totalDurationMs = computed(() => trackItems.value.at(-1)?.endMs ?? 0);
 const totalDurationLabel = computed(() => formatDuration(totalDurationMs.value));
 const playheadLabel = computed(() => formatDuration(playheadMs.value));
+const selectedReadableCount = computed(() => trackItems.value.length);
+const skippedReadableCount = computed(() => Math.max(0, (ttsPerformance.value?.items.length ?? 0) - selectedReadableCount.value));
+const selectedReadyReadableCount = computed(() => trackItems.value.filter((item) => item.readyForPlayback).length);
+const selectionReadyForPlayback = computed(() => (
+  selectedReadableCount.value > 0
+  && selectedReadyReadableCount.value === selectedReadableCount.value
+));
+const selectionPlaybackTitle = computed(() => {
+  if (selectedReadableCount.value === 0) {
+    return "当前没有纳入播放的卡片";
+  }
+  return selectionReadyForPlayback.value ? "当前筛选可以开始播放" : "当前筛选还不能开始播放";
+});
+const selectionPlaybackMessage = computed(() => {
+  if (selectedReadableCount.value === 0) {
+    return "请至少保留一种朗读类型，时间轴和总时长才会重新建立。";
+  }
+  if (selectionReadyForPlayback.value) {
+    return `当前会按所选参数播放 ${selectedReadableCount.value} 张卡片，进度条和总时长都会同步更新。`;
+  }
+  return `当前已纳入 ${selectedReadableCount.value} 张卡片，其中 ${selectedReadyReadableCount.value} 张已缓存完成。`;
+});
 const overallProgressPercent = computed(() => {
   if (!ttsPerformance.value?.totalReadableCount) {
     return 0;
@@ -400,10 +461,23 @@ const activeTrackItem = computed(() => (
     ? trackItems.value.find((item) => item.readable.id === activeReadableId.value) ?? null
     : null
 ));
-const activeReadableTitle = computed(() => activeTrackItem.value?.readable.title ?? "尚未开始");
-const activeReadableSpeaker = computed(() => activeTrackItem.value?.readable.displaySpeaker ?? "准备就绪后可开始播放");
+const activeReadableTitle = computed(() => {
+  if (activeTrackItem.value) {
+    return activeTrackItem.value.readable.title;
+  }
+  return selectedReadableCount.value === 0 ? "当前筛选没有卡片" : "尚未开始";
+});
+const activeReadableSpeaker = computed(() => {
+  if (activeTrackItem.value) {
+    return activeTrackItem.value.readable.displaySpeaker;
+  }
+  if (selectedReadableCount.value === 0) {
+    return "请在演出参数里保留至少一种朗读内容";
+  }
+  return selectionReadyForPlayback.value ? "准备就绪后可开始播放" : "当前筛选下仍有卡片未缓存";
+});
 const canUsePlaybackSlider = computed(() => (
-  Boolean(ttsPerformance.value?.readyForFullPlayback)
+  selectionReadyForPlayback.value
   || playbackMode.value === "preview"
   || isPlaying.value
   || playbackBusy.value
@@ -438,18 +512,35 @@ watch(activeReadableId, async (nextId) => {
   }
 });
 
-watch(gapMs, async () => {
-  if (!ttsPerformance.value?.readyForFullPlayback) {
-    return;
-  }
-  playheadMs.value = clampPlayhead(playheadMs.value);
-  if (isPlaying.value) {
-    const shouldContinue = isPlaying.value;
-    pausePlayback();
-    if (shouldContinue) {
-      await resumeFromPlayhead();
-    }
-  }
+watch([includeStageDirections, includeStoryEffects], async ([nextIncludeStageDirections, nextIncludeStoryEffects], [previousIncludeStageDirections, previousIncludeStoryEffects]) => {
+  const items = ttsPerformance.value?.items ?? [];
+  await handleTrackConfigurationChange(
+    buildTrackItems(items, {
+      includeStageDirections: previousIncludeStageDirections,
+      includeStoryEffects: previousIncludeStoryEffects,
+      gapMs: gapMs.value
+    }),
+    buildTrackItems(items, {
+      includeStageDirections: nextIncludeStageDirections,
+      includeStoryEffects: nextIncludeStoryEffects,
+      gapMs: gapMs.value
+    })
+  );
+});
+
+watch(gapMs, async (nextGapMs, previousGapMs) => {
+  const items = ttsPerformance.value?.items ?? [];
+  const settings = currentPlaybackSettings();
+  await handleTrackConfigurationChange(
+    buildTrackItems(items, {
+      ...settings,
+      gapMs: previousGapMs
+    }),
+    buildTrackItems(items, {
+      ...settings,
+      gapMs: nextGapMs
+    })
+  );
 });
 
 onMounted(() => {
@@ -562,7 +653,7 @@ async function cancelBatch() {
 }
 
 async function togglePlayback() {
-  if (!ttsPerformance.value?.readyForFullPlayback) {
+  if (!selectionReadyForPlayback.value) {
     return;
   }
   if (isPlaying.value) {
@@ -590,7 +681,7 @@ function pausePlayback() {
 }
 
 async function resumeFromPlayhead() {
-  if (!ttsPerformance.value?.readyForFullPlayback || trackItems.value.length === 0) {
+  if (!selectionReadyForPlayback.value || trackItems.value.length === 0) {
     return;
   }
 
@@ -761,6 +852,18 @@ function clearGapTimer() {
   }
 }
 
+async function handleTrackConfigurationChange(previousTrackItems: TrackItem[], nextTrackItems: TrackItem[]) {
+  const shouldResume = isPlaying.value && playbackMode.value === "full";
+  if (isPlaying.value || playbackBusy.value) {
+    pausePlayback();
+  }
+  playheadMs.value = clampPlayheadToTrack(remapPlayheadBetweenTracks(previousTrackItems, nextTrackItems, playheadMs.value), nextTrackItems);
+  seekValue.value = playheadMs.value;
+  if (shouldResume && selectionReadyForPlayback.value) {
+    await resumeFromPlayhead();
+  }
+}
+
 async function getAudioUrl(readableId: string): Promise<string> {
   const cached = audioUrlCache.get(readableId);
   if (cached) {
@@ -817,38 +920,12 @@ function loadAudioIntoElement(audio: HTMLAudioElement, url: string, offsetSecond
   });
 }
 
-function locateTrackSlot(playhead: number):
-  | { type: "segment"; item: TrackItem; offsetMs: number }
-  | { type: "gap"; item: TrackItem; offsetMs: number }
-  | null {
-  const clamped = clampPlayhead(playhead);
-  for (const item of trackItems.value) {
-    if (clamped <= item.audioEndMs) {
-      return {
-        type: "segment",
-        item,
-        offsetMs: Math.max(0, clamped - item.startMs)
-      };
-    }
-    if (clamped < item.endMs) {
-      return {
-        type: "gap",
-        item,
-        offsetMs: clamped - item.audioEndMs
-      };
-    }
-  }
-  return trackItems.value.at(-1)
-    ? {
-      type: "segment",
-      item: trackItems.value.at(-1)!,
-      offsetMs: Math.max(0, (trackItems.value.at(-1)?.durationMs ?? 0) - 1)
-    }
-    : null;
+function locateTrackSlot(playhead: number): TrackSlot | null {
+  return locateTrackSlotIn(trackItems.value, playhead);
 }
 
 function clampPlayhead(value: number): number {
-  return Math.min(Math.max(0, value), totalDurationMs.value);
+  return clampPlayheadToTrack(value, trackItems.value);
 }
 
 function beginScrub() {
@@ -879,8 +956,10 @@ async function finishScrub() {
 function jumpToReadable(readableId: string) {
   const item = trackItems.value.find((entry) => entry.readable.id === readableId);
   if (!item) {
+    playbackError.value = "当前演出参数已跳过这张卡片，开启对应朗读后才能跳转。";
     return;
   }
+  playbackError.value = "";
   pausePlayback();
   playheadMs.value = item.startMs;
 }
@@ -888,6 +967,7 @@ function jumpToReadable(readableId: string) {
 async function previewReadable(readableId: string) {
   const item = trackItems.value.find((entry) => entry.readable.id === readableId);
   if (!item) {
+    playbackError.value = "当前演出参数已跳过这张卡片，开启对应朗读后才能试听。";
     return;
   }
   if (!item.readyForPlayback) {
@@ -939,6 +1019,18 @@ function displayParts(item: SessionTtsReadableState): InlineDisplayPart[] {
   return trimInlineDisplayParts(extractInlineDisplayParts(splitInlineDelays(item.readable.text)));
 }
 
+function currentPlaybackSettings(): PlaybackSettings {
+  return {
+    includeStageDirections: includeStageDirections.value,
+    includeStoryEffects: includeStoryEffects.value,
+    gapMs: gapMs.value
+  };
+}
+
+function isReadableIncluded(item: SessionTtsReadableState): boolean {
+  return shouldIncludeReadable(item, currentPlaybackSettings());
+}
+
 function showNarratorLabel(item: SessionTtsReadableState): boolean {
   if (item.readable.ttsSpeaker === item.readable.displaySpeaker) {
     return false;
@@ -961,5 +1053,100 @@ function formatDuration(value: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function shouldIncludeReadable(item: SessionTtsReadableState, settings: PlaybackSettings): boolean {
+  if (item.readable.kind === "stage_direction") {
+    return settings.includeStageDirections;
+  }
+  if (item.readable.kind === "story_effect") {
+    return settings.includeStoryEffects;
+  }
+  return true;
+}
+
+function buildTrackItems(items: SessionTtsReadableState[], settings: PlaybackSettings): TrackItem[] {
+  let cursor = 0;
+  return items
+    .map((item, sourceIndex) => ({
+      item,
+      sourceIndex
+    }))
+    .filter(({ item }) => shouldIncludeReadable(item, settings))
+    .map(({ item, sourceIndex }, index, includedItems) => {
+      const durationMs = item.durationMs ?? 0;
+      const startMs = cursor;
+      const audioEndMs = startMs + durationMs;
+      const endMs = audioEndMs + (index === includedItems.length - 1 ? 0 : settings.gapMs);
+      cursor = endMs;
+      return {
+        ...item,
+        index,
+        sourceIndex,
+        startMs,
+        audioEndMs,
+        endMs
+      };
+    });
+}
+
+function totalDurationForTrack(items: TrackItem[]): number {
+  return items.at(-1)?.endMs ?? 0;
+}
+
+function clampPlayheadToTrack(value: number, items: TrackItem[]): number {
+  return Math.min(Math.max(0, value), totalDurationForTrack(items));
+}
+
+function locateTrackSlotIn(items: TrackItem[], playhead: number): TrackSlot | null {
+  const clamped = clampPlayheadToTrack(playhead, items);
+  for (const item of items) {
+    if (clamped <= item.audioEndMs) {
+      return {
+        type: "segment",
+        item,
+        offsetMs: Math.max(0, clamped - item.startMs)
+      };
+    }
+    if (clamped < item.endMs) {
+      return {
+        type: "gap",
+        item,
+        offsetMs: clamped - item.audioEndMs
+      };
+    }
+  }
+  return items.at(-1)
+    ? {
+      type: "segment",
+      item: items.at(-1)!,
+      offsetMs: Math.max(0, (items.at(-1)?.durationMs ?? 0) - 1)
+    }
+    : null;
+}
+
+function remapPlayheadBetweenTracks(previousTrackItems: TrackItem[], nextTrackItems: TrackItem[], currentPlayhead: number): number {
+  if (nextTrackItems.length === 0) {
+    return 0;
+  }
+  if (previousTrackItems.length === 0) {
+    return clampPlayheadToTrack(currentPlayhead, nextTrackItems);
+  }
+
+  const slot = locateTrackSlotIn(previousTrackItems, currentPlayhead);
+  if (!slot) {
+    return 0;
+  }
+
+  const matchingItem = nextTrackItems.find((item) => item.readable.id === slot.item.readable.id);
+  if (slot.type === "segment" && matchingItem) {
+    return clampPlayheadToTrack(matchingItem.startMs + Math.min(slot.offsetMs, matchingItem.durationMs ?? 0), nextTrackItems);
+  }
+  if (slot.type === "gap" && matchingItem && matchingItem.index < nextTrackItems.length - 1) {
+    return clampPlayheadToTrack(matchingItem.audioEndMs + Math.min(slot.offsetMs, gapMs.value), nextTrackItems);
+  }
+
+  const nextItem = nextTrackItems.find((item) => item.sourceIndex > slot.item.sourceIndex);
+  return nextItem ? nextItem.startMs : totalDurationForTrack(nextTrackItems);
 }
 </script>

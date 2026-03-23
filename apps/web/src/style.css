@@ -2349,6 +2349,10 @@ a {
   font-size: 1rem;
 }
 
+.performance-toggle-row strong {
+  display: block;
+}
+
 .performance-metric-card {
   display: grid;
   gap: 8px;
@@ -2424,6 +2428,11 @@ a {
 
 .performance-card[data-ready="true"] {
   box-shadow: 0 12px 30px rgba(36, 92, 132, 0.06);
+}
+
+.performance-card[data-included="false"] {
+  opacity: 0.72;
+  border-style: dashed;
 }
 
 .performance-card[data-active="true"] {

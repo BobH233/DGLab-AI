@@ -130,9 +130,9 @@ function createPerformanceState(): SessionTtsPerformanceState {
   return {
     sessionId: "session_1",
     ttsBaseUrlConfigured: true,
-    totalReadableCount: 4,
-    cachedReadableCount: 2,
-    readyReadableCount: 2,
+    totalReadableCount: 6,
+    cachedReadableCount: 4,
+    readyReadableCount: 4,
     missingReadableCount: 2,
     missingVoiceSpeakers: [],
     readyForFullPlayback: false,
@@ -155,6 +155,48 @@ function createPerformanceState(): SessionTtsPerformanceState {
         referenceId: "narrator",
         isCached: true,
         durationMs: 1800,
+        readyForPlayback: true
+      },
+      {
+        readable: {
+          id: "event:1",
+          source: "event",
+          kind: "stage_direction",
+          seq: 1,
+          eventType: "agent.stage_direction",
+          title: "丽莎 的动作",
+          kicker: "舞台动作",
+          displaySpeaker: "丽莎",
+          ttsSpeaker: "旁白",
+          text: "她轻轻扶住你的肩。",
+          createdAt: "2026-03-23T10:00:30.000Z"
+        },
+        cacheKey: "event-1",
+        hasVoiceMapping: true,
+        referenceId: "narrator",
+        isCached: true,
+        durationMs: 900,
+        readyForPlayback: true
+      },
+      {
+        readable: {
+          id: "event:2",
+          source: "event",
+          kind: "story_effect",
+          seq: 2,
+          eventType: "agent.story_effect",
+          title: "灯光变化",
+          kicker: "剧情变化",
+          displaySpeaker: "旁白",
+          ttsSpeaker: "旁白",
+          text: "房间的灯光忽然暗了下来。",
+          createdAt: "2026-03-23T10:00:40.000Z"
+        },
+        cacheKey: "event-2",
+        hasVoiceMapping: true,
+        referenceId: "narrator",
+        isCached: true,
+        durationMs: 700,
         readyForPlayback: true
       },
       {
@@ -253,6 +295,88 @@ describe("PerformanceModePage", () => {
     expect(wrapper.text()).toContain("玩家处境");
     expect(wrapper.text()).toContain("生成缺失的全文 TTS");
     expect(wrapper.text()).toContain("还不能开始全文播放");
+  });
+
+  it("recalculates total duration when stage directions and story effects are toggled", async () => {
+    const readyPerformance = createPerformanceState();
+    readyPerformance.readyForFullPlayback = true;
+    readyPerformance.cachedReadableCount = readyPerformance.totalReadableCount;
+    readyPerformance.readyReadableCount = readyPerformance.totalReadableCount;
+    readyPerformance.missingReadableCount = 0;
+    readyPerformance.items = readyPerformance.items.map((item) => ({
+      ...item,
+      isCached: true,
+      readyForPlayback: true,
+      durationMs: item.durationMs ?? 1200
+    }));
+    apiMocks.getSessionTtsPerformance.mockResolvedValue(readyPerformance);
+
+    const wrapper = mount(PerformanceModePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="performance-total-duration"]').text()).toBe("00:09");
+
+    await wrapper.get('[data-testid="performance-stage-direction-toggle"]').setValue(false);
+    await flushPromises();
+    expect(wrapper.get('[data-testid="performance-total-duration"]').text()).toBe("00:08");
+
+    await wrapper.get('[data-testid="performance-story-effect-toggle"]').setValue(false);
+    await flushPromises();
+    expect(wrapper.get('[data-testid="performance-total-duration"]').text()).toBe("00:07");
+  });
+
+  it("unlocks playback when skipped card types are the only unreadied items", async () => {
+    const selectivePerformance = createPerformanceState();
+    selectivePerformance.items = selectivePerformance.items.map((item) => {
+      if (item.readable.kind === "stage_direction" || item.readable.kind === "story_effect") {
+        return {
+          ...item,
+          isCached: false,
+          readyForPlayback: false,
+          durationMs: undefined
+        };
+      }
+      return {
+        ...item,
+        isCached: true,
+        readyForPlayback: true,
+        durationMs: item.durationMs ?? 1200
+      };
+    });
+    selectivePerformance.cachedReadableCount = 4;
+    selectivePerformance.readyReadableCount = 4;
+    selectivePerformance.missingReadableCount = 2;
+    selectivePerformance.readyForFullPlayback = false;
+    apiMocks.getSessionTtsPerformance.mockResolvedValue(selectivePerformance);
+
+    const wrapper = mount(PerformanceModePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="performance-play-toggle"]').attributes("disabled")).toBeDefined();
+
+    await wrapper.get('[data-testid="performance-stage-direction-toggle"]').setValue(false);
+    await wrapper.get('[data-testid="performance-story-effect-toggle"]').setValue(false);
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="performance-play-toggle"]').attributes("disabled")).toBeUndefined();
   });
 
   it("allows double-click preview for a cached card even before full playback is ready", async () => {
