@@ -83,15 +83,25 @@
           <div v-if="ttsPerformance.batchJob" class="performance-batch-card">
             <div class="performance-batch-card__head">
               <strong>{{ batchStatusTitle }}</strong>
-              <span>{{ batchProgressLabel }}</span>
+              <div class="performance-batch-card__actions">
+                <span>{{ batchProgressLabel }}</span>
+                <button
+                  v-if="canDismissBatchNotice"
+                  class="button ghost performance-batch-card__dismiss"
+                  type="button"
+                  @click="dismissBatchNotice"
+                >
+                  关闭提示
+                </button>
+              </div>
             </div>
             <div class="performance-progress performance-progress--compact">
               <span :style="{ width: `${batchProgressPercent}%` }" />
             </div>
-            <p v-if="ttsPerformance.batchJob.currentTitle" class="soft-note">
-              当前处理：{{ ttsPerformance.batchJob.currentTitle }}
+            <p v-if="runningBatchCurrentTitle" class="soft-note">
+              当前处理：{{ runningBatchCurrentTitle }}
             </p>
-            <p v-if="ttsPerformance.batchJob.errorMessage" class="error-text">{{ ttsPerformance.batchJob.errorMessage }}</p>
+            <p v-if="visibleBatchErrorMessage" class="error-text">{{ visibleBatchErrorMessage }}</p>
           </div>
           <p v-if="error" class="error-text">{{ error }}</p>
         </section>
@@ -147,6 +157,7 @@
             :data-active="activeReadableId === item.readable.id ? 'true' : undefined"
             :data-ready="item.readyForPlayback ? 'true' : undefined"
             @click="jumpToReadable(item.readable.id)"
+            @dblclick="previewReadable(item.readable.id)"
           >
             <header class="performance-card__head">
               <div>
@@ -220,7 +231,7 @@
         <span v-if="playbackError" class="error-text">{{ playbackError }}</span>
         <span v-else-if="!ttsPerformance.readyForFullPlayback" class="soft-note">先完成全文 TTS 缓存，播放条才会启用。</span>
         <span v-else-if="playbackBusy" class="soft-note">正在准备当前卡片的音频…</span>
-        <span v-else class="soft-note">拖动进度条时，时间线会自动滚动到对应卡片。</span>
+        <span v-else class="soft-note">拖动进度条时，时间线会自动滚动到对应卡片；双击已缓存卡片可单独试听。</span>
       </div>
     </section>
   </section>
@@ -256,6 +267,7 @@ const playheadMs = ref(0);
 const seekValue = ref(0);
 const isPlaying = ref(false);
 const playbackBusy = ref(false);
+const dismissedBatchNoticeId = ref("");
 
 let audioElement: HTMLAudioElement | null = null;
 let playbackFrame: number | null = null;
@@ -265,6 +277,7 @@ let pollTimer: number | null = null;
 let resumeAfterScrub = false;
 let isScrubbing = false;
 let activeCardScrollId: string | null = null;
+let playbackMode: "full" | "preview" | null = null;
 let playbackContext:
   | { type: "segment"; index: number; startMs: number }
   | { type: "gap"; afterIndex: number; gapStartedAt: number; initialPlayheadMs: number }
@@ -345,6 +358,33 @@ const batchStatusTitle = computed(() => {
       return "暂无批量任务";
   }
 });
+const batchNoticeId = computed(() => {
+  const job = ttsPerformance.value?.batchJob;
+  if (!session.value || !job) {
+    return "";
+  }
+  return `${session.value.id}:${job.status}:${job.updatedAt}`;
+});
+const runningBatchCurrentTitle = computed(() => {
+  const job = ttsPerformance.value?.batchJob;
+  return job?.status === "running" ? job.currentTitle ?? "" : "";
+});
+const visibleBatchErrorMessage = computed(() => {
+  const job = ttsPerformance.value?.batchJob;
+  if (!job || dismissedBatchNoticeId.value === batchNoticeId.value) {
+    return "";
+  }
+  return job.status === "failed" || job.status === "interrupted"
+    ? job.errorMessage ?? "批量 TTS 任务失败，请稍后重试。"
+    : "";
+});
+const canDismissBatchNotice = computed(() => {
+  const job = ttsPerformance.value?.batchJob;
+  if (!job) {
+    return false;
+  }
+  return (job.status === "failed" || job.status === "interrupted") && visibleBatchErrorMessage.value.length > 0;
+});
 const activeReadableId = computed<string | null>(() => {
   const slot = locateTrackSlot(playheadMs.value);
   if (slot?.type === "segment") {
@@ -367,6 +407,14 @@ watch(playheadMs, (value) => {
   if (!isScrubbing) {
     seekValue.value = value;
   }
+});
+
+watch(batchNoticeId, (nextId) => {
+  if (!nextId) {
+    dismissedBatchNoticeId.value = "";
+    return;
+  }
+  dismissedBatchNoticeId.value = loadDismissedBatchNoticeId(session.value?.id ?? "");
 });
 
 watch(activeReadableId, async (nextId) => {
@@ -465,6 +513,14 @@ function clearPollTimer() {
   }
 }
 
+function dismissBatchNotice() {
+  if (!session.value || !batchNoticeId.value) {
+    return;
+  }
+  dismissedBatchNoticeId.value = batchNoticeId.value;
+  saveDismissedBatchNoticeId(session.value.id, batchNoticeId.value);
+}
+
 async function startBatch() {
   if (!session.value || !canStartBatch.value) {
     return;
@@ -512,6 +568,7 @@ function pausePlayback() {
   }
   isPlaying.value = false;
   playbackBusy.value = false;
+  playbackMode = null;
   playbackContext = null;
   audioElement?.pause();
   stopPlaybackFrame();
@@ -532,14 +589,14 @@ async function resumeFromPlayhead() {
   }
 
   if (slot.type === "segment") {
-    await playSegment(slot.item.index, slot.offsetMs);
+    await playSegment(slot.item.index, slot.offsetMs, "full");
     return;
   }
 
   startGap(slot.item.index, slot.offsetMs);
 }
 
-async function playSegment(index: number, offsetMs: number) {
+async function playSegment(index: number, offsetMs: number, mode: "full" | "preview" = "full") {
   const item = trackItems.value[index];
   if (!item || !session.value || !audioElement) {
     return;
@@ -564,7 +621,7 @@ async function playSegment(index: number, offsetMs: number) {
       if (token !== currentRequestToken) {
         return;
       }
-      handleSegmentEnded(index);
+      handleSegmentEnded(index, mode);
     };
     audioElement.onerror = () => {
       if (token !== currentRequestToken) {
@@ -581,13 +638,16 @@ async function playSegment(index: number, offsetMs: number) {
 
     isPlaying.value = true;
     playbackBusy.value = false;
+    playbackMode = mode;
     playbackContext = {
       type: "segment",
       index,
       startMs: item.startMs
     };
     startPlaybackFrame();
-    void prefetchAudioUrl(trackItems.value[index + 1]?.readable.id);
+    if (mode === "full") {
+      void prefetchAudioUrl(trackItems.value[index + 1]?.readable.id);
+    }
   } catch (caught) {
     if (token !== currentRequestToken) {
       return;
@@ -597,7 +657,7 @@ async function playSegment(index: number, offsetMs: number) {
   }
 }
 
-function handleSegmentEnded(index: number) {
+function handleSegmentEnded(index: number, mode: "full" | "preview") {
   const item = trackItems.value[index];
   if (!item) {
     pausePlayback();
@@ -605,6 +665,11 @@ function handleSegmentEnded(index: number) {
   }
 
   playheadMs.value = clampPlayhead(item.audioEndMs);
+  if (mode === "preview") {
+    pausePlayback();
+    playheadMs.value = item.audioEndMs;
+    return;
+  }
   if (index >= trackItems.value.length - 1) {
     pausePlayback();
     playheadMs.value = totalDurationMs.value;
@@ -612,7 +677,7 @@ function handleSegmentEnded(index: number) {
   }
 
   if (gapMs.value <= 0) {
-    void playSegment(index + 1, 0);
+    void playSegment(index + 1, 0, "full");
     return;
   }
 
@@ -640,7 +705,7 @@ function startGap(afterIndex: number, gapOffsetMs: number) {
   const remainingGapMs = Math.max(0, gapMs.value - gapOffsetMs);
   gapTimer = window.setTimeout(() => {
     gapTimer = null;
-    void playSegment(afterIndex + 1, 0);
+    void playSegment(afterIndex + 1, 0, "full");
   }, remainingGapMs);
 }
 
@@ -766,7 +831,7 @@ function clampPlayhead(value: number): number {
 }
 
 function beginScrub() {
-  resumeAfterScrub = isPlaying.value;
+  resumeAfterScrub = isPlaying.value && playbackMode === "full";
   isScrubbing = true;
   pausePlayback();
 }
@@ -799,12 +864,54 @@ function jumpToReadable(readableId: string) {
   playheadMs.value = item.startMs;
 }
 
+async function previewReadable(readableId: string) {
+  const item = trackItems.value.find((entry) => entry.readable.id === readableId);
+  if (!item) {
+    return;
+  }
+  if (!item.readyForPlayback) {
+    playbackError.value = "这张卡片还没有缓存好，暂时不能试听。";
+    return;
+  }
+
+  playbackError.value = "";
+  playheadMs.value = item.startMs;
+  seekValue.value = item.startMs;
+  await playSegment(item.index, 0, "preview");
+}
+
 function registerCardElement(readableId: string, element: unknown) {
   if (!(element instanceof HTMLElement)) {
     cardElements.delete(readableId);
     return;
   }
   cardElements.set(readableId, element);
+}
+
+function dismissedBatchNoticeStorageKey(sessionId: string): string {
+  return `dglabai.performance_batch_notice.${sessionId}`;
+}
+
+function loadDismissedBatchNoticeId(sessionId: string): string {
+  if (!sessionId || typeof window === "undefined") {
+    return "";
+  }
+  try {
+    return window.localStorage.getItem(dismissedBatchNoticeStorageKey(sessionId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveDismissedBatchNoticeId(sessionId: string, noticeId: string) {
+  if (!sessionId || typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(dismissedBatchNoticeStorageKey(sessionId), noticeId);
+  } catch {
+    // Ignore storage failures and keep the in-memory dismissal.
+  }
 }
 
 function displayParts(item: SessionTtsReadableState): InlineDisplayPart[] {

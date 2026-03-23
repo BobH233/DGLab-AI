@@ -37,6 +37,22 @@ const DEFAULT_TTS_REQUEST_BODY = {
   temperature: 0.9
 } as const;
 
+const SHORT_PAUSE_TOKEN = "[short pause]";
+const DEFAULT_TTS_SEGMENT_CHAR_LIMIT = parsePositiveInteger(process.env.TTS_MAX_SEGMENT_CHARS, 180);
+const DEFAULT_TTS_SEGMENT_OVERFLOW_CHARS = parsePositiveInteger(process.env.TTS_SEGMENT_OVERFLOW_CHARS, 30);
+const MIN_TTS_SEGMENT_CHAR_LIMIT = parsePositiveInteger(process.env.TTS_MIN_SEGMENT_CHARS, 32);
+const ID3_V1_TAG_SIZE = 128;
+const TTS_PUNCTUATION_NORMALIZATION_MAP: Record<string, string> = {
+  "「": "\"",
+  "」": "\"",
+  "『": "\"",
+  "』": "\"",
+  "“": "\"",
+  "”": "\"",
+  "‘": "'",
+  "’": "'"
+};
+
 const MPEG_SAMPLE_RATES: Record<number, [number, number, number]> = {
   0: [11025, 12000, 8000],
   2: [22050, 24000, 16000],
@@ -84,16 +100,22 @@ type Mp3FrameHeader = {
 
 export function normalizeTtsText(source: string): string {
   return source
+    .replace(/[「」『』“”‘’]/g, (char) => TTS_PUNCTUATION_NORMALIZATION_MAP[char] ?? char)
     .replace(/<delay>\s*\d+\s*<\/delay>/gi, "")
     .replace(/<emo_inst>([\s\S]*?)<\/emo_inst>/gi, (_match, value: string) => {
       const content = value.trim();
       return content ? `[${content}]` : "";
     })
-    .replace(/(?:\.{3,}|…+|。|\.)/g, "[short pause]")
-    .replace(/\s+\[short pause\]/g, "[short pause]")
-    .replace(/\[short pause\]\s+(?=\[[^\]]+\])/g, "[short pause]")
+    .replace(/(?:\.{3,}|…+|。|\.)/g, SHORT_PAUSE_TOKEN)
+    .replace(new RegExp(`\\s+\\${SHORT_PAUSE_TOKEN}`, "g"), SHORT_PAUSE_TOKEN)
+    .replace(new RegExp(`\\${SHORT_PAUSE_TOKEN}\\s+(?=\\[[^\\]]+\\])`, "g"), SHORT_PAUSE_TOKEN)
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function normalizeSpeakerName(value: string): string {
@@ -233,6 +255,144 @@ function parseMp3DurationFromHeaders(buffer: Buffer, frameOffset: number, header
   }
 
   return undefined;
+}
+
+function findLastTokenBoundary(source: string, token: string, minIndex: number, maxIndex: number): number | undefined {
+  const slice = source.slice(0, maxIndex);
+  let searchFrom = slice.length;
+  while (searchFrom > 0) {
+    const index = slice.lastIndexOf(token, searchFrom - 1);
+    if (index === -1) {
+      return undefined;
+    }
+    const boundary = index + token.length;
+    if (boundary >= minIndex) {
+      return boundary;
+    }
+    searchFrom = index;
+  }
+  return undefined;
+}
+
+function findLastRegexBoundary(source: string, pattern: RegExp, minIndex: number, maxIndex: number): number | undefined {
+  const slice = source.slice(0, maxIndex);
+  let lastBoundary: number | undefined;
+  const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+  for (const match of slice.matchAll(globalPattern)) {
+    const boundary = (match.index ?? 0) + match[0].length;
+    if (boundary >= minIndex) {
+      lastBoundary = boundary;
+    }
+  }
+  return lastBoundary;
+}
+
+function findBestSplitIndex(source: string, preferredLength: number, overflowChars: number): number {
+  const searchLimit = Math.min(source.length, preferredLength + Math.max(0, overflowChars));
+  const minBoundary = Math.max(1, Math.floor(preferredLength * 0.5));
+
+  const strongBoundary = findLastTokenBoundary(source, SHORT_PAUSE_TOKEN, minBoundary, searchLimit)
+    ?? findLastRegexBoundary(source, /[\n!?！？；;:：]/g, minBoundary, searchLimit);
+  if (strongBoundary) {
+    return strongBoundary;
+  }
+
+  const softBoundary = findLastRegexBoundary(source, /[，,、]/g, minBoundary, searchLimit)
+    ?? findLastRegexBoundary(source, /\s+/g, minBoundary, searchLimit);
+  if (softBoundary) {
+    return softBoundary;
+  }
+
+  const tagBoundary = source.lastIndexOf("]", preferredLength - 1);
+  if (tagBoundary >= minBoundary) {
+    return tagBoundary + 1;
+  }
+
+  return preferredLength;
+}
+
+function adjustSplitIndexToAvoidBracketTag(source: string, splitIndex: number): number {
+  const openingBracketIndex = source.lastIndexOf("[", splitIndex - 1);
+  const closingBracketIndex = source.lastIndexOf("]", splitIndex - 1);
+  if (openingBracketIndex !== -1 && openingBracketIndex > closingBracketIndex) {
+    const matchingBracketIndex = source.indexOf("]", splitIndex);
+    if (matchingBracketIndex !== -1) {
+      return matchingBracketIndex + 1;
+    }
+  }
+  return splitIndex;
+}
+
+export function splitNormalizedTtsText(
+  source: string,
+  maxSegmentChars = DEFAULT_TTS_SEGMENT_CHAR_LIMIT,
+  overflowChars = DEFAULT_TTS_SEGMENT_OVERFLOW_CHARS
+): string[] {
+  const normalized = source.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const safeMaxSegmentChars = Math.max(1, maxSegmentChars);
+  if (normalized.length <= safeMaxSegmentChars) {
+    return [normalized];
+  }
+
+  const segments: string[] = [];
+  let remaining = normalized;
+  while (remaining.length > safeMaxSegmentChars) {
+    const splitIndex = findBestSplitIndex(remaining, safeMaxSegmentChars, overflowChars);
+    const nextIndex = adjustSplitIndexToAvoidBracketTag(
+      remaining,
+      splitIndex > 0 ? splitIndex : safeMaxSegmentChars
+    );
+    const segment = remaining.slice(0, nextIndex).trim();
+    if (!segment) {
+      break;
+    }
+    segments.push(segment);
+    remaining = remaining.slice(nextIndex).trim();
+  }
+
+  if (remaining) {
+    segments.push(remaining);
+  }
+
+  return segments;
+}
+
+function stripLeadingId3v2Tag(buffer: Buffer): Buffer {
+  if (buffer.length >= 10 && buffer.toString("ascii", 0, 3) === "ID3") {
+    return buffer.subarray(10 + synchsafeInt(buffer, 6));
+  }
+  return buffer;
+}
+
+function stripTrailingId3v1Tag(buffer: Buffer): Buffer {
+  if (buffer.length >= ID3_V1_TAG_SIZE && buffer.toString("ascii", buffer.length - ID3_V1_TAG_SIZE, buffer.length - ID3_V1_TAG_SIZE + 3) === "TAG") {
+    return buffer.subarray(0, buffer.length - ID3_V1_TAG_SIZE);
+  }
+  return buffer;
+}
+
+function mergeMp3Buffers(buffers: Buffer[]): Buffer {
+  if (buffers.length === 0) {
+    return Buffer.alloc(0);
+  }
+  if (buffers.length === 1) {
+    return buffers[0];
+  }
+
+  return Buffer.concat(
+    buffers.map((buffer, index) => {
+      const withoutLeadingTags = index === 0 ? buffer : stripLeadingId3v2Tag(buffer);
+      return index < buffers.length - 1 ? stripTrailingId3v1Tag(withoutLeadingTags) : withoutLeadingTags;
+    })
+  );
+}
+
+function isCudaOutOfMemoryMessage(message: string): boolean {
+  return /cuda\s+out\s+of\s+memory/i.test(message);
 }
 
 export function estimateMp3DurationMs(buffer: Buffer): number | undefined {
@@ -508,8 +668,11 @@ export class TtsService {
       };
     }
 
-    const audioBuffer = await this.requestTtsAudio(baseUrl, prepared.normalizedText, prepared.referenceId);
-    const durationMs = estimateMp3DurationMs(audioBuffer);
+    const { audioBuffer, durationMs } = await this.requestTtsAudioWithChunking(
+      baseUrl,
+      prepared.normalizedText,
+      prepared.referenceId
+    );
     if (options.requireDuration && (!durationMs || durationMs <= 0)) {
       throw new HttpError(502, `无法解析条目 “${readable.title}” 的音频时长，无法加入全文播放时间轴`);
     }
@@ -738,6 +901,85 @@ export class TtsService {
       throw new HttpError(400, "TTS API 地址尚未配置");
     }
     return baseUrl.replace(/\/+$/, "");
+  }
+
+  private async requestTtsAudioWithChunking(
+    baseUrl: string,
+    text: string,
+    referenceId: string,
+    maxSegmentChars = DEFAULT_TTS_SEGMENT_CHAR_LIMIT
+  ): Promise<{ audioBuffer: Buffer; durationMs?: number }> {
+    const segments = splitNormalizedTtsText(text, maxSegmentChars);
+
+    try {
+      if (segments.length === 1) {
+        const audioBuffer = await this.requestTtsAudio(baseUrl, segments[0]!, referenceId);
+        return {
+          audioBuffer,
+          durationMs: estimateMp3DurationMs(audioBuffer)
+        };
+      }
+
+      return await this.requestTtsAudioSegments(baseUrl, segments, referenceId);
+    } catch (error) {
+      if (!this.isCudaOutOfMemoryError(error)) {
+        throw error;
+      }
+
+      const retryLimit = this.getRetrySegmentCharLimit(text.length, maxSegmentChars);
+      if (!retryLimit) {
+        throw error;
+      }
+
+      return this.requestTtsAudioWithChunking(baseUrl, text, referenceId, retryLimit);
+    }
+  }
+
+  private async requestTtsAudioSegments(
+    baseUrl: string,
+    segments: string[],
+    referenceId: string
+  ): Promise<{ audioBuffer: Buffer; durationMs?: number }> {
+    const buffers: Buffer[] = [];
+    let totalDurationMs = 0;
+    let hasCompleteDuration = true;
+
+    for (const segment of segments) {
+      const audioBuffer = await this.requestTtsAudio(baseUrl, segment, referenceId);
+      buffers.push(audioBuffer);
+
+      const durationMs = estimateMp3DurationMs(audioBuffer);
+      if (durationMs && durationMs > 0) {
+        totalDurationMs += durationMs;
+      } else {
+        hasCompleteDuration = false;
+      }
+    }
+
+    const mergedBuffer = mergeMp3Buffers(buffers);
+    return {
+      audioBuffer: mergedBuffer,
+      durationMs: hasCompleteDuration ? totalDurationMs : estimateMp3DurationMs(mergedBuffer)
+    };
+  }
+
+  private getRetrySegmentCharLimit(textLength: number, currentLimit: number): number | undefined {
+    if (currentLimit <= MIN_TTS_SEGMENT_CHAR_LIMIT) {
+      return undefined;
+    }
+
+    const nextLimit = Math.max(
+      MIN_TTS_SEGMENT_CHAR_LIMIT,
+      Math.min(Math.floor(currentLimit * 0.6), Math.max(MIN_TTS_SEGMENT_CHAR_LIMIT, Math.floor(textLength / 2)))
+    );
+    return nextLimit < currentLimit ? nextLimit : undefined;
+  }
+
+  private isCudaOutOfMemoryError(error: unknown): boolean {
+    if (error instanceof HttpError) {
+      return isCudaOutOfMemoryMessage(error.message);
+    }
+    return error instanceof Error && isCudaOutOfMemoryMessage(error.message);
   }
 
   private async requestTtsAudio(baseUrl: string, text: string, referenceId: string): Promise<Buffer> {

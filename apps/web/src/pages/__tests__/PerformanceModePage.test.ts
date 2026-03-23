@@ -222,8 +222,17 @@ describe("PerformanceModePage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubGlobal("Audio", FakeAudio);
+    Object.defineProperty(URL, "createObjectURL", {
+      value: vi.fn(() => "blob:preview-audio"),
+      configurable: true
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: vi.fn(),
+      configurable: true
+    });
     apiMocks.getSession.mockResolvedValue(createSession());
     apiMocks.getSessionTtsPerformance.mockResolvedValue(createPerformanceState());
+    apiMocks.getSessionReadableTts.mockResolvedValue(new Blob(["fake-audio"], { type: "audio/mpeg" }));
   });
 
   it("renders setup cards and the batch generation action", async () => {
@@ -244,5 +253,27 @@ describe("PerformanceModePage", () => {
     expect(wrapper.text()).toContain("玩家处境");
     expect(wrapper.text()).toContain("生成缺失的全文 TTS");
     expect(wrapper.text()).toContain("还不能开始全文播放");
+  });
+
+  it("allows double-click preview for a cached card even before full playback is ready", async () => {
+    const wrapper = mount(PerformanceModePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const firstCard = wrapper.findAll(".performance-card")[0];
+    expect(firstCard.exists()).toBe(true);
+
+    await firstCard.trigger("dblclick");
+    await flushPromises();
+
+    expect(apiMocks.getSessionReadableTts).toHaveBeenCalledWith("session_1", "setup:worldSummary");
   });
 });

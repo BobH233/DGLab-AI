@@ -2383,6 +2383,17 @@ a {
   align-items: baseline;
 }
 
+.performance-batch-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.performance-batch-card__dismiss {
+  padding: 8px 12px;
+  font-size: 0.84rem;
+}
+
 .performance-timeline-panel {
   display: grid;
   gap: 18px;
