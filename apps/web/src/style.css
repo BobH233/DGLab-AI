@@ -2182,6 +2182,8 @@ a {
   border: 1px solid var(--line-mid);
   color: var(--accent);
   font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .build-info-mono {
