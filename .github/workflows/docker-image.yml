@@ -18,6 +18,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Capture build metadata
+        id: build_meta
+        shell: bash
+        run: |
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          start_epoch="$(date -u +%s)"
+          short_sha="$(git rev-parse --short HEAD)"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          commit_message="$(git log -1 --pretty=%s)"
+          {
+            echo "started_at=${started_at}"
+            echo "start_epoch=${start_epoch}"
+            echo "short_sha=${short_sha}"
+            echo "run_url=${run_url}"
+            echo "commit_message=${commit_message}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        env:
+          VITE_BUILD_SOURCE: github-actions
+          VITE_BUILD_STARTED_AT: ${{ steps.build_meta.outputs.started_at }}
+          VITE_BUILD_COMMIT_SHA: ${{ github.sha }}
+          VITE_BUILD_COMMIT_SHORT_SHA: ${{ steps.build_meta.outputs.short_sha }}
+          VITE_BUILD_COMMIT_MESSAGE: ${{ steps.build_meta.outputs.commit_message }}
+          VITE_BUILD_BRANCH: ${{ github.ref_name }}
+          VITE_BUILD_REPOSITORY: ${{ github.repository }}
+          VITE_BUILD_WORKFLOW_NAME: ${{ github.workflow }}
+          VITE_BUILD_RUN_ID: ${{ github.run_id }}
+          VITE_BUILD_RUN_NUMBER: ${{ github.run_number }}
+          VITE_BUILD_RUN_ATTEMPT: ${{ github.run_attempt }}
+          VITE_BUILD_RUN_URL: ${{ steps.build_meta.outputs.run_url }}
+          VITE_BUILD_ACTOR: ${{ github.actor }}
+          VITE_BUILD_EVENT_NAME: ${{ github.event_name }}
+        run: npm run build
+
+      - name: Finalize build metadata
+        id: finalize_build_meta
+        shell: bash
+        run: |
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          end_epoch="$(date -u +%s)"
+          duration_ms="$(( (end_epoch - ${{ steps.build_meta.outputs.start_epoch }}) * 1000 ))"
+          {
+            echo "completed_at=${completed_at}"
+            echo "duration_ms=${duration_ms}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -43,6 +99,23 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            VITE_BUILD_SOURCE=github-actions
+            VITE_BUILD_STARTED_AT=${{ steps.build_meta.outputs.started_at }}
+            VITE_BUILD_COMPLETED_AT=${{ steps.finalize_build_meta.outputs.completed_at }}
+            VITE_BUILD_DURATION_MS=${{ steps.finalize_build_meta.outputs.duration_ms }}
+            VITE_BUILD_COMMIT_SHA=${{ github.sha }}
+            VITE_BUILD_COMMIT_SHORT_SHA=${{ steps.build_meta.outputs.short_sha }}
+            VITE_BUILD_COMMIT_MESSAGE=${{ steps.build_meta.outputs.commit_message }}
+            VITE_BUILD_BRANCH=${{ github.ref_name }}
+            VITE_BUILD_REPOSITORY=${{ github.repository }}
+            VITE_BUILD_WORKFLOW_NAME=${{ github.workflow }}
+            VITE_BUILD_RUN_ID=${{ github.run_id }}
+            VITE_BUILD_RUN_NUMBER=${{ github.run_number }}
+            VITE_BUILD_RUN_ATTEMPT=${{ github.run_attempt }}
+            VITE_BUILD_RUN_URL=${{ steps.build_meta.outputs.run_url }}
+            VITE_BUILD_ACTOR=${{ github.actor }}
+            VITE_BUILD_EVENT_NAME=${{ github.event_name }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

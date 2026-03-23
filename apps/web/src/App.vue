@@ -3,7 +3,9 @@
   <div v-else class="app-shell">
     <header class="topbar">
       <div class="brand-block">
-        <span class="brand-chip">Narrative Control</span>
+        <button type="button" class="brand-chip brand-chip--trigger" @click="handleBrandTap">
+          Narrative Control
+        </button>
         <div>
           <h1>DGLabAI</h1>
           <p>多智能体剧情推演工作台</p>
@@ -48,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "./auth";
 import { useConfigStore } from "./configStore";
@@ -58,8 +60,31 @@ const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const switching = ref(false);
+const brandTapCount = ref(0);
+let brandTapResetTimer: number | null = null;
 const appConfig = computed(() => configStore.appConfig.value);
 const isStandaloneRoute = computed(() => route.meta.standalone === true);
+
+function clearBrandTapResetTimer() {
+  if (brandTapResetTimer !== null) {
+    window.clearTimeout(brandTapResetTimer);
+    brandTapResetTimer = null;
+  }
+}
+
+function handleBrandTap() {
+  brandTapCount.value += 1;
+  clearBrandTapResetTimer();
+  if (brandTapCount.value >= 3) {
+    brandTapCount.value = 0;
+    void router.push("/internal/build-info");
+    return;
+  }
+  brandTapResetTimer = window.setTimeout(() => {
+    brandTapCount.value = 0;
+    brandTapResetTimer = null;
+  }, 900);
+}
 
 async function handleBackendChange(event: Event) {
   const backendId = (event.target as HTMLSelectElement).value;
@@ -92,5 +117,9 @@ watch(() => [route.fullPath, authStore.isAuthenticated.value], () => {
 
 onMounted(() => {
   loadConfigIfNeeded();
+});
+
+onBeforeUnmount(() => {
+  clearBrandTapResetTimer();
 });
 </script>

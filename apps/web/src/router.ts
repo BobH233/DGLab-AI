@@ -8,6 +8,7 @@ import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 import ElectroStimSettingsPage from "./pages/ElectroStimSettingsPage.vue";
 import LlmCallHistoryPage from "./pages/LlmCallHistoryPage.vue";
+import InternalBuildInfoPage from "./pages/InternalBuildInfoPage.vue";
 import LoginPage from "./pages/LoginPage.vue";
 
 export const router = createRouter({
@@ -51,6 +52,10 @@ export const router = createRouter({
     {
       path: "/llm-calls",
       component: LlmCallHistoryPage
+    },
+    {
+      path: "/internal/build-info",
+      component: InternalBuildInfoPage
     },
     {
       path: "/devices/e-stim",
