@@ -95,6 +95,7 @@ export type ToolWorldPromptContext = {
 
 export type TtsAudioCacheRecord = {
   key: string;
+  contentKey?: string;
   sessionId: string;
   readableId: string;
   sourceKind: "setup" | "event";
@@ -180,7 +181,16 @@ export interface SessionStore {
   getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]>;
   listSchedulableSessions(): Promise<Session[]>;
   getTtsAudioCache(key: string): Promise<TtsAudioCacheRecord | null>;
+  getTtsAudioCacheByContentKey(contentKey: string): Promise<TtsAudioCacheRecord | null>;
   getTtsAudioCaches(keys: string[]): Promise<TtsAudioCacheRecord[]>;
+  getTtsAudioCachesByContentKeys(contentKeys: string[]): Promise<TtsAudioCacheRecord[]>;
+  findLatestTtsAudioCacheByIdentity(identity: {
+    sessionId: string;
+    readableId: string;
+    eventSeq?: number;
+    referenceId: string;
+    normalizedText: string;
+  }): Promise<TtsAudioCacheRecord | null>;
   saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord>;
   touchTtsAudioCache(key: string, accessedAt: string): Promise<void>;
   getSessionTtsBatchJob(sessionId: string): Promise<SessionTtsBatchJob | null>;

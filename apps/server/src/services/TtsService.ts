@@ -76,12 +76,21 @@ type TtsAudioResult = {
 };
 
 type PreparedReadableContent = {
+  sessionId: string;
   readable: SessionReadableContent;
   cacheKey: string;
   normalizedText: string;
   baseUrl?: string;
   referenceId?: string;
   hasVoiceMapping: boolean;
+};
+
+type TtsAudioCacheIdentity = {
+  sessionId: string;
+  readableId: string;
+  eventSeq?: number;
+  referenceId: string;
+  normalizedText: string;
 };
 
 type ActiveBatchJobState = {
@@ -122,35 +131,42 @@ function normalizeSpeakerName(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function buildReadableCacheKey(
-  sessionId: string,
-  readable: SessionReadableContent,
-  baseUrl: string,
-  referenceId: string,
-  normalizedText: string
-): string {
-  const payload = readable.source === "event" && readable.seq !== undefined
+function buildTtsAudioCacheIdentityPayload(identity: TtsAudioCacheIdentity) {
+  return identity.eventSeq !== undefined
     ? {
-      sessionId,
-      seq: readable.seq,
-      baseUrl,
-      referenceId,
-      normalizedText,
+      sessionId: identity.sessionId,
+      seq: identity.eventSeq,
+      referenceId: identity.referenceId,
+      normalizedText: identity.normalizedText,
       format: DEFAULT_TTS_REQUEST_BODY.format
     }
     : {
-      sessionId,
-      readableId: readable.id,
-      baseUrl,
-      referenceId,
-      normalizedText,
+      sessionId: identity.sessionId,
+      readableId: identity.readableId,
+      referenceId: identity.referenceId,
+      normalizedText: identity.normalizedText,
       format: DEFAULT_TTS_REQUEST_BODY.format
     };
+}
 
+export function buildTtsAudioContentKey(identity: TtsAudioCacheIdentity): string {
   return crypto
     .createHash("sha256")
-    .update(JSON.stringify(payload))
+    .update(JSON.stringify(buildTtsAudioCacheIdentityPayload(identity)))
     .digest("hex");
+}
+
+export function buildTtsAudioContentKeyFromRecord(record: Pick<
+  TtsAudioCacheRecord,
+  "sessionId" | "readableId" | "eventSeq" | "referenceId" | "normalizedText"
+>): string {
+  return buildTtsAudioContentKey({
+    sessionId: record.sessionId,
+    readableId: record.readableId,
+    eventSeq: record.eventSeq,
+    referenceId: record.referenceId,
+    normalizedText: record.normalizedText
+  });
 }
 
 function synchsafeInt(buffer: Buffer, offset: number): number {
@@ -478,7 +494,7 @@ export class TtsService {
 
     const readables = buildSessionReadableContents(session, events);
     const preparedItems = readables.map((readable) => this.prepareReadableContent(sessionId, readable, appConfig));
-    const cacheMap = await this.loadCacheMap(preparedItems.map((item) => item.cacheKey));
+    const cacheMap = await this.loadCacheMap(preparedItems);
     const batchJob = storedBatchJob ? await this.normalizeStoredBatchJob(storedBatchJob) : null;
 
     let cachedReadableCount = 0;
@@ -653,12 +669,9 @@ export class TtsService {
     }
 
     const now = new Date().toISOString();
-    const cached = await this.hydrateCachedRecord(
-      await this.store.getTtsAudioCache(prepared.cacheKey),
-      options.requireDuration ?? false
-    );
+    const cached = await this.findCachedRecord(prepared, options.requireDuration ?? false);
     if (cached) {
-      await this.store.touchTtsAudioCache(prepared.cacheKey, now);
+      await this.store.touchTtsAudioCache(cached.key, now);
       return {
         filePath: cached.filePath,
         mimeType: cached.mimeType,
@@ -684,6 +697,7 @@ export class TtsService {
 
     const record: TtsAudioCacheRecord = {
       key: prepared.cacheKey,
+      contentKey: prepared.cacheKey,
       sessionId,
       readableId: readable.id,
       sourceKind: readable.source,
@@ -807,8 +821,15 @@ export class TtsService {
       ? this.findReferenceId(readable.ttsSpeaker, appConfig.tts?.roleMappings ?? [])
       : undefined;
     return {
+      sessionId,
       readable,
-      cacheKey: buildReadableCacheKey(sessionId, readable, baseUrl ?? "", referenceId ?? "", normalizedText),
+      cacheKey: buildTtsAudioContentKey({
+        sessionId,
+        readableId: readable.id,
+        eventSeq: readable.seq,
+        referenceId: referenceId ?? "",
+        normalizedText
+      }),
       normalizedText,
       baseUrl,
       referenceId,
@@ -829,14 +850,79 @@ export class TtsService {
     return exactMatch?.referenceId.trim() || undefined;
   }
 
-  private async loadCacheMap(keys: string[]): Promise<Map<string, TtsAudioCacheRecord>> {
-    const records = await this.store.getTtsAudioCaches(keys);
-    const hydratedRecords = await Promise.all(records.map(async (record) => this.hydrateCachedRecord(record, false)));
-    return new Map(
-      hydratedRecords
+  private async loadCacheMap(preparedItems: PreparedReadableContent[]): Promise<Map<string, TtsAudioCacheRecord>> {
+    const contentKeys = preparedItems.map((item) => item.cacheKey);
+    const directRecords = await this.store.getTtsAudioCachesByContentKeys(contentKeys);
+    const hydratedDirectRecords = await Promise.all(directRecords.map(async (record) => this.hydrateCachedRecord(record, false)));
+    const cacheMap = new Map(
+      hydratedDirectRecords
         .filter((record): record is TtsAudioCacheRecord => Boolean(record))
-        .map((record) => [record.key, record])
+        .map((record) => [record.contentKey ?? record.key, record])
     );
+
+    const missingPreparedItems = preparedItems.filter((item) => !cacheMap.has(item.cacheKey));
+    const fallbackRecords = await Promise.all(
+      missingPreparedItems.map(async (item) => {
+        const record = await this.findCachedRecord(item, false);
+        return record ? [item.cacheKey, record] as const : null;
+      })
+    );
+    for (const entry of fallbackRecords) {
+      if (entry) {
+        cacheMap.set(entry[0], entry[1]);
+      }
+    }
+
+    return cacheMap;
+  }
+
+  private async findCachedRecord(
+    prepared: PreparedReadableContent,
+    requireDuration: boolean
+  ): Promise<TtsAudioCacheRecord | null> {
+    if (!prepared.referenceId || !prepared.normalizedText) {
+      return null;
+    }
+
+    const directRecord = await this.hydrateCachedRecord(
+      await this.store.getTtsAudioCacheByContentKey(prepared.cacheKey),
+      requireDuration
+    );
+    if (directRecord) {
+      if (directRecord.contentKey !== prepared.cacheKey) {
+        return this.promoteCacheRecord(directRecord, prepared.cacheKey);
+      }
+      return directRecord;
+    }
+
+    const fallbackRecord = await this.hydrateCachedRecord(
+      await this.store.findLatestTtsAudioCacheByIdentity({
+        sessionId: prepared.sessionId,
+        readableId: prepared.readable.id,
+        eventSeq: prepared.readable.seq,
+        referenceId: prepared.referenceId,
+        normalizedText: prepared.normalizedText
+      }),
+      requireDuration
+    );
+    if (!fallbackRecord) {
+      return null;
+    }
+
+    return this.promoteCacheRecord(fallbackRecord, prepared.cacheKey);
+  }
+
+  private async promoteCacheRecord(record: TtsAudioCacheRecord, contentKey: string): Promise<TtsAudioCacheRecord> {
+    if (record.contentKey === contentKey) {
+      return record;
+    }
+
+    const updatedRecord: TtsAudioCacheRecord = {
+      ...record,
+      contentKey
+    };
+    await this.store.saveTtsAudioCache(updatedRecord);
+    return updatedRecord;
   }
 
   private async hydrateCachedRecord(

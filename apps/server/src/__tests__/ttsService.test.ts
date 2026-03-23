@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import crypto from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { normalizeAppConfig, type AppConfig, type LlmConfig, type SessionEvent } from "@dglab-ai/shared";
@@ -78,10 +79,31 @@ class TtsStoreStub {
   async getEvents() { return [this.event]; }
   async listSchedulableSessions() { return []; }
   async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
+  async getTtsAudioCacheByContentKey(contentKey: string) {
+    return [...this.ttsAudioCache.values()].find((record) => (record.contentKey ?? record.key) === contentKey) ?? null;
+  }
   async getTtsAudioCaches(keys: string[]) {
     return keys
       .map((key) => this.ttsAudioCache.get(key) ?? null)
       .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
+  async getTtsAudioCachesByContentKeys(contentKeys: string[]) {
+    return contentKeys
+      .map((contentKey) => [...this.ttsAudioCache.values()].find((record) => (record.contentKey ?? record.key) === contentKey) ?? null)
+      .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
+  async findLatestTtsAudioCacheByIdentity(identity: {
+    sessionId: string;
+    readableId: string;
+    referenceId: string;
+    normalizedText: string;
+  }) {
+    return [...this.ttsAudioCache.values()].find((record) => (
+      record.sessionId === identity.sessionId
+      && record.readableId === identity.readableId
+      && record.referenceId === identity.referenceId
+      && record.normalizedText === identity.normalizedText
+    )) ?? null;
   }
   async saveTtsAudioCache(record: TtsAudioCacheRecord) {
     this.ttsAudioCache.set(record.key, record);
@@ -167,6 +189,71 @@ describe("TtsService", () => {
       expect(store.ttsAudioCache.size).toBe(1);
       expect([...store.ttsAudioCache.values()][0]?.normalizedText).toContain("[short pause]");
       expect(first.filePath).toBe(second.filePath);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses legacy cache records after the TTS base URL changes", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
+    const store = new TtsStoreStub();
+    const oldBaseUrl = store.appConfig.tts?.baseUrl ?? "http://192.168.8.108:8080";
+    const sourceMessage = String((store.event.payload as { message?: unknown }).message ?? "");
+    const normalizedText = normalizeTtsText(sourceMessage);
+    const legacyKey = crypto
+      .createHash("sha256")
+      .update(JSON.stringify({
+        sessionId: "session-1",
+        seq: 12,
+        baseUrl: oldBaseUrl,
+        referenceId: "lisha",
+        normalizedText,
+        format: "mp3"
+      }))
+      .digest("hex");
+    const filePath = path.join(tempDir, "legacy-cache.mp3");
+    await writeFile(filePath, Buffer.from("fake-mp3"));
+    store.ttsAudioCache.set(legacyKey, {
+      key: legacyKey,
+      sessionId: "session-1",
+      readableId: "event:12",
+      sourceKind: "event",
+      eventSeq: 12,
+      eventType: "agent.speak_player",
+      speaker: "丽莎",
+      referenceId: "lisha",
+      baseUrl: oldBaseUrl,
+      sourceText: sourceMessage,
+      normalizedText,
+      filePath,
+      mimeType: "audio/mpeg",
+      durationMs: 1200,
+      createdAt: "2026-03-23T10:00:00.000Z",
+      lastAccessedAt: "2026-03-23T10:00:00.000Z"
+    });
+    store.appConfig = normalizeAppConfig({
+      ...store.appConfig,
+      tts: {
+        ...(store.appConfig.tts ?? { baseUrl: "http://127.0.0.1:8080", roleMappings: [] }),
+        baseUrl: "http://10.0.0.25:8080"
+      }
+    });
+
+    const fetchMock = vi.fn(async () => new Response(Buffer.from("new-fake-mp3"), {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/mpeg"
+      }
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      const service = new TtsService(store as never, tempDir);
+      const result = await service.synthesizeEventAudio("session-1", 12);
+
+      expect(result.cacheHit).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(store.ttsAudioCache.get(legacyKey)?.contentKey).toBeDefined();
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

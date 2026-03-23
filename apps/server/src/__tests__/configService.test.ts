@@ -60,7 +60,10 @@ class ConfigStoreStub {
   async getEvents() { return []; }
   async listSchedulableSessions() { return []; }
   async getTtsAudioCache() { return null; }
+  async getTtsAudioCacheByContentKey() { return null; }
   async getTtsAudioCaches() { return []; }
+  async getTtsAudioCachesByContentKeys() { return []; }
+  async findLatestTtsAudioCacheByIdentity() { return null; }
   async saveTtsAudioCache(record: unknown) { return record; }
   async touchTtsAudioCache() {}
   async getSessionTtsBatchJob() { return null; }

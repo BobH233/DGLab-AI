@@ -112,10 +112,31 @@ class InMemoryStore {
   async getEvents() { return this.events; }
   async listSchedulableSessions() { return [this.session]; }
   async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
+  async getTtsAudioCacheByContentKey(contentKey: string) {
+    return [...this.ttsAudioCache.values()].find((record) => (record.contentKey ?? record.key) === contentKey) ?? null;
+  }
   async getTtsAudioCaches(keys: string[]) {
     return keys
       .map((key) => this.ttsAudioCache.get(key) ?? null)
       .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
+  async getTtsAudioCachesByContentKeys(contentKeys: string[]) {
+    return contentKeys
+      .map((contentKey) => [...this.ttsAudioCache.values()].find((record) => (record.contentKey ?? record.key) === contentKey) ?? null)
+      .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
+  async findLatestTtsAudioCacheByIdentity(identity: {
+    sessionId: string;
+    readableId: string;
+    referenceId: string;
+    normalizedText: string;
+  }) {
+    return [...this.ttsAudioCache.values()].find((record) => (
+      record.sessionId === identity.sessionId
+      && record.readableId === identity.readableId
+      && record.referenceId === identity.referenceId
+      && record.normalizedText === identity.normalizedText
+    )) ?? null;
   }
   async saveTtsAudioCache(record: TtsAudioCacheRecord) {
     this.ttsAudioCache.set(record.key, record);

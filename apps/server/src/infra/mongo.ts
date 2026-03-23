@@ -70,6 +70,7 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       this.llmCalls.createIndex({ startedAt: -1 }),
       this.llmCalls.createIndex({ sessionId: 1, startedAt: -1 }),
       this.ttsAudioCache.createIndex({ key: 1 }, { unique: true }),
+      this.ttsAudioCache.createIndex({ contentKey: 1, lastAccessedAt: -1 }),
       this.ttsAudioCache.createIndex({ sessionId: 1, readableId: 1, createdAt: -1 }),
       this.ttsAudioCache.createIndex({ sessionId: 1, eventSeq: 1, createdAt: -1 }),
       this.sessionTtsBatchJobs.createIndex({ sessionId: 1 }, { unique: true }),
@@ -219,6 +220,19 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return this.ttsAudioCache.findOne({ key }, { projection: { _id: 0 } });
   }
 
+  async getTtsAudioCacheByContentKey(contentKey: string): Promise<TtsAudioCacheRecord | null> {
+    return this.ttsAudioCache
+      .find({
+        $or: [
+          { contentKey },
+          { key: contentKey }
+        ]
+      }, { projection: { _id: 0 } })
+      .sort({ lastAccessedAt: -1, createdAt: -1 })
+      .limit(1)
+      .next();
+  }
+
   async getTtsAudioCaches(keys: string[]): Promise<TtsAudioCacheRecord[]> {
     if (keys.length === 0) {
       return [];
@@ -226,6 +240,50 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return this.ttsAudioCache
       .find({ key: { $in: keys } }, { projection: { _id: 0 } })
       .toArray();
+  }
+
+  async getTtsAudioCachesByContentKeys(contentKeys: string[]): Promise<TtsAudioCacheRecord[]> {
+    if (contentKeys.length === 0) {
+      return [];
+    }
+    const records = await this.ttsAudioCache
+      .find({
+        $or: [
+          { contentKey: { $in: contentKeys } },
+          { key: { $in: contentKeys } }
+        ]
+      }, { projection: { _id: 0 } })
+      .sort({ lastAccessedAt: -1, createdAt: -1 })
+      .toArray();
+
+    const deduped = new Map<string, TtsAudioCacheRecord>();
+    for (const record of records) {
+      const identityKey = record.contentKey ?? record.key;
+      if (!deduped.has(identityKey)) {
+        deduped.set(identityKey, record);
+      }
+    }
+    return Array.from(deduped.values());
+  }
+
+  async findLatestTtsAudioCacheByIdentity(identity: {
+    sessionId: string;
+    readableId: string;
+    eventSeq?: number;
+    referenceId: string;
+    normalizedText: string;
+  }): Promise<TtsAudioCacheRecord | null> {
+    const query = {
+      sessionId: identity.sessionId,
+      readableId: identity.readableId,
+      referenceId: identity.referenceId,
+      normalizedText: identity.normalizedText
+    } as const;
+    return this.ttsAudioCache
+      .find(query, { projection: { _id: 0 } })
+      .sort({ lastAccessedAt: -1, createdAt: -1 })
+      .limit(1)
+      .next();
   }
 
   async saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord> {
