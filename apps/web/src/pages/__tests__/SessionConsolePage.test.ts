@@ -876,6 +876,118 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).not.toContain("先确认这一轮该怎么收束。");
   });
 
+  it("persists the surprise mode toggle per session", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    const toggle = wrapper.get('[data-testid="surprise-mode-toggle"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+
+    await toggle.setValue(true);
+
+    expect(localStorageState.get("dglabai.surprise_mode.session_1")).toBe("true");
+
+    wrapper.unmount();
+
+    const nextWrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect((nextWrapper.get('[data-testid="surprise-mode-toggle"]').element as HTMLInputElement).checked).toBe(true);
+    expect(normalizedText(nextWrapper)).toContain("惊喜模式");
+    expect(normalizedText(nextWrapper)).toContain("已开启");
+  });
+
+  it("applies the surprise mask to streaming reasoning content when enabled", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession({
+      confirmedSetup: {
+        ...createSession().draft,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ]
+      }
+    }));
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+    await wrapper.get('[data-testid="surprise-mode-toggle"]').setValue(true);
+
+    FakeEventSource.instances[0]?.emit("llm.preview.snapshot", {
+      previewTurn: {
+        turnId: "tick_surprise",
+        status: "streaming",
+        model: "gpt-5.4",
+        reasoningSummaryText: "我先把这一轮节奏压住。",
+        actions: [
+          {
+            index: 0,
+            actorAgentId: "director_1",
+            tool: "speak_to_player",
+            targetScope: "player",
+            textByPath: {
+              "args.message": {
+                visibleSegments: [
+                  {
+                    type: "text",
+                    text: "先别急着回答。"
+                  }
+                ],
+                pendingBuffer: ""
+              }
+            },
+            valueByPath: {},
+            completedFields: [],
+            completed: false
+          }
+        ]
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="reasoning-summary-content"]').classes()).toContain("surprise-mask");
+    expect(wrapper.get('.timeline-item[data-preview="true"] .event-main span').classes()).toContain("surprise-mask");
+    expect(normalizedText(wrapper)).toContain("珊瑚宫心海");
+  });
+
   it("updates the page-level preview card when e-stim field-completed events arrive", async () => {
     apiMocks.getSession.mockResolvedValue(createSession({
       confirmedSetup: {

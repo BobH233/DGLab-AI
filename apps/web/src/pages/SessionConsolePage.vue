@@ -70,7 +70,14 @@
         <div v-if="liveReasoningSummary" class="reasoning-live-banner" role="status" aria-live="polite">
           <span class="reasoning-live-banner__kicker">思路摘要</span>
           <div ref="reasoningBannerBody" class="reasoning-live-banner__body">
-            <p>{{ liveReasoningSummary }}</p>
+            <p>
+              <span
+                :class="isSurpriseModeStreaming ? ['surprise-mask', 'surprise-mask--block'] : undefined"
+                data-testid="reasoning-summary-content"
+              >
+                {{ liveReasoningSummary }}
+              </span>
+            </p>
           </div>
         </div>
         <EventTimeline
@@ -80,6 +87,7 @@
           :device-execution-states="deviceExecutionStates"
           :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
           :preview-turn="previewTurn"
+          :surprise-mode="surpriseModeEnabled"
         />
       </section>
 
@@ -110,6 +118,34 @@
               <span class="eyebrow">Interaction</span>
               <h3>输入区</h3>
             </div>
+          </div>
+          <div class="surprise-mode-card" data-testid="surprise-mode-card">
+            <div class="surprise-mode-card__copy">
+              <div class="surprise-mode-card__head">
+                <strong>惊喜模式</strong>
+                <div class="surprise-tooltip">
+                  <button
+                    type="button"
+                    class="surprise-tooltip__trigger"
+                    aria-label="查看惊喜模式说明"
+                  >
+                    ?
+                  </button>
+                  <div class="surprise-tooltip__bubble" role="tooltip">
+                    开启后，模型在流式推理这一轮时会把剧情内容优雅打码，只保留角色名、工具名和字段名可见；等本轮正式结果准备展示后会自动恢复正常显示。
+                  </div>
+                </div>
+              </div>
+              <p>推理阶段先藏住内容，等这一轮正式落地时再一起揭晓。</p>
+            </div>
+            <label class="surprise-switch">
+              <input
+                v-model="surpriseModeEnabled"
+                data-testid="surprise-mode-toggle"
+                type="checkbox"
+              />
+              <span>{{ surpriseModeEnabled ? "已开启" : "已关闭" }}</span>
+            </label>
           </div>
           <textarea
             v-model="message"
@@ -299,6 +335,7 @@ type ElectroStimOverlayPosition = {
 
 const ELECTRO_STIM_OVERLAY_POSITION_KEY = "dglabai.e_stim_overlay_position";
 const ELECTRO_STIM_OVERLAY_COLLAPSED_KEY = "dglabai.e_stim_overlay_collapsed";
+const SURPRISE_MODE_STORAGE_KEY_PREFIX = "dglabai.surprise_mode";
 
 const route = useRoute();
 const session = ref<Session | null>(null);
@@ -311,6 +348,7 @@ const retrying = ref(false);
 const error = ref("");
 const timerEnabled = ref(false);
 const intervalMs = ref(10000);
+const surpriseModeEnabled = ref(false);
 const automationNow = ref(Date.now());
 const requestingAutoTick = ref(false);
 const liveTickInFlight = ref(false);
@@ -347,6 +385,9 @@ const agentCards = computed(() => {
 const displaySummary = computed(() => stripInlineDelays(session.value?.storyState.summary ?? ""));
 const playerBodyItemState = computed(() => session.value?.playerBodyItemState ?? []);
 const liveReasoningSummary = computed(() => stripInlineDelays(previewTurn.value?.reasoningSummaryText ?? "").trim());
+const isSurpriseModeStreaming = computed(() => (
+  surpriseModeEnabled.value && previewTurn.value?.status === "streaming"
+));
 const electroStimViewerConnection = computed(() => parseGameConnectionCode(electroStimLocalConfig.value.gameConnectionCode));
 const showElectroStimViewer = computed(() => sessionUsesElectroStimTool() && Boolean(electroStimViewerConnection.value));
 const electroStimViewerUrl = computed(() => {
@@ -486,6 +527,7 @@ async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
   previewTurn.value = null;
+  surpriseModeEnabled.value = loadStoredSurpriseMode(id);
   deviceExecutionStates.value = loadElectroStimExecutionStateMap(id);
   refreshElectroStimLocalConfig();
   connectStream(id);
@@ -779,7 +821,7 @@ function refreshElectroStimLocalConfig() {
 }
 
 function currentSessionId(): string {
-  return session.value?.id ?? String(route.params.id);
+  return String(route.params.id ?? session.value?.id ?? "");
 }
 
 function refreshPersistedDeviceExecutionStates() {
@@ -857,6 +899,32 @@ function persistElectroStimOverlayCollapsed(collapsed: boolean) {
     return;
   }
   storage.setItem(ELECTRO_STIM_OVERLAY_COLLAPSED_KEY, String(collapsed));
+}
+
+function surpriseModeStorageKey(sessionId: string): string {
+  return `${SURPRISE_MODE_STORAGE_KEY_PREFIX}.${sessionId}`;
+}
+
+function loadStoredSurpriseMode(sessionId: string): boolean {
+  if (!sessionId) {
+    return false;
+  }
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return false;
+  }
+  return storage.getItem(surpriseModeStorageKey(sessionId)) === "true";
+}
+
+function persistSurpriseMode(sessionId: string, enabled: boolean) {
+  if (!sessionId) {
+    return;
+  }
+  const storage = getOverlayStorage();
+  if (!storage) {
+    return;
+  }
+  storage.setItem(surpriseModeStorageKey(sessionId), String(enabled));
 }
 
 function clampElectroStimOverlayPosition(nextX: number, nextY: number): { x: number; y: number } {
@@ -1019,6 +1087,7 @@ async function maybeExecuteDeviceControl(event: SessionEvent) {
 function handleWindowStorage() {
   refreshElectroStimLocalConfig();
   refreshPersistedDeviceExecutionStates();
+  surpriseModeEnabled.value = loadStoredSurpriseMode(currentSessionId());
 }
 
 async function sendMessage() {
@@ -1084,6 +1153,10 @@ async function saveTimer() {
 
 watch(() => route.params.id, () => {
   void loadSession();
+});
+
+watch(surpriseModeEnabled, (value) => {
+  persistSurpriseMode(currentSessionId(), value);
 });
 
 watch(showElectroStimViewer, async (value) => {

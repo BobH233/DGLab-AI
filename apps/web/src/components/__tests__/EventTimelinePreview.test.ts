@@ -100,6 +100,142 @@ describe("EventTimeline preview", () => {
     expect(wrapper.text()).toContain("先抬头看我。别急着回答。");
   });
 
+  it("obscures only preview content while keeping actor and tool labels visible in surprise mode", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        surpriseMode: true,
+        agents: [
+          {
+            id: "director_1",
+            name: "珊瑚宫心海",
+            role: "director",
+            summary: "主导者",
+            persona: "冷静",
+            goals: ["推进"],
+            style: [],
+            boundaries: [],
+            sortOrder: 0
+          }
+        ],
+        previewTurn: {
+          turnId: "tick_surprise_1",
+          status: "streaming",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "speak_to_player",
+              targetScope: "player",
+              textByPath: {
+                "args.message": {
+                  visibleSegments: [
+                    {
+                      type: "text",
+                      text: "先抬头看我。"
+                    }
+                  ],
+                  pendingBuffer: ""
+                }
+              },
+              valueByPath: {},
+              completedFields: [],
+              completed: false
+            },
+            {
+              index: 1,
+              actorAgentId: "director_1",
+              tool: "control_e_stim_toy",
+              targetScope: "scene",
+              textByPath: {},
+              valueByPath: {
+                "args.command": "fire",
+                "args.durationMs": 2500
+              },
+              completedFields: ["args.command", "args.durationMs"],
+              completed: false
+            },
+            {
+              index: 2,
+              actorAgentId: "director_1",
+              tool: "apply_story_effect",
+              targetScope: "scene",
+              textByPath: {
+                "args.description": {
+                  visibleSegments: [
+                    {
+                      type: "text",
+                      text: "空气里忽然安静了一瞬。"
+                    }
+                  ],
+                  pendingBuffer: ""
+                }
+              },
+              valueByPath: {
+                "args.label": "节奏压低",
+                "args.intensity": 4
+              },
+              completedFields: ["args.label", "args.intensity"],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    const previewItems = wrapper.findAll('.timeline-item[data-preview="true"]');
+    const effectTitle = wrapper.find('.timeline-item[data-kind="effect"] .event-header strong');
+    const contentMasks = wrapper.findAll(".surprise-mask");
+
+    expect(previewItems).toHaveLength(3);
+    expect(wrapper.text()).toContain("珊瑚宫心海");
+    expect(wrapper.text()).toContain("调用了 情趣电击器");
+    expect(wrapper.text()).toContain("命令");
+    expect(wrapper.text()).toContain("持续时间");
+    expect(effectTitle.text()).toBe("剧情变化");
+    expect(contentMasks.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("stops obscuring preview content once the preview turn is completed", () => {
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [],
+        surpriseMode: true,
+        previewTurn: {
+          turnId: "tick_surprise_2",
+          status: "completed",
+          model: "gpt-5.4",
+          actions: [
+            {
+              index: 0,
+              actorAgentId: "director_1",
+              tool: "speak_to_player",
+              targetScope: "player",
+              textByPath: {
+                "args.message": {
+                  visibleSegments: [
+                    {
+                      type: "text",
+                      text: "现在可以正常看到了。"
+                    }
+                  ],
+                  pendingBuffer: ""
+                }
+              },
+              valueByPath: {},
+              completedFields: [],
+              completed: false
+            }
+          ]
+        }
+      }
+    });
+
+    expect(wrapper.text()).toContain("现在可以正常看到了。");
+    expect(wrapper.find(".surprise-mask").exists()).toBe(false);
+  });
+
   it("renders completed preview status as a compact usage note", () => {
     const wrapper = mount(EventTimeline, {
       props: {

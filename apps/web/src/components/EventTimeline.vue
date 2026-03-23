@@ -49,7 +49,7 @@
         <header class="event-header event-header--single">
           <div class="event-title-block">
             <span class="event-kicker">{{ previewKicker(entry.action) }}</span>
-            <strong>{{ previewTitle(entry.action) }}</strong>
+            <strong>{{ previewDisplayTitle(entry.action) }}</strong>
           </div>
         </header>
         <div class="event-body">
@@ -63,20 +63,22 @@
                 <strong class="event-detail-label">{{ detail.label }}：</strong>
                 <span
                   class="event-detail-value"
-                  :class="detail.pending ? 'event-detail-value--placeholder' : undefined"
+                  :class="previewDetailValueClass(detail)"
                 >{{ detail.value }}</span>
               </p>
             </div>
           </template>
           <template v-else>
             <p v-if="hasInlineMain(entry.mainParts, entry.main)" class="event-main">
-              <template v-if="entry.mainParts?.length">
-                <template v-for="(part, index) in entry.mainParts" :key="`${entry.id}:main:${index}`">
-                  <span v-if="part.type === 'text'">{{ part.text }}</span>
-                  <span v-else class="event-inline-tag">{{ part.value }}</span>
+              <span :class="previewMaskedContentClass(entry)">
+                <template v-if="entry.mainParts?.length">
+                  <template v-for="(part, index) in entry.mainParts" :key="`${entry.id}:main:${index}`">
+                    <span v-if="part.type === 'text'">{{ part.text }}</span>
+                    <span v-else class="event-inline-tag">{{ part.value }}</span>
+                  </template>
                 </template>
-              </template>
-              <template v-else>{{ entry.main }}</template>
+                <template v-else>{{ entry.main }}</template>
+              </span>
             </p>
             <p v-else class="event-main event-main--placeholder">{{ entry.placeholder }}</p>
             <div v-if="entry.details?.length" class="event-detail-list">
@@ -88,11 +90,13 @@
                 <strong class="event-detail-label">{{ detail.label }}：</strong>
                 <span
                   class="event-detail-value"
-                  :class="detail.pending ? 'event-detail-value--placeholder' : undefined"
+                  :class="previewDetailValueClass(detail)"
                 >{{ detail.value }}</span>
               </p>
             </div>
-            <p v-if="entry.meta" class="event-meta">{{ entry.meta }}</p>
+            <p v-if="entry.meta" class="event-meta">
+              <span :class="previewMaskedMetaClass(entry)">{{ entry.meta }}</span>
+            </p>
           </template>
         </div>
         <div v-if="previewTags(entry.action).length" class="event-tags">
@@ -353,6 +357,7 @@ const props = defineProps<{
   deviceExecutionStates?: Record<string, DeviceExecutionState>;
   agents?: AgentProfile[];
   previewTurn?: PreviewTurnState | null;
+  surpriseMode?: boolean;
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
@@ -400,6 +405,9 @@ const previewStatus = computed<PreviewStatusState | null>(() => {
     live: props.previewTurn.status === "streaming"
   };
 });
+const shouldObscurePreviewContent = computed(() => (
+  Boolean(props.surpriseMode) && props.previewTurn?.status === "streaming"
+));
 let previewClockTimer: number | null = null;
 const previewDelayTimers = new Map<string, number>();
 
@@ -468,6 +476,27 @@ function buildCardClass(
     ...(kind === "inventory" ? ["event-card--inventory"] : []),
     ...(variant === "e-stim-control" ? ["event-card--e-stim-control"] : []),
     ...(optionalTool ? ["event-card--optional-tool"] : [])
+  ];
+}
+
+function previewMaskedContentClass(entry: PreviewEntry): string | undefined {
+  if (!shouldObscurePreviewContent.value || !hasInlineMain(entry.mainParts, entry.main)) {
+    return undefined;
+  }
+  return "surprise-mask";
+}
+
+function previewMaskedMetaClass(entry: PreviewEntry): string | undefined {
+  if (!shouldObscurePreviewContent.value || !entry.meta) {
+    return undefined;
+  }
+  return "surprise-mask";
+}
+
+function previewDetailValueClass(detail: PreviewDetailRow): Array<string | undefined> {
+  return [
+    detail.pending ? "event-detail-value--placeholder" : undefined,
+    shouldObscurePreviewContent.value && !detail.pending ? "surprise-mask" : undefined
   ];
 }
 
@@ -902,6 +931,16 @@ function previewTitle(action: PreviewAction): string {
     default:
       return actor;
   }
+}
+
+function previewDisplayTitle(action: PreviewAction): string {
+  if (!shouldObscurePreviewContent.value) {
+    return previewTitle(action);
+  }
+  if (action.tool === "apply_story_effect") {
+    return "剧情变化";
+  }
+  return previewTitle(action);
 }
 
 function previewMeta(action: PreviewAction): string | undefined {
