@@ -281,6 +281,73 @@ describe("SessionConsolePage", () => {
     expect((textarea.element as HTMLTextAreaElement).value).toBe("第一行");
   });
 
+  it("disables the composer while a streaming tick is in flight", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_busy",
+      model: "gpt-5.4"
+    });
+
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea.composer");
+    const button = wrapper.get(".composer-actions .button.primary");
+
+    expect((textarea.element as HTMLTextAreaElement).disabled).toBe(true);
+    expect((button.element as HTMLButtonElement).disabled).toBe(true);
+    expect(normalizedText(wrapper)).toContain("当前正在推演，请等待这一轮结束后再发送新消息。");
+  });
+
+  it("does not submit a message when Enter is pressed during streaming", async () => {
+    apiMocks.getSession.mockResolvedValue(createSession());
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    FakeEventSource.instances[0]?.emit("llm.turn.started", {
+      turnId: "tick_busy_2",
+      model: "gpt-5.4"
+    });
+
+    await flushPromises();
+
+    const textarea = wrapper.get("textarea.composer");
+    await textarea.setValue("现在先别发出去");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true
+    });
+    textarea.element.dispatchEvent(event);
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(apiMocks.postMessage).not.toHaveBeenCalled();
+  });
+
   it("renders the floating e-stim viewer when the current session enables the tool", async () => {
     window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
       gameConnectionCode: "488b55d9-acb2-4e3f-bd36-b05547b30c10@http://localhost:8920",

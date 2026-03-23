@@ -152,11 +152,14 @@
             class="field textarea composer"
             rows="7"
             placeholder="输入你希望传达给场景中角色的话。"
+            :disabled="sending || isTickInFlight"
             @keydown="handleComposerKeydown"
           />
           <div class="actions actions--spread composer-actions">
-            <span class="soft-note">Enter 发送，Shift + Enter 换行。消息会发送给当前会话中的全部智能体</span>
-            <button class="button primary" :disabled="sending || !message.trim()" @click="sendMessage">
+            <span class="soft-note">
+              {{ isTickInFlight ? "当前正在推演，请等待这一轮结束后再发送新消息。" : "Enter 发送，Shift + Enter 换行。消息会发送给当前会话中的全部智能体" }}
+            </span>
+            <button class="button primary" :disabled="sending || isTickInFlight || !message.trim()" @click="sendMessage">
               {{ sending ? "发送中..." : "发送消息" }}
             </button>
           </div>
@@ -1091,7 +1094,7 @@ function handleWindowStorage() {
 }
 
 async function sendMessage() {
-  if (!session.value) {
+  if (!session.value || isTickInFlight.value) {
     return;
   }
   sending.value = true;
@@ -1111,6 +1114,10 @@ function handleComposerKeydown(event: KeyboardEvent) {
     return;
   }
   if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) {
+    return;
+  }
+  if (isTickInFlight.value) {
+    event.preventDefault();
     return;
   }
   event.preventDefault();
