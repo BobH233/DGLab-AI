@@ -216,13 +216,13 @@
         </div>
       </div>
       <input
-        v-model.number="seekValue"
+        :value="seekValue"
         class="performance-player__slider"
         type="range"
         min="0"
         :max="Math.max(totalDurationMs, 0)"
         step="50"
-        :disabled="!ttsPerformance.readyForFullPlayback || totalDurationMs <= 0"
+        :disabled="!canUsePlaybackSlider || totalDurationMs <= 0"
         @pointerdown="beginScrub"
         @input="handleSeekInput"
         @change="finishScrub"
@@ -277,7 +277,7 @@ let pollTimer: number | null = null;
 let resumeAfterScrub = false;
 let isScrubbing = false;
 let activeCardScrollId: string | null = null;
-let playbackMode: "full" | "preview" | null = null;
+const playbackMode = ref<"full" | "preview" | null>(null);
 let playbackContext:
   | { type: "segment"; index: number; startMs: number }
   | { type: "gap"; afterIndex: number; gapStartedAt: number; initialPlayheadMs: number }
@@ -402,6 +402,12 @@ const activeTrackItem = computed(() => (
 ));
 const activeReadableTitle = computed(() => activeTrackItem.value?.readable.title ?? "尚未开始");
 const activeReadableSpeaker = computed(() => activeTrackItem.value?.readable.displaySpeaker ?? "准备就绪后可开始播放");
+const canUsePlaybackSlider = computed(() => (
+  Boolean(ttsPerformance.value?.readyForFullPlayback)
+  || playbackMode.value === "preview"
+  || isPlaying.value
+  || playbackBusy.value
+));
 
 watch(playheadMs, (value) => {
   if (!isScrubbing) {
@@ -449,6 +455,12 @@ watch(gapMs, async () => {
 onMounted(() => {
   audioElement = new Audio();
   audioElement.preload = "auto";
+  audioElement.ontimeupdate = () => {
+    syncPlayheadFromAudio();
+  };
+  audioElement.onseeking = () => {
+    syncPlayheadFromAudio();
+  };
   void loadPage();
 });
 
@@ -457,6 +469,8 @@ onBeforeUnmount(() => {
   clearPollTimer();
   if (audioElement) {
     audioElement.pause();
+    audioElement.ontimeupdate = null;
+    audioElement.onseeking = null;
     audioElement.src = "";
     audioElement = null;
   }
@@ -568,7 +582,7 @@ function pausePlayback() {
   }
   isPlaying.value = false;
   playbackBusy.value = false;
-  playbackMode = null;
+  playbackMode.value = null;
   playbackContext = null;
   audioElement?.pause();
   stopPlaybackFrame();
@@ -638,7 +652,7 @@ async function playSegment(index: number, offsetMs: number, mode: "full" | "prev
 
     isPlaying.value = true;
     playbackBusy.value = false;
-    playbackMode = mode;
+    playbackMode.value = mode;
     playbackContext = {
       type: "segment",
       index,
@@ -713,7 +727,7 @@ function startPlaybackFrame() {
   stopPlaybackFrame();
   const tick = () => {
     if (playbackContext?.type === "segment" && audioElement) {
-      playheadMs.value = clampPlayhead(playbackContext.startMs + audioElement.currentTime * 1000);
+      syncPlayheadFromAudio();
     } else if (playbackContext?.type === "gap") {
       const elapsed = window.performance.now() - playbackContext.gapStartedAt;
       playheadMs.value = clampPlayhead(playbackContext.initialPlayheadMs + elapsed);
@@ -724,6 +738,13 @@ function startPlaybackFrame() {
     }
   };
   playbackFrame = window.requestAnimationFrame(tick);
+}
+
+function syncPlayheadFromAudio() {
+  if (!audioElement || playbackContext?.type !== "segment") {
+    return;
+  }
+  playheadMs.value = clampPlayhead(playbackContext.startMs + audioElement.currentTime * 1000);
 }
 
 function stopPlaybackFrame() {
@@ -831,7 +852,7 @@ function clampPlayhead(value: number): number {
 }
 
 function beginScrub() {
-  resumeAfterScrub = isPlaying.value && playbackMode === "full";
+  resumeAfterScrub = isPlaying.value && playbackMode.value === "full";
   isScrubbing = true;
   pausePlayback();
 }

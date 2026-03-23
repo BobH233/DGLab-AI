@@ -275,5 +275,6 @@ describe("PerformanceModePage", () => {
     await flushPromises();
 
     expect(apiMocks.getSessionReadableTts).toHaveBeenCalledWith("session_1", "setup:worldSummary");
+    expect(wrapper.get('input[type="range"]').attributes("disabled")).toBeUndefined();
   });
 });
