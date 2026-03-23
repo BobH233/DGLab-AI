@@ -29,6 +29,16 @@ class TtsStoreStub {
           id: "mapping-lisha",
           characterName: "丽莎",
           referenceId: "lisha"
+        },
+        {
+          id: "mapping-narrator",
+          characterName: "旁白",
+          referenceId: "wendi"
+        },
+        {
+          id: "mapping-player",
+          characterName: "玩家",
+          referenceId: "player_voice"
         }
       ]
     }
@@ -124,6 +134,82 @@ describe("TtsService", () => {
       expect(store.ttsAudioCache.size).toBe(1);
       expect([...store.ttsAudioCache.values()][0]?.normalizedText).toContain("[short pause]");
       expect(first.filePath).toBe(second.filePath);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the narrator mapping for stage direction events", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
+    const store = new TtsStoreStub();
+    store.event = {
+      sessionId: "session-1",
+      seq: 13,
+      type: "agent.stage_direction",
+      source: "agent",
+      agentId: "director",
+      createdAt: "2026-03-23T10:02:00.000Z",
+      payload: {
+        speaker: "宵宫",
+        direction: "<emo_inst>soft</emo_inst> 她俯下身，慢慢贴近你的耳边。"
+      }
+    };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      return new Response(Buffer.from("fake-mp3"), {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/mpeg"
+        }
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      const service = new TtsService(store as never, tempDir);
+      await service.synthesizeEventAudio("session-1", 13);
+
+      const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
+        reference_id?: string;
+        text?: string;
+      };
+      expect(requestBody.reference_id).toBe("wendi");
+      expect(requestBody.text).toContain("[soft]");
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the player mapping for player message events", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
+    const store = new TtsStoreStub();
+    store.event = {
+      sessionId: "session-1",
+      seq: 14,
+      type: "player.message",
+      source: "player",
+      createdAt: "2026-03-23T10:03:00.000Z",
+      payload: {
+        text: "我会乖乖听话的……"
+      }
+    };
+    const fetchMock = vi.fn(async () => new Response(Buffer.from("fake-mp3"), {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/mpeg"
+      }
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      const service = new TtsService(store as never, tempDir);
+      await service.synthesizeEventAudio("session-1", 14);
+
+      const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
+        reference_id?: string;
+        text?: string;
+      };
+      expect(requestBody.reference_id).toBe("player_voice");
+      expect(requestBody.text).toContain("[short pause]");
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

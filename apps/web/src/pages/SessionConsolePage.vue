@@ -88,6 +88,7 @@
           :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
           :preview-turn="previewTurn"
           :surprise-mode="surpriseModeEnabled"
+          :tts-playable-by-seq="ttsPlayableBySeq"
           :tts-playback-states="ttsPlaybackStates"
           @play-tts="handlePlayTts"
         />
@@ -321,6 +322,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router";
 import { api } from "../api";
 import EventTimeline from "../components/EventTimeline.vue";
+import { useConfigStore } from "../configStore";
 import {
   applyElectroStimToolEvent,
   buildElectroStimToolContext,
@@ -362,6 +364,7 @@ const ELECTRO_STIM_OVERLAY_POSITION_KEY = "dglabai.e_stim_overlay_position";
 const ELECTRO_STIM_OVERLAY_COLLAPSED_KEY = "dglabai.e_stim_overlay_collapsed";
 const SURPRISE_MODE_STORAGE_KEY_PREFIX = "dglabai.surprise_mode";
 
+const configStore = useConfigStore();
 const route = useRoute();
 const session = ref<Session | null>(null);
 const events = ref<SessionEvent[]>([]);
@@ -497,6 +500,13 @@ const automationTimelineStatus = computed(() => {
     meta: pendingAutomationCooldown.value ? "自动推进" : undefined,
     live: isTickInFlight.value || pendingAutomationCooldown.value
   };
+});
+const ttsPlayableBySeq = computed<Record<number, boolean>>(() => {
+  const result: Record<number, boolean> = {};
+  for (const event of events.value) {
+    result[event.seq] = isEventTtsPlayable(event);
+  }
+  return result;
 });
 const latestTickFailure = computed(() => {
   for (let index = events.value.length - 1; index >= 0; index -= 1) {
@@ -896,6 +906,48 @@ function textOf(value: unknown): string {
     return "";
   }
   return stripInlineDelays(String(value));
+}
+
+function normalizeTtsCharacterName(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function hasConfiguredTtsVoice(characterName: string): boolean {
+  const appConfig = configStore.appConfig.value;
+  if (!appConfig?.tts?.baseUrl?.trim()) {
+    return false;
+  }
+  const targetName = normalizeTtsCharacterName(characterName);
+  if (!targetName) {
+    return false;
+  }
+  return appConfig.tts.roleMappings.some((mapping) => (
+    normalizeTtsCharacterName(mapping.characterName) === targetName
+    && mapping.referenceId.trim().length > 0
+  ));
+}
+
+function isEventTtsPlayable(event: SessionEvent): boolean {
+  switch (event.type) {
+    case "player.message":
+      return typeof event.payload.text === "string"
+        && event.payload.text.trim().length > 0
+        && hasConfiguredTtsVoice("玩家");
+    case "agent.speak_player":
+      return typeof event.payload.message === "string"
+        && event.payload.message.trim().length > 0
+        && hasConfiguredTtsVoice(textOf(event.payload.speaker));
+    case "agent.stage_direction":
+      return typeof event.payload.direction === "string"
+        && event.payload.direction.trim().length > 0
+        && hasConfiguredTtsVoice("旁白");
+    case "agent.story_effect":
+      return typeof event.payload.description === "string"
+        && event.payload.description.trim().length > 0
+        && hasConfiguredTtsVoice("旁白");
+    default:
+      return false;
+  }
 }
 
 function formatPauseMs(ms: number): string {
@@ -1332,6 +1384,7 @@ watch(liveReasoningSummary, async (value) => {
 });
 
 onMounted(() => {
+  void configStore.ensureConfigLoaded();
   refreshElectroStimLocalConfig();
   refreshPersistedDeviceExecutionStates();
   window.addEventListener("focus", refreshElectroStimLocalConfig);

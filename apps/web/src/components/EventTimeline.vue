@@ -160,7 +160,7 @@
           <div class="event-header__aside">
             <button
               v-if="canPlayTts(item)"
-              class="tts-trigger"
+              :class="ttsButtonClass(item)"
               type="button"
               :data-state="ttsButtonState(item)"
               :disabled="isTtsBusy(item)"
@@ -372,6 +372,7 @@ const props = defineProps<{
   agents?: AgentProfile[];
   previewTurn?: PreviewTurnState | null;
   surpriseMode?: boolean;
+  ttsPlayableBySeq?: Record<number, boolean>;
   ttsPlaybackStates?: Record<number, TtsPlaybackState>;
 }>();
 
@@ -461,7 +462,7 @@ function showExecutionInspector(item: PresentationItem): boolean {
 }
 
 function canPlayTts(item: PresentationItem): boolean {
-  return item.kicker === "角色发言";
+  return props.ttsPlayableBySeq?.[item.seq] === true;
 }
 
 function ttsState(item: PresentationItem): TtsPlaybackState {
@@ -470,6 +471,13 @@ function ttsState(item: PresentationItem): TtsPlaybackState {
 
 function ttsButtonState(item: PresentationItem): TtsPlaybackState {
   return ttsState(item);
+}
+
+function ttsButtonClass(item: PresentationItem): string[] {
+  return [
+    "tts-trigger",
+    `tts-trigger--${item.kind}`
+  ];
 }
 
 function isTtsBusy(item: PresentationItem): boolean {

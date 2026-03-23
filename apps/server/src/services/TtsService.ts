@@ -72,12 +72,9 @@ export class TtsService {
     if (!event) {
       throw new HttpError(404, `Session event ${seq} not found`);
     }
-    if (event.type !== "agent.speak_player") {
-      throw new HttpError(400, "Only character speech events can be read aloud");
-    }
-
-    const sourceText = typeof event.payload.message === "string" ? event.payload.message : "";
-    const speaker = typeof event.payload.speaker === "string" ? event.payload.speaker.trim() : "";
+    const eventTtsPayload = this.buildEventTtsPayload(event);
+    const sourceText = eventTtsPayload.text;
+    const speaker = eventTtsPayload.speaker;
     if (!sourceText.trim()) {
       throw new HttpError(400, "This speech event has no text to synthesize");
     }
@@ -146,6 +143,39 @@ export class TtsService {
       mimeType: "audio/mpeg",
       cacheHit: false
     };
+  }
+
+  private buildEventTtsPayload(event: {
+    type: string;
+    payload: Record<string, unknown>;
+  }): {
+    text: string;
+    speaker: string;
+  } {
+    switch (event.type) {
+      case "player.message":
+        return {
+          text: typeof event.payload.text === "string" ? event.payload.text : "",
+          speaker: "玩家"
+        };
+      case "agent.speak_player":
+        return {
+          text: typeof event.payload.message === "string" ? event.payload.message : "",
+          speaker: typeof event.payload.speaker === "string" ? event.payload.speaker.trim() : ""
+        };
+      case "agent.stage_direction":
+        return {
+          text: typeof event.payload.direction === "string" ? event.payload.direction : "",
+          speaker: "旁白"
+        };
+      case "agent.story_effect":
+        return {
+          text: typeof event.payload.description === "string" ? event.payload.description : "",
+          speaker: "旁白"
+        };
+      default:
+        throw new HttpError(400, "Only player messages, character speech, stage direction, and story effect events can be read aloud");
+    }
   }
 
   private async getConfiguredBaseUrl(): Promise<string> {

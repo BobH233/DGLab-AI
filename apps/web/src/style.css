@@ -1252,6 +1252,78 @@ a {
   color: #8f6b55;
 }
 
+.tts-trigger--dialogue {
+  border-color: rgba(120, 83, 56, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(249, 239, 232, 0.98));
+  color: #7e543c;
+  box-shadow: 0 10px 20px rgba(121, 88, 66, 0.08);
+}
+
+.tts-trigger--dialogue[data-state="playing"] {
+  background: linear-gradient(135deg, rgba(142, 95, 61, 0.96), rgba(111, 70, 47, 0.94));
+  border-color: rgba(111, 70, 47, 0.2);
+  color: #fff8f4;
+}
+
+.tts-trigger--dialogue[data-state="loading"] {
+  color: #8f6b55;
+}
+
+.tts-trigger--player {
+  border-color: rgba(78, 146, 124, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(229, 248, 239, 0.98));
+  color: #2f6f5b;
+  box-shadow: 0 10px 20px rgba(74, 128, 111, 0.08);
+}
+
+.tts-trigger--player[data-state="playing"] {
+  background: linear-gradient(135deg, rgba(64, 128, 104, 0.96), rgba(47, 104, 84, 0.94));
+  border-color: rgba(47, 104, 84, 0.24);
+  color: #f5fffa;
+}
+
+.tts-trigger--player[data-state="loading"] {
+  color: #5b8a78;
+}
+
+.tts-trigger--action {
+  border-color: rgba(56, 129, 123, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(232, 247, 245, 0.98));
+  color: #2f6f6a;
+  box-shadow: 0 10px 20px rgba(52, 114, 109, 0.08);
+}
+
+.tts-trigger--action[data-state="playing"] {
+  background: linear-gradient(135deg, rgba(58, 128, 122, 0.96), rgba(42, 102, 97, 0.94));
+  border-color: rgba(42, 102, 97, 0.24);
+  color: #f5fffd;
+}
+
+.tts-trigger--action[data-state="loading"] {
+  color: #5f8e8a;
+}
+
+.tts-trigger--effect {
+  border-color: rgba(95, 111, 170, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(237, 242, 255, 0.98));
+  color: #4d5f9a;
+  box-shadow: 0 10px 20px rgba(84, 106, 153, 0.08);
+}
+
+.tts-trigger--effect[data-state="playing"] {
+  background: linear-gradient(135deg, rgba(93, 109, 170, 0.96), rgba(72, 87, 145, 0.94));
+  border-color: rgba(72, 87, 145, 0.24);
+  color: #f7f9ff;
+}
+
+.tts-trigger--effect[data-state="loading"] {
+  color: #7482b1;
+}
+
 .event-kicker {
   color: var(--accent);
 }
