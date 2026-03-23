@@ -92,6 +92,22 @@ export type ToolWorldPromptContext = {
   toolContext?: ToolContext;
 };
 
+export type TtsAudioCacheRecord = {
+  key: string;
+  sessionId: string;
+  eventSeq: number;
+  eventType: string;
+  speaker: string;
+  referenceId: string;
+  baseUrl: string;
+  sourceText: string;
+  normalizedText: string;
+  filePath: string;
+  mimeType: string;
+  createdAt: string;
+  lastAccessedAt: string;
+};
+
 export interface ToolWorldPromptContribution {
   toolId: string;
   prompt: string;
@@ -150,6 +166,7 @@ export interface SessionStore {
   listSessions(): Promise<Array<Pick<Session, "id" | "title" | "status" | "updatedAt" | "createdAt">>>;
   createSession(session: Session): Promise<Session>;
   getSession(sessionId: string): Promise<Session | null>;
+  getEvent(sessionId: string, seq: number): Promise<SessionEvent | null>;
   replaceSession(session: Session): Promise<void>;
   appendEvents(
     sessionId: string,
@@ -158,6 +175,9 @@ export interface SessionStore {
   ): Promise<SessionEvent[]>;
   getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]>;
   listSchedulableSessions(): Promise<Session[]>;
+  getTtsAudioCache(key: string): Promise<TtsAudioCacheRecord | null>;
+  saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord>;
+  touchTtsAudioCache(key: string, accessedAt: string): Promise<void>;
 }
 
 export interface LlmCallStore {

@@ -1,6 +1,7 @@
 import { createEmptyMemoryState, createEmptyUsageStats, defaultToolStates, normalizeAppConfig, type AppConfig, type LlmConfig, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { describe, expect, it, vi } from "vitest";
 import { SessionService } from "../services/SessionService.js";
+import type { TtsAudioCacheRecord } from "../types/contracts.js";
 
 const config: LlmConfig = {
   provider: "openai-compatible",
@@ -82,6 +83,7 @@ class InMemoryStore {
   public session = createSession();
   public events: SessionEvent[] = [];
   public appConfig: AppConfig = normalizeAppConfig(config);
+  public ttsAudioCache = new Map<string, TtsAudioCacheRecord>();
 
   async init() {}
   async getConfig() { return config; }
@@ -94,6 +96,9 @@ class InMemoryStore {
   async listSessions() { return []; }
   async createSession(session: Session) { this.session = session; return session; }
   async getSession(sessionId: string) { return sessionId === this.session.id ? this.session : null; }
+  async getEvent(sessionId: string, seq: number) {
+    return this.events.find((event) => event.sessionId === sessionId && event.seq === seq) ?? null;
+  }
   async replaceSession(session: Session) { this.session = session; }
   async appendEvents(sessionId: string, startSeq: number, events: Array<Omit<SessionEvent, "seq" | "sessionId">>) {
     const documents = events.map((event, index) => ({
@@ -106,6 +111,21 @@ class InMemoryStore {
   }
   async getEvents() { return this.events; }
   async listSchedulableSessions() { return [this.session]; }
+  async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
+  async saveTtsAudioCache(record: TtsAudioCacheRecord) {
+    this.ttsAudioCache.set(record.key, record);
+    return record;
+  }
+  async touchTtsAudioCache(key: string, accessedAt: string) {
+    const existing = this.ttsAudioCache.get(key);
+    if (!existing) {
+      return;
+    }
+    this.ttsAudioCache.set(key, {
+      ...existing,
+      lastAccessedAt: accessedAt
+    });
+  }
 }
 
 describe("SessionService", () => {

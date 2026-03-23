@@ -13,6 +13,7 @@ import { createAuthRoutes } from "./routes/authRoutes.js";
 import { createConfigRoutes } from "./routes/configRoutes.js";
 import { createLlmCallRoutes } from "./routes/llmCallRoutes.js";
 import { createSessionRoutes } from "./routes/sessionRoutes.js";
+import { createTtsRoutes } from "./routes/ttsRoutes.js";
 import { ConfigService } from "./services/ConfigService.js";
 import { LlmCallService } from "./services/LlmCallService.js";
 import { DefaultOrchestratorService } from "./services/OrchestratorService.js";
@@ -20,6 +21,7 @@ import { MemoryContextAssembler } from "./services/MemoryContextAssembler.js";
 import { MemoryService } from "./services/MemoryService.js";
 import { SchedulerService } from "./services/SchedulerService.js";
 import { SessionService } from "./services/SessionService.js";
+import { TtsService } from "./services/TtsService.js";
 import { createDefaultToolRegistry } from "./tools/defaultTools.js";
 
 export async function createServerApp() {
@@ -51,6 +53,7 @@ export async function createServerApp() {
   );
   const scheduler = new SchedulerService(sessionService);
   const llmCallService = new LlmCallService(store);
+  const ttsService = new TtsService(store);
   sessionService.attachScheduler(scheduler);
 
   const app = express();
@@ -65,6 +68,7 @@ export async function createServerApp() {
   app.use("/api/config", createConfigRoutes(configService));
   app.use("/api/llm-calls", createLlmCallRoutes(llmCallService));
   app.use("/api/sessions", createSessionRoutes(sessionService, channel));
+  app.use("/api/tts", createTtsRoutes(ttsService));
 
   if (existsSync(webDistDir)) {
     app.use(express.static(webDistDir));

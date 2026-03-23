@@ -1,4 +1,5 @@
 import {
+  createDefaultTtsConfig,
   createDefaultModelBackend,
   defaultToolStates,
   normalizeAppConfig,
@@ -24,6 +25,7 @@ const activeConfig: LlmConfig = {
 class ConfigStoreStub {
   public appConfig: AppConfig = normalizeAppConfig({
     activeBackendId: "primary",
+    tts: createDefaultTtsConfig(),
     backends: [
       {
         ...createDefaultModelBackend(),
@@ -52,10 +54,14 @@ class ConfigStoreStub {
   async listSessions() { return []; }
   async createSession() { throw new Error("not implemented"); }
   async getSession() { return null; }
+  async getEvent() { return null; }
   async replaceSession() {}
   async appendEvents() { return []; }
   async getEvents() { return []; }
   async listSchedulableSessions() { return []; }
+  async getTtsAudioCache() { return null; }
+  async saveTtsAudioCache(record: unknown) { return record; }
+  async touchTtsAudioCache() {}
 }
 
 describe("ConfigService", () => {

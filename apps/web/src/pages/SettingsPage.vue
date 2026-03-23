@@ -146,30 +146,143 @@
         </button>
       </div>
     </section>
+
+    <section class="panel stack settings-panel settings-panel--full">
+      <div class="section-head">
+        <div>
+          <h2>TTS 朗读配置</h2>
+          <p class="soft-note">前端只保存配置和触发播放，所有健康检查、reference 列表获取、音频生成与缓存都在后端完成。</p>
+        </div>
+        <button class="button secondary" @click="addTtsRoleMapping">新增角色映射</button>
+      </div>
+
+      <div class="tts-config-card">
+        <label>
+          <span>TTS API Base URL</span>
+          <input
+            v-model="form.tts.baseUrl"
+            class="field"
+            placeholder="http://192.168.8.108:8080"
+          />
+        </label>
+        <div class="actions">
+          <button class="button secondary" :disabled="checkingTts" @click="checkTtsHealth">
+            {{ checkingTts ? "检查中..." : "检查" }}
+          </button>
+          <button class="button secondary" :disabled="loadingReferences" @click="loadTtsReferences">
+            {{ loadingReferences ? "获取中..." : "获取 reference_id 列表" }}
+          </button>
+        </div>
+        <p v-if="ttsMessage" class="success-text">{{ ttsMessage }}</p>
+        <p v-if="ttsError" class="error-text">{{ ttsError }}</p>
+      </div>
+
+      <div class="stack">
+        <div class="section-head section-head--compact">
+          <div>
+            <h3>可用 reference_id</h3>
+            <p class="soft-note">点击“获取 reference_id 列表”后会从后端代理到你配置的 TTS 服务。</p>
+          </div>
+          <span class="soft-pill">{{ availableReferenceIds.length }} 个</span>
+        </div>
+        <div v-if="availableReferenceIds.length" class="pill-list">
+          <span
+            v-for="referenceId in availableReferenceIds"
+            :key="referenceId"
+            class="pill-list__item"
+          >
+            {{ referenceId }}
+          </span>
+        </div>
+        <p v-else class="soft-note">还没有加载 reference_id 列表。</p>
+      </div>
+
+      <div class="stack">
+        <div class="section-head section-head--compact">
+          <div>
+            <h3>角色与 reference_id 映射</h3>
+            <p class="soft-note">比如“旁白”对应 `wendi`，“丽莎”对应 `lisha`。推演界面的“朗读”会按角色名精确匹配这里的映射。</p>
+          </div>
+          <span class="soft-pill">{{ form.tts.roleMappings.length }} 条</span>
+        </div>
+
+        <div v-if="form.tts.roleMappings.length" class="tts-role-mapping-list">
+          <article
+            v-for="mapping in form.tts.roleMappings"
+            :key="mapping.id"
+            class="tts-role-mapping-card"
+          >
+            <label>
+              <span>角色名</span>
+              <input
+                v-model="mapping.characterName"
+                class="field"
+                placeholder="例如：旁白、丽莎"
+              />
+            </label>
+            <label>
+              <span>reference_id</span>
+              <input
+                v-model="mapping.referenceId"
+                class="field"
+                list="tts-reference-options"
+                placeholder="例如：wendi"
+              />
+            </label>
+            <button class="button secondary" @click="removeTtsRoleMapping(mapping.id)">删除</button>
+          </article>
+        </div>
+        <p v-else class="soft-note">还没有角色映射。新增后保存到后端数据库即可在推演页使用。</p>
+      </div>
+
+      <datalist id="tts-reference-options">
+        <option
+          v-for="referenceId in availableReferenceIds"
+          :key="`reference-${referenceId}`"
+          :value="referenceId"
+        />
+      </datalist>
+
+      <div class="actions">
+        <button class="button primary" :disabled="saving" @click="save">
+          {{ saving ? "保存中..." : "保存全部配置" }}
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import {
   createDefaultModelBackend,
+  createDefaultTtsConfig,
   reasoningEffortOptions,
   toolCatalog,
   type AppConfig,
   type ModelBackend,
-  type ReasoningEffort
+  type ReasoningEffort,
+  type TtsConfig,
+  type TtsRoleMapping
 } from "@dglab-ai/shared";
 import { computed, onMounted, reactive, ref } from "vue";
+import { api } from "../api";
 import { useConfigStore } from "../configStore";
 
 const configStore = useConfigStore();
 const form = reactive<AppConfig>({
   activeBackendId: "",
-  backends: []
+  backends: [],
+  tts: createDefaultTtsConfig()
 });
 const selectedBackendId = ref("");
 const saving = ref(false);
 const message = ref("");
 const error = ref("");
+const checkingTts = ref(false);
+const loadingReferences = ref(false);
+const ttsMessage = ref("");
+const ttsError = ref("");
+const availableReferenceIds = ref<string[]>([]);
 const reasoningEffortLabels: Record<ReasoningEffort, string> = {
   low: "低强度推理",
   medium: "中强度推理",
@@ -189,9 +302,37 @@ function cloneBackend(backend: ModelBackend): ModelBackend {
   };
 }
 
+function createTtsRoleMappingId(): string {
+  return `tts-role-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneTtsRoleMapping(mapping: TtsRoleMapping): TtsRoleMapping {
+  return {
+    ...mapping
+  };
+}
+
+function cloneTtsConfig(config: TtsConfig, filterFullyBlankRows = false): TtsConfig {
+  return {
+    baseUrl: config.baseUrl?.trim() || undefined,
+    roleMappings: config.roleMappings
+      .map((mapping) => ({
+        ...cloneTtsRoleMapping(mapping),
+        characterName: mapping.characterName.trim(),
+        referenceId: mapping.referenceId.trim()
+      }))
+      .filter((mapping) => (
+        !filterFullyBlankRows
+        || mapping.characterName.length > 0
+        || mapping.referenceId.length > 0
+      ))
+  };
+}
+
 function replaceForm(config: AppConfig) {
   form.activeBackendId = config.activeBackendId;
   form.backends = config.backends.map(cloneBackend);
+  form.tts = cloneTtsConfig(config.tts);
   if (!form.backends.some((backend) => backend.id === selectedBackendId.value)) {
     selectedBackendId.value = form.activeBackendId || form.backends[0]?.id || "";
   }
@@ -226,9 +367,56 @@ function removeBackend(backendId: string) {
   }
 }
 
+function addTtsRoleMapping() {
+  form.tts.roleMappings.push({
+    id: createTtsRoleMappingId(),
+    characterName: "",
+    referenceId: ""
+  });
+}
+
+function removeTtsRoleMapping(mappingId: string) {
+  form.tts.roleMappings = form.tts.roleMappings.filter((mapping) => mapping.id !== mappingId);
+}
+
 async function loadConfig() {
   error.value = "";
   replaceForm(await configStore.ensureConfigLoaded());
+}
+
+function currentTtsBaseUrl(): string | undefined {
+  return form.tts.baseUrl?.trim() || undefined;
+}
+
+async function checkTtsHealth() {
+  checkingTts.value = true;
+  ttsMessage.value = "";
+  ttsError.value = "";
+  try {
+    const response = await api.getTtsHealth(currentTtsBaseUrl());
+    ttsMessage.value = response.status === "ok"
+      ? "TTS 服务检查通过，返回 status=ok。"
+      : `TTS 服务已响应，status=${response.status}`;
+  } catch (caught) {
+    ttsError.value = caught instanceof Error ? caught.message : "TTS 检查失败";
+  } finally {
+    checkingTts.value = false;
+  }
+}
+
+async function loadTtsReferences() {
+  loadingReferences.value = true;
+  ttsMessage.value = "";
+  ttsError.value = "";
+  try {
+    const response = await api.listTtsReferences(currentTtsBaseUrl());
+    availableReferenceIds.value = response.reference_ids;
+    ttsMessage.value = response.message ?? `已获取 ${response.reference_ids.length} 个 reference_id。`;
+  } catch (caught) {
+    ttsError.value = caught instanceof Error ? caught.message : "获取 reference_id 列表失败";
+  } finally {
+    loadingReferences.value = false;
+  }
 }
 
 async function save() {
@@ -238,7 +426,8 @@ async function save() {
   try {
     const saved = await configStore.saveAppConfig({
       activeBackendId: form.activeBackendId,
-      backends: form.backends.map(cloneBackend)
+      backends: form.backends.map(cloneBackend),
+      tts: cloneTtsConfig(form.tts, true)
     });
     replaceForm(saved);
     message.value = "配置已保存。当前默认后端会用于之后新建的 session。";

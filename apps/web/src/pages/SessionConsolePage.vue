@@ -88,6 +88,8 @@
           :agents="session?.confirmedSetup?.agents ?? session?.draft?.agents ?? []"
           :preview-turn="previewTurn"
           :surprise-mode="surpriseModeEnabled"
+          :tts-playback-states="ttsPlaybackStates"
+          @play-tts="handlePlayTts"
         />
       </section>
 
@@ -290,6 +292,26 @@
         />
       </div>
     </section>
+
+    <section
+      v-if="ttsToastMessage"
+      class="floating-toast floating-toast--error"
+      role="alert"
+      aria-live="assertive"
+    >
+      <div class="floating-toast__body">
+        <strong>朗读失败</strong>
+        <p>{{ ttsToastMessage }}</p>
+      </div>
+      <button
+        type="button"
+        class="floating-toast__close"
+        aria-label="关闭朗读错误提示"
+        @click="clearTtsToast"
+      >
+        ×
+      </button>
+    </section>
   </section>
 </template>
 
@@ -349,6 +371,7 @@ const message = ref("");
 const sending = ref(false);
 const retrying = ref(false);
 const error = ref("");
+const ttsToastMessage = ref("");
 const timerEnabled = ref(false);
 const intervalMs = ref(10000);
 const surpriseModeEnabled = ref(false);
@@ -360,6 +383,7 @@ const playbackCooldownUntil = ref<number | null>(null);
 const deviceExecutionStates = ref<Record<string, DeviceExecutionState>>({});
 const reasoningBannerBody = ref<HTMLDivElement | null>(null);
 const electroStimOverlay = ref<HTMLDivElement | null>(null);
+const ttsPlaybackStates = ref<Record<number, "idle" | "loading" | "playing">>({});
 const electroStimLocalConfig = ref(loadElectroStimLocalConfig());
 const electroStimOverlayPosition = ref<ElectroStimOverlayPosition>({
   x: 24,
@@ -374,6 +398,11 @@ let automationClockTimer: number | null = null;
 let queueRunning = false;
 let playbackGeneration = 0;
 let pendingSleepResolve: (() => void) | null = null;
+let activeTtsSeq: number | null = null;
+let activeTtsAudio: HTMLAudioElement | null = null;
+let activeTtsAudioUrl: string | null = null;
+let ttsRequestGeneration = 0;
+let ttsToastTimer: number | null = null;
 const liveQueue: SessionEvent[] = [];
 
 const agentCards = computed(() => {
@@ -529,6 +558,8 @@ async function maybeRequestAutoTick() {
 async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
+  stopTtsPlayback();
+  clearTtsToast();
   previewTurn.value = null;
   surpriseModeEnabled.value = loadStoredSurpriseMode(id);
   deviceExecutionStates.value = loadElectroStimExecutionStateMap(id);
@@ -701,6 +732,109 @@ function clearLivePlayback() {
   }
   pendingSleepResolve?.();
   pendingSleepResolve = null;
+}
+
+function setTtsPlaybackState(seq: number, state: "idle" | "loading" | "playing") {
+  ttsPlaybackStates.value = {
+    ...ttsPlaybackStates.value,
+    [seq]: state
+  };
+}
+
+function releaseTtsAudio() {
+  if (activeTtsAudio) {
+    activeTtsAudio.pause();
+    activeTtsAudio.src = "";
+    activeTtsAudio.onended = null;
+    activeTtsAudio.onerror = null;
+    activeTtsAudio = null;
+  }
+  if (activeTtsAudioUrl) {
+    URL.revokeObjectURL(activeTtsAudioUrl);
+    activeTtsAudioUrl = null;
+  }
+}
+
+function stopTtsPlayback() {
+  ttsRequestGeneration += 1;
+  if (activeTtsSeq !== null) {
+    setTtsPlaybackState(activeTtsSeq, "idle");
+  }
+  activeTtsSeq = null;
+  releaseTtsAudio();
+}
+
+function clearTtsToast() {
+  ttsToastMessage.value = "";
+  if (ttsToastTimer !== null) {
+    window.clearTimeout(ttsToastTimer);
+    ttsToastTimer = null;
+  }
+}
+
+function showTtsToast(message: string) {
+  clearTtsToast();
+  ttsToastMessage.value = message;
+  ttsToastTimer = window.setTimeout(() => {
+    ttsToastMessage.value = "";
+    ttsToastTimer = null;
+  }, 7000);
+}
+
+async function handlePlayTts(seq: number) {
+  if (!session.value) {
+    return;
+  }
+
+  if (activeTtsSeq === seq && ttsPlaybackStates.value[seq] === "playing") {
+    stopTtsPlayback();
+    return;
+  }
+
+  clearTtsToast();
+  stopTtsPlayback();
+  activeTtsSeq = seq;
+  setTtsPlaybackState(seq, "loading");
+  const requestGeneration = ttsRequestGeneration;
+
+  try {
+    const audioBlob = await api.getSessionEventTts(session.value.id, seq);
+    if (requestGeneration !== ttsRequestGeneration || activeTtsSeq !== seq) {
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    activeTtsAudio = audio;
+    activeTtsAudioUrl = audioUrl;
+    audio.onended = () => {
+      if (activeTtsSeq === seq) {
+        setTtsPlaybackState(seq, "idle");
+        activeTtsSeq = null;
+      }
+      releaseTtsAudio();
+    };
+    audio.onerror = () => {
+      if (activeTtsSeq === seq) {
+        setTtsPlaybackState(seq, "idle");
+        activeTtsSeq = null;
+      }
+      showTtsToast("音频已经生成，但浏览器播放失败了。");
+      releaseTtsAudio();
+    };
+    await audio.play();
+    if (requestGeneration !== ttsRequestGeneration || activeTtsSeq !== seq) {
+      return;
+    }
+    setTtsPlaybackState(seq, "playing");
+  } catch (caught) {
+    if (activeTtsSeq === seq) {
+      setTtsPlaybackState(seq, "idle");
+      activeTtsSeq = null;
+    }
+    releaseTtsAudio();
+    showTtsToast(caught instanceof Error ? caught.message : "朗读失败");
+  }
 }
 
 function hasOpenTick(sourceEvents: SessionEvent[]): boolean {
@@ -1213,6 +1347,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stream?.close();
   clearLivePlayback();
+  stopTtsPlayback();
+  clearTtsToast();
   window.removeEventListener("focus", refreshElectroStimLocalConfig);
   window.removeEventListener("storage", handleWindowStorage);
   window.removeEventListener("resize", syncElectroStimOverlayWithinViewport);

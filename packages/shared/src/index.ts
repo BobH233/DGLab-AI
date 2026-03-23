@@ -4,6 +4,19 @@ function nullToUndefined<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((value) => value === null ? undefined : value, schema.optional());
 }
 
+function emptyStringToUndefined<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((value) => {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "string") {
+      return value;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }, schema.optional());
+}
+
 export const toolCatalog = [
   {
     id: "control_vibe_toy",
@@ -165,9 +178,64 @@ export function normalizeModelBackend(backend: ModelBackend): ModelBackend {
   };
 }
 
+export const ttsRoleMappingSchema = z.object({
+  id: z.string().min(1),
+  characterName: z.string().min(1),
+  referenceId: z.string().min(1)
+});
+
+export type TtsRoleMapping = z.infer<typeof ttsRoleMappingSchema>;
+
+export const ttsConfigSchema = z.object({
+  baseUrl: emptyStringToUndefined(z.string().url()),
+  roleMappings: z.array(ttsRoleMappingSchema).default([])
+});
+
+export type TtsConfig = z.infer<typeof ttsConfigSchema>;
+
+export function createDefaultTtsConfig(): TtsConfig {
+  return {
+    baseUrl: undefined,
+    roleMappings: []
+  };
+}
+
+export function normalizeTtsConfig(config?: TtsConfig): TtsConfig {
+  if (!config) {
+    return createDefaultTtsConfig();
+  }
+
+  const normalizedMappings = config.roleMappings.reduce<TtsRoleMapping[]>((result, mapping, index) => {
+    const characterName = mapping.characterName.trim();
+    const referenceId = mapping.referenceId.trim();
+    if (!characterName || !referenceId) {
+      return result;
+    }
+    const normalized = {
+      ...mapping,
+      characterName,
+      referenceId
+    };
+    const uniqueId = result.some((item) => item.id === normalized.id)
+      ? `${normalized.id}-${index + 1}`
+      : normalized.id;
+    result.push({
+      ...normalized,
+      id: uniqueId
+    });
+    return result;
+  }, []);
+
+  return {
+    baseUrl: config.baseUrl?.trim() || undefined,
+    roleMappings: normalizedMappings
+  };
+}
+
 export const appConfigSchema = z.object({
   activeBackendId: z.string().min(1),
-  backends: z.array(modelBackendSchema).min(1)
+  backends: z.array(modelBackendSchema).min(1),
+  tts: ttsConfigSchema.default(createDefaultTtsConfig())
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -176,7 +244,8 @@ export function createDefaultAppConfig(): AppConfig {
   const backend = createDefaultModelBackend();
   return {
     activeBackendId: backend.id,
-    backends: [backend]
+    backends: [backend],
+    tts: createDefaultTtsConfig()
   };
 }
 
@@ -212,7 +281,8 @@ export function normalizeAppConfig(config: AppConfig | LlmConfig): AppConfig {
     const activeBackend = normalizedBackends.find((backend) => backend.id === config.activeBackendId) ?? fallbackBackend;
     return {
       activeBackendId: activeBackend.id,
-      backends: normalizedBackends.length > 0 ? normalizedBackends : [fallbackBackend]
+      backends: normalizedBackends.length > 0 ? normalizedBackends : [fallbackBackend],
+      tts: normalizeTtsConfig(config.tts)
     };
   }
 
@@ -223,7 +293,8 @@ export function normalizeAppConfig(config: AppConfig | LlmConfig): AppConfig {
   });
   return {
     activeBackendId: legacyBackend.id,
-    backends: [legacyBackend]
+    backends: [legacyBackend],
+    tts: createDefaultTtsConfig()
   };
 }
 

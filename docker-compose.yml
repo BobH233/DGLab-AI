@@ -8,8 +8,11 @@ services:
       PORT: "3001"
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DB: dglab_ai
+      TTS_CACHE_DIR: /app/data/tts-cache
     ports:
       - "17039:3001"
+    volumes:
+      - ${TTS_CACHE_PATH:-./tts_cache}:/app/data/tts-cache
     restart: unless-stopped
     networks:
       - dglab-ai-network

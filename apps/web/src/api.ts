@@ -13,10 +13,36 @@ import { getSavedAuthPassword, notifyAuthRequired } from "./auth";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
+export type TtsHealthResponse = {
+  status: string;
+};
+
+export type TtsReferenceListResponse = {
+  success: boolean;
+  reference_ids: string[];
+  message?: string;
+};
+
 type ApiRequestInit = RequestInit & {
   authPassword?: string;
   skipAuthRedirect?: boolean;
 };
+
+function buildHeaders(
+  initHeaders: HeadersInit | undefined,
+  explicitAuthPassword: string | undefined,
+  contentType?: string
+): Headers {
+  const headers = new Headers(initHeaders);
+  if (contentType) {
+    headers.set("Content-Type", contentType);
+  }
+  const authPassword = explicitAuthPassword ?? getSavedAuthPassword();
+  if (authPassword) {
+    headers.set("x-auth-password", authPassword);
+  }
+  return headers;
+}
 
 async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
   const {
@@ -26,12 +52,7 @@ async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
     ...requestInit
   } = init ?? {};
 
-  const headers = new Headers(initHeaders);
-  headers.set("Content-Type", "application/json");
-  const authPassword = explicitAuthPassword ?? getSavedAuthPassword();
-  if (authPassword) {
-    headers.set("x-auth-password", authPassword);
-  }
+  const headers = buildHeaders(initHeaders, explicitAuthPassword, "application/json");
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...requestInit,
@@ -45,6 +66,29 @@ async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
     throw new Error(payload.message ?? response.statusText);
   }
   return response.json() as Promise<T>;
+}
+
+async function requestBlob(path: string, init?: ApiRequestInit): Promise<Blob> {
+  const {
+    authPassword: explicitAuthPassword,
+    skipAuthRedirect,
+    headers: initHeaders,
+    ...requestInit
+  } = init ?? {};
+
+  const headers = buildHeaders(initHeaders, explicitAuthPassword);
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...requestInit,
+    headers
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ message: response.statusText }));
+    if (response.status === 401 && !skipAuthRedirect) {
+      notifyAuthRequired();
+    }
+    throw new Error(payload.message ?? response.statusText);
+  }
+  return response.blob();
 }
 
 export const api = {
@@ -71,6 +115,21 @@ export const api = {
     return request<AppConfig>("/config/active-backend", {
       method: "PATCH",
       body: JSON.stringify({ backendId })
+    });
+  },
+  getTtsHealth(baseUrl?: string): Promise<TtsHealthResponse> {
+    const query = baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : "";
+    return request<TtsHealthResponse>(`/tts/health${query}`);
+  },
+  listTtsReferences(baseUrl?: string): Promise<TtsReferenceListResponse> {
+    const query = baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : "";
+    return request<TtsReferenceListResponse>(`/tts/references${query}`);
+  },
+  getSessionEventTts(id: string, seq: number): Promise<Blob> {
+    return requestBlob(`/tts/sessions/${id}/events/${seq}`, {
+      headers: {
+        Accept: "audio/mpeg"
+      }
     });
   },
   listSessions(): Promise<SessionListItem[]> {

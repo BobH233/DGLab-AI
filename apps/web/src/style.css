@@ -294,6 +294,55 @@ a {
   align-items: start;
 }
 
+.settings-panel--full {
+  grid-column: 1 / -1;
+}
+
+.tts-config-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(36, 92, 132, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(113, 160, 201, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pill-list__item {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(36, 92, 132, 0.08);
+  border: 1px solid rgba(36, 92, 132, 0.12);
+  color: #2a5b7d;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.tts-role-mapping-list {
+  display: grid;
+  gap: 12px;
+}
+
+.tts-role-mapping-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.78);
+}
+
 .login-page {
   position: relative;
   min-height: 100vh;
@@ -1155,6 +1204,7 @@ a {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: start;
   font-size: 0.9rem;
   color: var(--text-soft);
 }
@@ -1166,6 +1216,40 @@ a {
 .event-title-block {
   display: grid;
   gap: 4px;
+}
+
+.event-header__aside {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.tts-trigger {
+  border: 1px solid rgba(120, 83, 56, 0.18);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(249, 239, 232, 0.98));
+  color: #7e543c;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(121, 88, 66, 0.08);
+}
+
+.tts-trigger[data-state="playing"] {
+  background: linear-gradient(135deg, rgba(142, 95, 61, 0.96), rgba(111, 70, 47, 0.94));
+  border-color: rgba(111, 70, 47, 0.2);
+  color: #fff8f4;
+}
+
+.tts-trigger[data-state="loading"] {
+  color: #8f6b55;
 }
 
 .event-kicker {
@@ -1952,6 +2036,10 @@ a {
   align-items: start;
 }
 
+.section-head--compact {
+  align-items: center;
+}
+
 .section-head h3 {
   margin: 4px 0 0;
 }
@@ -2103,6 +2191,57 @@ a {
   background:
     radial-gradient(circle at top right, rgba(163, 29, 29, 0.08), transparent 36%),
     rgba(255, 248, 248, 0.96);
+}
+
+.floating-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--line-soft);
+  box-shadow: 0 24px 56px rgba(25, 48, 70, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.floating-toast--error {
+  border-color: rgba(163, 29, 29, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(163, 29, 29, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(255, 250, 250, 0.97), rgba(255, 242, 242, 0.95));
+}
+
+.floating-toast__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.floating-toast__body p {
+  margin: 0;
+  color: #8a3131;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.floating-toast__close {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(163, 29, 29, 0.08);
+  color: #8f2e2e;
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .error-text {
@@ -2691,6 +2830,25 @@ a {
   .timeline-item {
     grid-template-columns: 14px minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .floating-toast {
+    right: 12px;
+    bottom: 12px;
+    width: min(420px, calc(100vw - 24px));
+  }
+
+  .tts-role-mapping-card {
+    grid-template-columns: 1fr;
+  }
+
+  .event-header {
+    flex-direction: column;
+  }
+
+  .event-header__aside {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .surprise-mode-card {

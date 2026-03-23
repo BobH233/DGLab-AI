@@ -4,4 +4,6 @@ dist
 .env
 coverage
 *.log
-
+.data/
+tts_cache/
+mongo_data/

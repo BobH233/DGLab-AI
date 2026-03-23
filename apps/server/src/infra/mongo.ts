@@ -18,7 +18,7 @@ import {
   type Session,
   type SessionEvent
 } from "@dglab-ai/shared";
-import type { LlmCallStore, SessionStore } from "../types/contracts.js";
+import type { LlmCallStore, SessionStore, TtsAudioCacheRecord } from "../types/contracts.js";
 
 type ConfigDocument = {
   _id: "default";
@@ -50,6 +50,10 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return this.client.db(this.dbName).collection("llm_call_records");
   }
 
+  private get ttsAudioCache(): Collection<TtsAudioCacheRecord> {
+    return this.client.db(this.dbName).collection("tts_audio_cache");
+  }
+
   async init(): Promise<void> {
     await this.client.connect();
     await Promise.all([
@@ -58,7 +62,9 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       this.events.createIndex({ sessionId: 1, seq: 1 }, { unique: true }),
       this.llmCalls.createIndex({ id: 1 }, { unique: true }),
       this.llmCalls.createIndex({ startedAt: -1 }),
-      this.llmCalls.createIndex({ sessionId: 1, startedAt: -1 })
+      this.llmCalls.createIndex({ sessionId: 1, startedAt: -1 }),
+      this.ttsAudioCache.createIndex({ key: 1 }, { unique: true }),
+      this.ttsAudioCache.createIndex({ sessionId: 1, eventSeq: 1, createdAt: -1 })
     ]);
   }
 
@@ -92,8 +98,12 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       return defaultConfig;
     }
     const normalized = this.parseStoredAppConfig(document.config);
-    await this.writeAppConfig(normalized);
-    return normalized;
+    if (normalized) {
+      await this.writeAppConfig(normalized);
+      return normalized;
+    }
+    console.warn("Failed to parse stored app config; returning defaults without overwriting app_configs.default");
+    return createDefaultAppConfig();
   }
 
   async saveAppConfig(config: AppConfig): Promise<AppConfig> {
@@ -102,7 +112,7 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return normalized;
   }
 
-  private parseStoredAppConfig(config: unknown): AppConfig {
+  private parseStoredAppConfig(config: unknown): AppConfig | null {
     const appConfig = appConfigSchema.safeParse(config);
     if (appConfig.success) {
       return normalizeAppConfig(appConfig.data);
@@ -111,7 +121,7 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     if (legacyConfig.success) {
       return normalizeAppConfig(legacyConfig.data);
     }
-    return createDefaultAppConfig();
+    return null;
   }
 
   private async writeAppConfig(config: AppConfig): Promise<void> {
@@ -138,6 +148,11 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
   async getSession(sessionId: string): Promise<Session | null> {
     const document = await this.sessions.findOne({ id: sessionId }, { projection: { _id: 0 } });
     return document ? sessionSchema.parse(document) : null;
+  }
+
+  async getEvent(sessionId: string, seq: number): Promise<SessionEvent | null> {
+    const document = await this.events.findOne({ sessionId, seq }, { projection: { _id: 0 } });
+    return document ?? null;
   }
 
   async replaceSession(session: Session): Promise<void> {
@@ -189,6 +204,26 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       }, { projection: { _id: 0 } })
       .toArray();
     return documents.map((document) => sessionSchema.parse(document));
+  }
+
+  async getTtsAudioCache(key: string): Promise<TtsAudioCacheRecord | null> {
+    return this.ttsAudioCache.findOne({ key }, { projection: { _id: 0 } });
+  }
+
+  async saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord> {
+    await this.ttsAudioCache.updateOne(
+      { key: record.key },
+      { $set: record },
+      { upsert: true }
+    );
+    return record;
+  }
+
+  async touchTtsAudioCache(key: string, accessedAt: string): Promise<void> {
+    await this.ttsAudioCache.updateOne(
+      { key },
+      { $set: { lastAccessedAt: accessedAt } }
+    );
   }
 
   async recordLlmCall(record: LlmCallRecord): Promise<void> {

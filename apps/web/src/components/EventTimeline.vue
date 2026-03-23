@@ -157,7 +157,19 @@
             <span class="event-kicker">{{ item.kicker }}</span>
             <strong>{{ item.title }}</strong>
           </div>
-          <span>#{{ item.seq }} · {{ item.timeLabel }}</span>
+          <div class="event-header__aside">
+            <button
+              v-if="canPlayTts(item)"
+              class="tts-trigger"
+              type="button"
+              :data-state="ttsButtonState(item)"
+              :disabled="isTtsBusy(item)"
+              @click="emitPlayTts(item.seq)"
+            >
+              {{ ttsButtonLabel(item) }}
+            </button>
+            <span>#{{ item.seq }} · {{ item.timeLabel }}</span>
+          </div>
         </header>
         <div class="event-body">
           <p v-if="hasInlineMain(item.mainParts, item.main)" class="event-main">
@@ -350,6 +362,8 @@ type PreviewEntry = {
   placeholder?: string | null;
 };
 
+type TtsPlaybackState = "idle" | "loading" | "playing";
+
 const props = defineProps<{
   events: SessionEvent[];
   activePause?: ActivePauseState | null;
@@ -358,6 +372,11 @@ const props = defineProps<{
   agents?: AgentProfile[];
   previewTurn?: PreviewTurnState | null;
   surpriseMode?: boolean;
+  ttsPlaybackStates?: Record<number, TtsPlaybackState>;
+}>();
+
+const emit = defineEmits<{
+  "play-tts": [seq: number];
 }>();
 
 const presentationItems = computed<PresentationItem[]>(() => {
@@ -439,6 +458,37 @@ function hasInlineMain(parts?: InlineDisplayPart[], text?: string): boolean {
 
 function showExecutionInspector(item: PresentationItem): boolean {
   return item.variant === "e-stim-control" && Boolean(item.executionState);
+}
+
+function canPlayTts(item: PresentationItem): boolean {
+  return item.kicker === "角色发言";
+}
+
+function ttsState(item: PresentationItem): TtsPlaybackState {
+  return props.ttsPlaybackStates?.[item.seq] ?? "idle";
+}
+
+function ttsButtonState(item: PresentationItem): TtsPlaybackState {
+  return ttsState(item);
+}
+
+function isTtsBusy(item: PresentationItem): boolean {
+  return ttsState(item) === "loading";
+}
+
+function ttsButtonLabel(item: PresentationItem): string {
+  switch (ttsState(item)) {
+    case "loading":
+      return "朗读中...";
+    case "playing":
+      return "停止";
+    default:
+      return "朗读";
+  }
+}
+
+function emitPlayTts(seq: number): void {
+  emit("play-tts", seq);
 }
 
 function executionStatusLabel(executionState: DeviceExecutionState | undefined): string {
