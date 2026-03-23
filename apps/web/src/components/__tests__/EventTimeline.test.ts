@@ -252,7 +252,35 @@ describe("EventTimeline", () => {
         deviceExecutionStates: {
           [`5:agent.device_control:${createdAt}`]: {
             status: "success",
-            detail: "已调用本地电击器接口。"
+            detail: "已调用本地电击器接口。",
+            startedAt: createdAt,
+            finishedAt: createdAt,
+            exchanges: [
+              {
+                label: "触发一键开火",
+                startedAt: createdAt,
+                finishedAt: createdAt,
+                durationMs: 120,
+                request: {
+                  method: "POST",
+                  url: "http://localhost:8920/api/v2/game/client-1/action/fire",
+                  path: "/api/v2/game/client-1/action/fire",
+                  body: {
+                    time: 5000,
+                    override: true
+                  }
+                },
+                response: {
+                  httpStatus: 200,
+                  ok: true,
+                  contentType: "application/json",
+                  body: {
+                    status: 1,
+                    code: "OK"
+                  }
+                }
+              }
+            ]
           }
         }
       }
@@ -270,6 +298,11 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("B 通道");
     expect(wrapper.text()).toContain("已调用本地 API");
     expect(wrapper.text()).toContain("已调用本地电击器接口");
+    expect(wrapper.find(".event-execution-inspector").exists()).toBe(true);
+    expect(wrapper.text()).toContain("查看本地执行详情");
+    expect(wrapper.text()).toContain("HTTP 200");
+    expect(wrapper.text()).toContain("/api/v2/game/client-1/action/fire");
+    expect(wrapper.text()).toContain("application/json");
   });
 
   it("renders tick failure events with retryable context", () => {

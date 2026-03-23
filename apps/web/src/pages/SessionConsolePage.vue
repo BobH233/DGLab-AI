@@ -118,7 +118,7 @@
             placeholder="输入你希望传达给场景中角色的话。"
             @keydown="handleComposerKeydown"
           />
-          <div class="actions actions--spread">
+          <div class="actions actions--spread composer-actions">
             <span class="soft-note">Enter 发送，Shift + Enter 换行。消息会发送给当前会话中的全部智能体</span>
             <button class="button primary" :disabled="sending || !message.trim()" @click="sendMessage">
               {{ sending ? "发送中..." : "发送消息" }}
@@ -263,11 +263,14 @@ import EventTimeline from "../components/EventTimeline.vue";
 import {
   applyElectroStimToolEvent,
   buildElectroStimToolContext,
+  loadElectroStimExecutionStateMap,
   loadElectroStimLocalConfig,
   parseGameConnectionCode,
+  saveElectroStimExecutionStateMap,
   syncElectroStimToolContext
 } from "../lib/eStim";
 import { stripInlineDelays } from "../lib/inlineDelays";
+import { executionKeyForEvent, type DeviceExecutionState } from "../lib/timelinePresentation";
 import {
   applyPreviewEvent,
   previewTurnFromSnapshot,
@@ -278,11 +281,6 @@ import {
 type ActivePauseState = {
   id: string;
   countdownLabel: string;
-};
-
-type DeviceExecutionState = {
-  status: "pending" | "success" | "simulated" | "error";
-  detail: string;
 };
 
 type DragState = {
@@ -488,7 +486,7 @@ async function loadSession() {
   const id = String(route.params.id);
   clearLivePlayback();
   previewTurn.value = null;
-  deviceExecutionStates.value = {};
+  deviceExecutionStates.value = loadElectroStimExecutionStateMap(id);
   refreshElectroStimLocalConfig();
   connectStream(id);
   const [nextSession, nextEvents] = await Promise.all([
@@ -776,12 +774,28 @@ function pauseEventId(event: SessionEvent): string {
     : `pause:${event.seq}:${event.createdAt}`;
 }
 
-function deviceExecutionKey(event: SessionEvent): string {
-  return `${event.seq}:${event.type}:${event.createdAt}`;
-}
-
 function refreshElectroStimLocalConfig() {
   electroStimLocalConfig.value = loadElectroStimLocalConfig();
+}
+
+function currentSessionId(): string {
+  return session.value?.id ?? String(route.params.id);
+}
+
+function refreshPersistedDeviceExecutionStates() {
+  deviceExecutionStates.value = loadElectroStimExecutionStateMap(currentSessionId());
+}
+
+function persistDeviceExecutionStates() {
+  saveElectroStimExecutionStateMap(currentSessionId(), deviceExecutionStates.value);
+}
+
+function setDeviceExecutionState(executionKey: string, nextState: DeviceExecutionState) {
+  deviceExecutionStates.value = {
+    ...deviceExecutionStates.value,
+    [executionKey]: nextState
+  };
+  persistDeviceExecutionStates();
 }
 
 function getOverlayStorage(): Pick<Storage, "getItem" | "setItem"> | null {
@@ -976,22 +990,21 @@ async function maybeExecuteDeviceControl(event: SessionEvent) {
   ) {
     return;
   }
-  const executionKey = deviceExecutionKey(event);
-  deviceExecutionStates.value = {
-    ...deviceExecutionStates.value,
-    [executionKey]: {
-      status: "pending",
-      detail: "等待本地前端执行。"
-    }
-  };
+  const executionKey = executionKeyForEvent(event);
+  setDeviceExecutionState(executionKey, {
+    status: "pending",
+    detail: "等待本地前端执行。",
+    startedAt: new Date().toISOString(),
+    exchanges: []
+  });
   const result = await applyElectroStimToolEvent(loadElectroStimLocalConfig(), event.payload);
-  deviceExecutionStates.value = {
-    ...deviceExecutionStates.value,
-    [executionKey]: {
-      status: result.status,
-      detail: result.detail
-    }
-  };
+  setDeviceExecutionState(executionKey, {
+    status: result.status,
+    detail: result.detail,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    exchanges: result.exchanges ?? []
+  });
   if (result.toolContext && session.value) {
     syncSession({
       ...session.value,
@@ -1001,6 +1014,11 @@ async function maybeExecuteDeviceControl(event: SessionEvent) {
       }
     });
   }
+}
+
+function handleWindowStorage() {
+  refreshElectroStimLocalConfig();
+  refreshPersistedDeviceExecutionStates();
 }
 
 async function sendMessage() {
@@ -1101,8 +1119,9 @@ watch(liveReasoningSummary, async (value) => {
 
 onMounted(() => {
   refreshElectroStimLocalConfig();
+  refreshPersistedDeviceExecutionStates();
   window.addEventListener("focus", refreshElectroStimLocalConfig);
-  window.addEventListener("storage", refreshElectroStimLocalConfig);
+  window.addEventListener("storage", handleWindowStorage);
   window.addEventListener("resize", syncElectroStimOverlayWithinViewport);
   automationClockTimer = window.setInterval(() => {
     automationNow.value = Date.now();
@@ -1115,7 +1134,7 @@ onBeforeUnmount(() => {
   stream?.close();
   clearLivePlayback();
   window.removeEventListener("focus", refreshElectroStimLocalConfig);
-  window.removeEventListener("storage", refreshElectroStimLocalConfig);
+  window.removeEventListener("storage", handleWindowStorage);
   window.removeEventListener("resize", syncElectroStimOverlayWithinViewport);
   if (automationClockTimer !== null) {
     window.clearInterval(automationClockTimer);

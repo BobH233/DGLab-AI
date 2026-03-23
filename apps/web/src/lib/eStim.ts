@@ -61,10 +61,48 @@ export type ElectroStimLocalConfig = {
 };
 
 export type ElectroStimExecutionResult = {
-  status: "success" | "simulated" | "error";
+  status: "pending" | "success" | "simulated" | "error";
   detail: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exchanges?: ElectroStimApiExchange[];
   toolContext?: ToolContext;
 };
+
+export type ElectroStimApiExchange = {
+  label: string;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  request: {
+    method: string;
+    url: string;
+    path: string;
+    body?: unknown;
+  };
+  response?: {
+    httpStatus: number;
+    ok: boolean;
+    contentType?: string;
+    body?: unknown;
+  };
+  error?: string;
+};
+
+export type ElectroStimExecutionState = {
+  status: "pending" | "success" | "simulated" | "error";
+  detail: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exchanges?: ElectroStimApiExchange[];
+};
+
+type RequestTraceOptions = {
+  label: string;
+  trace?: ElectroStimApiExchange[];
+};
+
+const EXECUTION_STORAGE_KEY_PREFIX = "dglabai.e_stim_execution_states";
 
 export function createDefaultElectroStimLocalConfig(): ElectroStimLocalConfig {
   return {
@@ -182,6 +220,182 @@ function getElectroStimStorage(): Pick<Storage, "getItem" | "setItem"> | null {
   };
 }
 
+function executionStorageKey(sessionId: string): string {
+  return `${EXECUTION_STORAGE_KEY_PREFIX}.${sessionId}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseRequestBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") {
+    return undefined;
+  }
+  const trimmed = body.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return body;
+  }
+}
+
+function parseResponseBody(rawText: string, contentType: string | null): unknown {
+  if (!rawText) {
+    return undefined;
+  }
+  if (contentType?.includes("json") || /^[\[{]/.test(rawText.trim())) {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      return rawText;
+    }
+  }
+  return rawText;
+}
+
+async function readResponsePayload(response: Response): Promise<{
+  contentType: string | null;
+  body: unknown;
+}> {
+  const contentType = typeof response.headers?.get === "function"
+    ? response.headers.get("content-type")
+    : null;
+  if (typeof response.text === "function") {
+    const rawText = await response.text().catch(() => "");
+    return {
+      contentType,
+      body: parseResponseBody(rawText, contentType)
+    };
+  }
+  if (typeof response.json === "function") {
+    return {
+      contentType,
+      body: await response.json().catch(() => undefined)
+    };
+  }
+  return {
+    contentType,
+    body: undefined
+  };
+}
+
+function cloneElectroStimApiExchange(exchange: ElectroStimApiExchange): ElectroStimApiExchange {
+  return {
+    ...exchange,
+    request: {
+      ...exchange.request
+    },
+    response: exchange.response ? {
+      ...exchange.response
+    } : undefined
+  };
+}
+
+function cloneElectroStimExecutionState(state: ElectroStimExecutionState): ElectroStimExecutionState {
+  return {
+    ...state,
+    exchanges: Array.isArray(state.exchanges) ? state.exchanges.map(cloneElectroStimApiExchange) : []
+  };
+}
+
+function normalizeElectroStimApiExchange(value: unknown): ElectroStimApiExchange | null {
+  if (!isRecord(value) || !isRecord(value.request)) {
+    return null;
+  }
+  const method = typeof value.request.method === "string" ? value.request.method : "GET";
+  const url = typeof value.request.url === "string" ? value.request.url : "";
+  const path = typeof value.request.path === "string" ? value.request.path : "";
+  if (!url || !path) {
+    return null;
+  }
+  return {
+    label: typeof value.label === "string" && value.label.trim() ? value.label : "本地接口调用",
+    startedAt: typeof value.startedAt === "string" ? value.startedAt : new Date().toISOString(),
+    finishedAt: typeof value.finishedAt === "string" ? value.finishedAt : new Date().toISOString(),
+    durationMs: typeof value.durationMs === "number" && Number.isFinite(value.durationMs) ? value.durationMs : 0,
+    request: {
+      method,
+      url,
+      path,
+      ...(value.request.body !== undefined ? { body: value.request.body } : {})
+    },
+    ...(isRecord(value.response) ? {
+      response: {
+        httpStatus: typeof value.response.httpStatus === "number" ? value.response.httpStatus : 0,
+        ok: Boolean(value.response.ok),
+        ...(typeof value.response.contentType === "string" ? { contentType: value.response.contentType } : {}),
+        ...(value.response.body !== undefined ? { body: value.response.body } : {})
+      }
+    } : {}),
+    ...(typeof value.error === "string" && value.error.trim() ? { error: value.error } : {})
+  };
+}
+
+function normalizeElectroStimExecutionState(value: unknown): ElectroStimExecutionState | null {
+  if (!isRecord(value) || typeof value.detail !== "string") {
+    return null;
+  }
+  if (
+    value.status !== "pending"
+    && value.status !== "success"
+    && value.status !== "simulated"
+    && value.status !== "error"
+  ) {
+    return null;
+  }
+  return {
+    status: value.status,
+    detail: value.detail,
+    ...(typeof value.startedAt === "string" ? { startedAt: value.startedAt } : {}),
+    ...(typeof value.finishedAt === "string" ? { finishedAt: value.finishedAt } : {}),
+    exchanges: Array.isArray(value.exchanges)
+      ? value.exchanges.map(normalizeElectroStimApiExchange).filter((item): item is ElectroStimApiExchange => Boolean(item))
+      : []
+  };
+}
+
+export function loadElectroStimExecutionStateMap(sessionId: string): Record<string, ElectroStimExecutionState> {
+  const storage = getElectroStimStorage();
+  if (!storage) {
+    return {};
+  }
+  const raw = storage.getItem(executionStorageKey(sessionId));
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, value]) => {
+          const normalized = normalizeElectroStimExecutionState(value);
+          return normalized ? [key, normalized] : null;
+        })
+        .filter((entry): entry is [string, ElectroStimExecutionState] => Boolean(entry))
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function saveElectroStimExecutionStateMap(
+  sessionId: string,
+  stateMap: Record<string, ElectroStimExecutionState>
+): void {
+  const storage = getElectroStimStorage();
+  if (!storage) {
+    return;
+  }
+  const serialized = Object.fromEntries(
+    Object.entries(stateMap).map(([key, value]) => [key, cloneElectroStimExecutionState(value)])
+  );
+  storage.setItem(executionStorageKey(sessionId), JSON.stringify(serialized));
+}
+
 export function loadElectroStimLocalConfig(): ElectroStimLocalConfig {
   const storage = getElectroStimStorage();
   if (!storage) {
@@ -247,33 +461,83 @@ function pulseIdByName(config: ElectroStimLocalConfig): Map<string, string> {
   return new Map(config.availablePulses.map((item) => [item.name.trim().toLowerCase(), item.id]));
 }
 
-async function requestLocalApi<T>(config: ElectroStimLocalConfig, path: string, init?: RequestInit): Promise<T> {
+async function requestLocalApi<T>(
+  config: ElectroStimLocalConfig,
+  path: string,
+  init?: RequestInit,
+  options?: RequestTraceOptions
+): Promise<T> {
   const connection = parseGameConnectionCode(config.gameConnectionCode);
   if (!connection) {
     throw new Error("请先填写有效的游戏连接码。");
   }
-  const response = await fetch(`${connection.baseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    ...init
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.status === 0) {
-    throw new Error(typeof payload.message === "string" && payload.message.trim()
-      ? payload.message
-      : `本地电击器接口调用失败：${response.status}`);
+  const url = `${connection.baseUrl}${path}`;
+  const startedAt = new Date().toISOString();
+  const requestBody = parseRequestBody(init?.body);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {})
+      },
+      ...init
+    });
+    const finishedAt = new Date().toISOString();
+    const { contentType, body: payload } = await readResponsePayload(response);
+    options?.trace?.push({
+      label: options.label,
+      startedAt,
+      finishedAt,
+      durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
+      request: {
+        method: (init?.method ?? "GET").toUpperCase(),
+        url,
+        path,
+        ...(requestBody !== undefined ? { body: requestBody } : {})
+      },
+      response: {
+        httpStatus: response.status,
+        ok: response.ok,
+        ...(contentType ? { contentType } : {}),
+        ...(payload !== undefined ? { body: payload } : {})
+      }
+    });
+    if (!response.ok || (isRecord(payload) && payload.status === 0)) {
+      throw new Error(isRecord(payload) && typeof payload.message === "string" && payload.message.trim()
+        ? payload.message
+        : `本地电击器接口调用失败：${response.status}`);
+    }
+    return payload as T;
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    if (options?.trace && !options.trace.some((entry) => entry.startedAt === startedAt && entry.request.path === path)) {
+      options.trace.push({
+        label: options.label,
+        startedAt,
+        finishedAt,
+        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
+        request: {
+          method: (init?.method ?? "GET").toUpperCase(),
+          url,
+          path,
+          ...(requestBody !== undefined ? { body: requestBody } : {})
+        },
+        error: error instanceof Error ? error.message : "本地接口调用失败"
+      });
+    }
+    throw error;
   }
-  return payload as T;
 }
 
-export async function fetchElectroStimGameInfo(config: ElectroStimLocalConfig): Promise<GameInfoResponse> {
+export async function fetchElectroStimGameInfo(
+  config: ElectroStimLocalConfig,
+  options?: RequestTraceOptions
+): Promise<GameInfoResponse> {
   const connection = parseGameConnectionCode(config.gameConnectionCode);
   if (!connection) {
     throw new Error("请先填写有效的游戏连接码。");
   }
-  return requestLocalApi<GameInfoResponse>(config, `/api/v2/game/${connection.clientId}`);
+  return requestLocalApi<GameInfoResponse>(config, `/api/v2/game/${connection.clientId}`, undefined, options);
 }
 
 export async function fetchElectroStimPulseList(config: ElectroStimLocalConfig): Promise<EStimPulse[]> {
@@ -419,11 +683,16 @@ export async function applyElectroStimToolEvent(
   config: ElectroStimLocalConfig,
   payload: Record<string, unknown>
 ): Promise<ElectroStimExecutionResult> {
+  const startedAt = new Date().toISOString();
+  const exchanges: ElectroStimApiExchange[] = [];
   const connection = parseGameConnectionCode(config.gameConnectionCode);
   if (!connection) {
     return {
       status: "simulated",
-      detail: "未配置有效游戏连接码，已按模拟执行展示。"
+      detail: "未配置有效游戏连接码，已按模拟执行展示。",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      exchanges
     };
   }
 
@@ -433,7 +702,10 @@ export async function applyElectroStimToolEvent(
     : {};
 
   try {
-    const currentInfo = await fetchElectroStimGameInfo(config);
+    const currentInfo = await fetchElectroStimGameInfo(config, {
+      label: "执行前读取设备状态",
+      trace: exchanges
+    });
     const mappingNotes: string[] = [];
     if (command === "set") {
       const strengthChannels: Record<string, unknown> = {};
@@ -486,6 +758,9 @@ export async function applyElectroStimToolEvent(
           body: JSON.stringify({
             channels: strengthChannels
           })
+        }, {
+          label: "提交强度更新",
+          trace: exchanges
         });
       }
       if (Object.keys(pulseChannels).length > 0) {
@@ -494,6 +769,9 @@ export async function applyElectroStimToolEvent(
           body: JSON.stringify({
             channels: pulseChannels
           })
+        }, {
+          label: "提交波形更新",
+          trace: exchanges
         });
       }
     } else if (command === "fire") {
@@ -541,26 +819,41 @@ export async function applyElectroStimToolEvent(
           override: payload.override !== false,
           channels: fireChannels
         })
+      }, {
+        label: "触发一键开火",
+        trace: exchanges
       });
     } else {
       return {
         status: "simulated",
-        detail: "未识别的电击器命令，已跳过本地执行。"
+        detail: "未识别的电击器命令，已跳过本地执行。",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        exchanges
       };
     }
 
-    const nextInfo = await fetchElectroStimGameInfo(config);
+    const nextInfo = await fetchElectroStimGameInfo(config, {
+      label: "执行后读取设备状态",
+      trace: exchanges
+    });
     return {
       status: "success",
       detail: mappingNotes.length > 0
         ? `已调用本地电击器接口，并应用力度曲线映射：${mappingNotes.join("，")}。`
         : "已调用本地电击器接口。",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      exchanges,
       toolContext: buildElectroStimToolContext(config, nextInfo)
     };
   } catch (error) {
     return {
       status: "error",
-      detail: error instanceof Error ? error.message : "本地电击器接口调用失败。"
+      detail: error instanceof Error ? error.message : "本地电击器接口调用失败。",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      exchanges
     };
   }
 }

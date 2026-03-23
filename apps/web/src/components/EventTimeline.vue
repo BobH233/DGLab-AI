@@ -187,6 +187,90 @@
         <div v-if="item.tags.length" class="event-tags">
           <span v-for="tag in item.tags" :key="tag" class="event-tag">{{ tag }}</span>
         </div>
+        <details
+          v-if="showExecutionInspector(item)"
+          class="event-execution-inspector"
+        >
+          <summary class="event-execution-inspector__summary">
+            <span>查看本地执行详情</span>
+            <span class="event-execution-inspector__pill">
+              {{ executionStatusLabel(item.executionState) }}
+            </span>
+          </summary>
+          <div class="event-execution-inspector__content">
+            <p class="event-execution-inspector__meta">
+              <span>{{ executionStatusLabel(item.executionState) }}</span>
+              <span v-if="item.executionState?.finishedAt">· {{ formatExecutionTime(item.executionState.finishedAt) }}</span>
+              <span v-if="item.executionState?.exchanges?.length">· {{ item.executionState.exchanges.length }} 次 API 调用</span>
+            </p>
+            <p v-if="item.executionState?.detail" class="event-execution-inspector__detail">
+              {{ item.executionState.detail }}
+            </p>
+            <p
+              v-if="!item.executionState?.exchanges?.length"
+              class="event-execution-inspector__empty"
+            >
+              暂无可展开的本地 API 交换记录。
+            </p>
+            <details
+              v-for="(exchange, index) in item.executionState?.exchanges ?? []"
+              :key="`${item.id}:exchange:${index}`"
+              class="event-execution-step"
+              :open="index === 0"
+            >
+              <summary class="event-execution-step__summary">
+                <span class="event-execution-step__title">
+                  {{ exchange.label }} · {{ exchange.request.method }} {{ exchange.request.path }}
+                </span>
+                <span class="event-execution-step__meta">
+                  <span
+                    v-if="exchange.response"
+                    class="event-execution-step__status"
+                    :data-ok="exchange.response.ok ? 'true' : 'false'"
+                  >
+                    HTTP {{ exchange.response.httpStatus }}
+                  </span>
+                  <span
+                    v-else-if="exchange.error"
+                    class="event-execution-step__status"
+                    data-ok="false"
+                  >
+                    请求失败
+                  </span>
+                  <span>{{ exchange.durationMs }} ms</span>
+                </span>
+              </summary>
+              <div class="event-execution-step__content">
+                <p class="event-execution-step__url">{{ exchange.request.url }}</p>
+                <section class="event-execution-block">
+                  <span class="event-execution-block__label">Request</span>
+                  <JsonTreeView
+                    v-if="exchange.request.body !== undefined"
+                    :value="exchange.request.body"
+                  />
+                  <p v-else class="event-execution-block__empty">无请求体</p>
+                </section>
+                <section class="event-execution-block">
+                  <span class="event-execution-block__label">Response</span>
+                  <template v-if="exchange.response">
+                    <p class="event-execution-block__response-meta">
+                      <span>HTTP {{ exchange.response.httpStatus }}</span>
+                      <span v-if="exchange.response.contentType">{{ exchange.response.contentType }}</span>
+                    </p>
+                    <JsonTreeView
+                      v-if="exchange.response.body !== undefined"
+                      :value="exchange.response.body"
+                    />
+                    <p v-else class="event-execution-block__empty">空响应体</p>
+                  </template>
+                  <p v-else class="event-execution-block__error">
+                    {{ exchange.error || "本次请求没有拿到响应。" }}
+                  </p>
+                </section>
+              </div>
+            </details>
+          </div>
+        </details>
       </div>
     </article>
   </section>
@@ -195,6 +279,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { AgentProfile, SessionEvent } from "@dglab-ai/shared";
+import JsonTreeView from "./JsonTreeView.vue";
 import {
   buildTimelinePresentationItems,
   type DeviceExecutionState,
@@ -342,6 +427,33 @@ function cardClass(item: PresentationItem): string[] {
 
 function hasInlineMain(parts?: InlineDisplayPart[], text?: string): boolean {
   return Boolean(parts?.length || text);
+}
+
+function showExecutionInspector(item: PresentationItem): boolean {
+  return item.variant === "e-stim-control" && Boolean(item.executionState);
+}
+
+function executionStatusLabel(executionState: DeviceExecutionState | undefined): string {
+  switch (executionState?.status) {
+    case "success":
+      return "本地执行成功";
+    case "simulated":
+      return "模拟执行";
+    case "error":
+      return "本地执行失败";
+    case "pending":
+      return "等待本地执行";
+    default:
+      return "暂无执行记录";
+  }
+}
+
+function formatExecutionTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
 }
 
 function buildCardClass(

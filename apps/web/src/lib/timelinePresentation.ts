@@ -1,4 +1,5 @@
 import { isToolRequired, type AgentProfile, type SessionEvent } from "@dglab-ai/shared";
+import type { ElectroStimExecutionState } from "./eStim";
 import {
   extractInlineDisplayParts,
   formatInlineDelayMs,
@@ -39,12 +40,10 @@ export type PresentationItem = {
   optionalTool?: boolean;
   compact?: boolean;
   pauseId?: string;
+  executionState?: ElectroStimExecutionState;
 };
 
-export type DeviceExecutionState = {
-  status: "pending" | "success" | "simulated" | "error";
-  detail: string;
-};
+export type DeviceExecutionState = ElectroStimExecutionState;
 
 export function executionKeyForEvent(event: SessionEvent): string {
   return `${event.seq}:${event.type}:${event.createdAt}`;
@@ -491,7 +490,8 @@ function buildEStimControlItem(
       : ["工具调用", "电击器"],
     createdAt: event.createdAt,
     timeLabel: formatTime(event.createdAt),
-    optionalTool
+    optionalTool,
+    executionState
   };
 }
 

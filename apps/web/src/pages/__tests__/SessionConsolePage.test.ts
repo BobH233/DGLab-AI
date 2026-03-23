@@ -155,6 +155,8 @@ function normalizedText(wrapper: ReturnType<typeof mount>): string {
 }
 
 describe("SessionConsolePage", () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
@@ -188,6 +190,7 @@ describe("SessionConsolePage", () => {
   });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.useRealTimers();
   });
 
@@ -1043,5 +1046,140 @@ describe("SessionConsolePage", () => {
     expect(text).toContain("B 通道");
     expect(text).toContain("波形 颗粒摩擦");
     expect(text).not.toContain("正在编写控制参数");
+  });
+
+  it("persists local e-stim execution details and restores them after remount", async () => {
+    const createdAt = "2026-03-17T12:00:03.000Z";
+    const deviceEvent: SessionEvent = {
+      sessionId: "session_1",
+      seq: 7,
+      type: "agent.device_control",
+      source: "agent",
+      agentId: "director_1",
+      createdAt,
+      payload: {
+        speaker: "珊瑚宫心海",
+        action: "control_e_stim_toy",
+        deviceId: "e_stim_toy",
+        deviceName: "情趣电击器",
+        command: "fire",
+        durationMs: 1800,
+        channels: {
+          a: {
+            enabled: true,
+            intensityPercent: 45
+          }
+        },
+        status: "frontend_pending"
+      }
+    };
+
+    window.localStorage.setItem("dglabai.e_stim_config", JSON.stringify({
+      gameConnectionCode: "client-1@http://localhost:8920",
+      bChannelEnabled: false,
+      channelPlacements: {
+        a: "",
+        b: ""
+      },
+      intensityCurve: {
+        preset: "linear",
+        points: [
+          { inputPercent: 0, outputPercent: 0 },
+          { inputPercent: 25, outputPercent: 25 },
+          { inputPercent: 50, outputPercent: 50 },
+          { inputPercent: 75, outputPercent: 75 },
+          { inputPercent: 100, outputPercent: 100 }
+        ]
+      },
+      availablePulses: [],
+      allowedPulseIds: []
+    }));
+    apiMocks.getSession.mockResolvedValue(createSession());
+    apiMocks.getEvents.mockResolvedValue([]);
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => "application/json"
+        },
+        text: async () => JSON.stringify({
+          status: 1,
+          clientStrength: {
+            a: {
+              strength: 0,
+              limit: 100
+            }
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => "application/json"
+        },
+        text: async () => JSON.stringify({
+          status: 1,
+          code: "OK"
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: {
+          get: () => "application/json"
+        },
+        text: async () => JSON.stringify({
+          status: 1,
+          clientStrength: {
+            a: {
+              strength: 45,
+              limit: 100
+            }
+          }
+        })
+      }) as typeof fetch;
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+    FakeEventSource.instances[0]?.emit("event.appended", {
+      event: deviceEvent
+    });
+    await flushPromises();
+
+    const persistedRaw = localStorageState.get("dglabai.e_stim_execution_states.session_1");
+    expect(persistedRaw).toBeTruthy();
+    expect(persistedRaw).toContain("\"httpStatus\":200");
+    expect(persistedRaw).toContain("/api/v2/game/client-1/action/fire");
+
+    wrapper.unmount();
+
+    apiMocks.getEvents.mockResolvedValue([deviceEvent]);
+    const nextWrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(normalizedText(nextWrapper)).toContain("珊瑚宫心海 调用了 情趣电击器");
+    expect(normalizedText(nextWrapper)).toContain("已调用本地 API");
+    expect(normalizedText(nextWrapper)).toContain("查看本地执行详情");
+    expect(normalizedText(nextWrapper)).toContain("HTTP 200");
   });
 });
