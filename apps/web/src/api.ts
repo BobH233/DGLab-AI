@@ -5,6 +5,7 @@ import type {
   Session,
   SessionEvent,
   SessionListItem,
+  SessionTtsPerformanceState,
   TimerUpdate,
   ToolContext,
   UpdateDraftRequest
@@ -127,6 +128,26 @@ export const api = {
   },
   getSessionEventTts(id: string, seq: number): Promise<Blob> {
     return requestBlob(`/tts/sessions/${id}/events/${seq}`, {
+      headers: {
+        Accept: "audio/mpeg"
+      }
+    });
+  },
+  getSessionTtsPerformance(id: string): Promise<SessionTtsPerformanceState> {
+    return request<SessionTtsPerformanceState>(`/tts/sessions/${id}/performance`);
+  },
+  startSessionTtsBatch(id: string): Promise<SessionTtsPerformanceState> {
+    return request<SessionTtsPerformanceState>(`/tts/sessions/${id}/performance/batch`, {
+      method: "POST"
+    });
+  },
+  cancelSessionTtsBatch(id: string): Promise<SessionTtsPerformanceState> {
+    return request<SessionTtsPerformanceState>(`/tts/sessions/${id}/performance/batch`, {
+      method: "DELETE"
+    });
+  },
+  getSessionReadableTts(id: string, readableId: string): Promise<Blob> {
+    return requestBlob(`/tts/sessions/${id}/readables/${encodeURIComponent(readableId)}`, {
       headers: {
         Accept: "audio/mpeg"
       }

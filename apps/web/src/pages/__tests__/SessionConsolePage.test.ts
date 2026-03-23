@@ -1,9 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { defaultToolStates, type Session, type SessionEvent } from "@dglab-ai/shared";
+import { createDefaultAppConfig, defaultToolStates, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SessionConsolePage from "../SessionConsolePage.vue";
 
 const apiMocks = vi.hoisted(() => ({
+  getAppConfig: vi.fn(),
   getSession: vi.fn<() => Promise<Session>>(),
   getEvents: vi.fn<() => Promise<SessionEvent[]>>(),
   streamUrl: vi.fn(() => "http://example.test/stream"),
@@ -26,6 +27,7 @@ const localStorageMock = {
 
 vi.mock("../../api", () => ({
   api: {
+    getAppConfig: apiMocks.getAppConfig,
     getSession: apiMocks.getSession,
     getEvents: apiMocks.getEvents,
     streamUrl: apiMocks.streamUrl,
@@ -175,6 +177,7 @@ describe("SessionConsolePage", () => {
     });
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
+    apiMocks.getAppConfig.mockResolvedValue(createDefaultAppConfig());
     apiMocks.getEvents.mockResolvedValue([]);
     apiMocks.requestAutoTick.mockResolvedValue(createSession({
       timerState: {

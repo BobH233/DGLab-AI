@@ -28,6 +28,13 @@
         <div class="actions console-hero__actions">
           <RouterLink
             v-if="session"
+            class="button primary"
+            :to="`/sessions/${session.id}/performance`"
+          >
+            演出模式
+          </RouterLink>
+          <RouterLink
+            v-if="session"
             class="button secondary"
             :to="`/sessions/${session.id}/print`"
           >

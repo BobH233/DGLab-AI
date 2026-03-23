@@ -13,6 +13,7 @@ import type {
   Session,
   SessionDraft,
   SessionEvent,
+  SessionTtsBatchJob,
   SseEvent,
   ToolContext,
   UsageEntry
@@ -95,8 +96,10 @@ export type ToolWorldPromptContext = {
 export type TtsAudioCacheRecord = {
   key: string;
   sessionId: string;
-  eventSeq: number;
-  eventType: string;
+  readableId: string;
+  sourceKind: "setup" | "event";
+  eventSeq?: number;
+  eventType?: string;
   speaker: string;
   referenceId: string;
   baseUrl: string;
@@ -104,6 +107,7 @@ export type TtsAudioCacheRecord = {
   normalizedText: string;
   filePath: string;
   mimeType: string;
+  durationMs?: number;
   createdAt: string;
   lastAccessedAt: string;
 };
@@ -176,8 +180,11 @@ export interface SessionStore {
   getEvents(sessionId: string, cursor?: number, limit?: number): Promise<SessionEvent[]>;
   listSchedulableSessions(): Promise<Session[]>;
   getTtsAudioCache(key: string): Promise<TtsAudioCacheRecord | null>;
+  getTtsAudioCaches(keys: string[]): Promise<TtsAudioCacheRecord[]>;
   saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord>;
   touchTtsAudioCache(key: string, accessedAt: string): Promise<void>;
+  getSessionTtsBatchJob(sessionId: string): Promise<SessionTtsBatchJob | null>;
+  saveSessionTtsBatchJob(job: SessionTtsBatchJob): Promise<SessionTtsBatchJob>;
 }
 
 export interface LlmCallStore {

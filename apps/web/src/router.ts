@@ -3,6 +3,7 @@ import { getSavedAuthPassword } from "./auth";
 import HomePage from "./pages/HomePage.vue";
 import DraftReviewPage from "./pages/DraftReviewPage.vue";
 import SessionConsolePage from "./pages/SessionConsolePage.vue";
+import PerformanceModePage from "./pages/PerformanceModePage.vue";
 import SessionPrintPage from "./pages/SessionPrintPage.vue";
 import SessionMemoryDebugPage from "./pages/SessionMemoryDebugPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
@@ -33,6 +34,10 @@ export const router = createRouter({
     {
       path: "/sessions/:id",
       component: SessionConsolePage
+    },
+    {
+      path: "/sessions/:id/performance",
+      component: PerformanceModePage
     },
     {
       path: "/sessions/:id/print",

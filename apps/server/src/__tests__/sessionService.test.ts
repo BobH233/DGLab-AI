@@ -112,6 +112,11 @@ class InMemoryStore {
   async getEvents() { return this.events; }
   async listSchedulableSessions() { return [this.session]; }
   async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
+  async getTtsAudioCaches(keys: string[]) {
+    return keys
+      .map((key) => this.ttsAudioCache.get(key) ?? null)
+      .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
   async saveTtsAudioCache(record: TtsAudioCacheRecord) {
     this.ttsAudioCache.set(record.key, record);
     return record;
@@ -126,6 +131,8 @@ class InMemoryStore {
       lastAccessedAt: accessedAt
     });
   }
+  async getSessionTtsBatchJob() { return null; }
+  async saveSessionTtsBatchJob(job: unknown) { return job; }
 }
 
 describe("SessionService", () => {

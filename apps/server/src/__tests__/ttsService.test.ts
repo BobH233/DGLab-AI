@@ -78,6 +78,11 @@ class TtsStoreStub {
   async getEvents() { return [this.event]; }
   async listSchedulableSessions() { return []; }
   async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
+  async getTtsAudioCaches(keys: string[]) {
+    return keys
+      .map((key) => this.ttsAudioCache.get(key) ?? null)
+      .filter((record): record is TtsAudioCacheRecord => Boolean(record));
+  }
   async saveTtsAudioCache(record: TtsAudioCacheRecord) {
     this.ttsAudioCache.set(record.key, record);
     return record;
@@ -92,6 +97,8 @@ class TtsStoreStub {
       lastAccessedAt: accessedAt
     });
   }
+  async getSessionTtsBatchJob() { return null; }
+  async saveSessionTtsBatchJob(job: unknown) { return job; }
 }
 
 const originalFetch = globalThis.fetch;
@@ -115,7 +122,7 @@ describe("TtsService", () => {
   it("caches generated audio by normalized request payload", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
     const store = new TtsStoreStub();
-    const fetchMock = vi.fn(async () => new Response(Buffer.from("fake-mp3"), {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(Buffer.from("fake-mp3"), {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg"
@@ -168,7 +175,9 @@ describe("TtsService", () => {
       const service = new TtsService(store as never, tempDir);
       await service.synthesizeEventAudio("session-1", 13);
 
-      const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
+      const requestCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined] | undefined;
+      const requestInit = requestCall?.[1];
+      const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as {
         reference_id?: string;
         text?: string;
       };
@@ -204,7 +213,9 @@ describe("TtsService", () => {
       const service = new TtsService(store as never, tempDir);
       await service.synthesizeEventAudio("session-1", 14);
 
-      const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
+      const requestCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined] | undefined;
+      const requestInit = requestCall?.[1];
+      const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as {
         reference_id?: string;
         text?: string;
       };

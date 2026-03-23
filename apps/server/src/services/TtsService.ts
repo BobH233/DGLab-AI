@@ -1,9 +1,19 @@
 import crypto from "node:crypto";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  buildReadableContentFromEvent,
+  buildSessionReadableContents,
+  sessionTtsPerformanceStateSchema,
+  type AppConfig,
+  type SessionReadableContent,
+  type SessionTtsBatchJob,
+  type SessionTtsPerformanceState,
+  type TtsRoleMapping
+} from "@dglab-ai/shared";
 import { z } from "zod";
 import { HttpError } from "../lib/errors.js";
-import type { SessionStore } from "../types/contracts.js";
+import type { SessionStore, TtsAudioCacheRecord } from "../types/contracts.js";
 
 const HEALTH_RESPONSE_SCHEMA = z.object({
   status: z.string()
@@ -27,10 +37,49 @@ const DEFAULT_TTS_REQUEST_BODY = {
   temperature: 0.9
 } as const;
 
+const MPEG_SAMPLE_RATES: Record<number, [number, number, number]> = {
+  0: [11025, 12000, 8000],
+  2: [22050, 24000, 16000],
+  3: [44100, 48000, 32000]
+};
+
+const MPEG_BITRATES: Record<string, number[]> = {
+  V1L1: [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],
+  V1L2: [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
+  V1L3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+  V2L1: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+  V2L2L3: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0]
+};
+
 type TtsAudioResult = {
   filePath: string;
   mimeType: string;
   cacheHit: boolean;
+  durationMs?: number;
+  readableId: string;
+};
+
+type PreparedReadableContent = {
+  readable: SessionReadableContent;
+  cacheKey: string;
+  normalizedText: string;
+  baseUrl?: string;
+  referenceId?: string;
+  hasVoiceMapping: boolean;
+};
+
+type ActiveBatchJobState = {
+  cancelRequested: boolean;
+};
+
+type Mp3FrameHeader = {
+  bitrateKbps: number;
+  sampleRate: number;
+  frameLength: number;
+  samplesPerFrame: number;
+  versionIndex: number;
+  layerIndex: number;
+  channelMode: number;
 };
 
 export function normalizeTtsText(source: string): string {
@@ -47,8 +96,196 @@ export function normalizeTtsText(source: string): string {
     .trim();
 }
 
+function normalizeSpeakerName(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function buildReadableCacheKey(
+  sessionId: string,
+  readable: SessionReadableContent,
+  baseUrl: string,
+  referenceId: string,
+  normalizedText: string
+): string {
+  const payload = readable.source === "event" && readable.seq !== undefined
+    ? {
+      sessionId,
+      seq: readable.seq,
+      baseUrl,
+      referenceId,
+      normalizedText,
+      format: DEFAULT_TTS_REQUEST_BODY.format
+    }
+    : {
+      sessionId,
+      readableId: readable.id,
+      baseUrl,
+      referenceId,
+      normalizedText,
+      format: DEFAULT_TTS_REQUEST_BODY.format
+    };
+
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(payload))
+    .digest("hex");
+}
+
+function synchsafeInt(buffer: Buffer, offset: number): number {
+  return ((buffer[offset] & 0x7f) << 21)
+    | ((buffer[offset + 1] & 0x7f) << 14)
+    | ((buffer[offset + 2] & 0x7f) << 7)
+    | (buffer[offset + 3] & 0x7f);
+}
+
+function parseMp3FrameHeader(buffer: Buffer, offset: number): Mp3FrameHeader | null {
+  if (offset + 4 > buffer.length) {
+    return null;
+  }
+
+  const byte0 = buffer[offset];
+  const byte1 = buffer[offset + 1];
+  const byte2 = buffer[offset + 2];
+  const byte3 = buffer[offset + 3];
+
+  if (byte0 !== 0xff || (byte1 & 0xe0) !== 0xe0) {
+    return null;
+  }
+
+  const versionIndex = (byte1 >> 3) & 0x03;
+  const layerIndex = (byte1 >> 1) & 0x03;
+  const bitrateIndex = (byte2 >> 4) & 0x0f;
+  const sampleRateIndex = (byte2 >> 2) & 0x03;
+  const padding = (byte2 >> 1) & 0x01;
+  const channelMode = (byte3 >> 6) & 0x03;
+
+  if (versionIndex === 1 || layerIndex === 0 || bitrateIndex === 0 || bitrateIndex === 15 || sampleRateIndex === 3) {
+    return null;
+  }
+
+  const bitrateKey = versionIndex === 3
+    ? layerIndex === 3 ? "V1L1" : layerIndex === 2 ? "V1L2" : "V1L3"
+    : layerIndex === 3 ? "V2L1" : "V2L2L3";
+  const bitrateKbps = MPEG_BITRATES[bitrateKey]?.[bitrateIndex] ?? 0;
+  const sampleRate = MPEG_SAMPLE_RATES[versionIndex]?.[sampleRateIndex] ?? 0;
+  if (!bitrateKbps || !sampleRate) {
+    return null;
+  }
+
+  const samplesPerFrame = layerIndex === 3
+    ? 384
+    : layerIndex === 2
+      ? 1152
+      : versionIndex === 3
+        ? 1152
+        : 576;
+
+  const bitrate = bitrateKbps * 1000;
+  let frameLength = 0;
+  if (layerIndex === 3) {
+    frameLength = Math.floor(((12 * bitrate) / sampleRate + padding) * 4);
+  } else if (layerIndex === 1 && versionIndex !== 3) {
+    frameLength = Math.floor((72 * bitrate) / sampleRate + padding);
+  } else {
+    frameLength = Math.floor((144 * bitrate) / sampleRate + padding);
+  }
+
+  if (!frameLength) {
+    return null;
+  }
+
+  return {
+    bitrateKbps,
+    sampleRate,
+    frameLength,
+    samplesPerFrame,
+    versionIndex,
+    layerIndex,
+    channelMode
+  };
+}
+
+function parseMp3DurationFromHeaders(buffer: Buffer, frameOffset: number, header: Mp3FrameHeader): number | undefined {
+  const xingOffset = frameOffset + 4 + (
+    header.versionIndex === 3
+      ? header.channelMode === 3 ? 17 : 32
+      : header.channelMode === 3 ? 9 : 17
+  );
+  if (xingOffset + 12 <= buffer.length) {
+    const marker = buffer.toString("ascii", xingOffset, xingOffset + 4);
+    if (marker === "Xing" || marker === "Info") {
+      const flags = buffer.readUInt32BE(xingOffset + 4);
+      if ((flags & 0x1) !== 0 && xingOffset + 12 <= buffer.length) {
+        const frameCount = buffer.readUInt32BE(xingOffset + 8);
+        if (frameCount > 0) {
+          return Math.round((frameCount * header.samplesPerFrame * 1000) / header.sampleRate);
+        }
+      }
+    }
+  }
+
+  const vbriOffset = frameOffset + 36;
+  if (vbriOffset + 18 <= buffer.length && buffer.toString("ascii", vbriOffset, vbriOffset + 4) === "VBRI") {
+    const frameCount = buffer.readUInt32BE(vbriOffset + 14);
+    if (frameCount > 0) {
+      return Math.round((frameCount * header.samplesPerFrame * 1000) / header.sampleRate);
+    }
+  }
+
+  return undefined;
+}
+
+export function estimateMp3DurationMs(buffer: Buffer): number | undefined {
+  if (buffer.length < 4) {
+    return undefined;
+  }
+
+  let offset = 0;
+  if (buffer.toString("ascii", 0, 3) === "ID3" && buffer.length >= 10) {
+    offset = 10 + synchsafeInt(buffer, 6);
+  }
+
+  while (offset + 4 <= buffer.length) {
+    const header = parseMp3FrameHeader(buffer, offset);
+    if (!header) {
+      offset += 1;
+      continue;
+    }
+
+    const headerDuration = parseMp3DurationFromHeaders(buffer, offset, header);
+    if (headerDuration) {
+      return headerDuration;
+    }
+
+    let frameCount = 0;
+    let cursor = offset;
+    while (cursor + 4 <= buffer.length) {
+      const nextHeader = parseMp3FrameHeader(buffer, cursor);
+      if (!nextHeader) {
+        break;
+      }
+      frameCount += 1;
+      cursor += nextHeader.frameLength;
+    }
+
+    if (frameCount > 0) {
+      return Math.round((frameCount * header.samplesPerFrame * 1000) / header.sampleRate);
+    }
+
+    const audioBytes = buffer.length - offset;
+    if (audioBytes > 0 && header.bitrateKbps > 0) {
+      return Math.round((audioBytes * 8 * 1000) / (header.bitrateKbps * 1000));
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
 export class TtsService {
   private readonly cacheDir: string;
+  private readonly activeBatchJobs = new Map<string, ActiveBatchJobState>();
 
   constructor(
     private readonly store: SessionStore,
@@ -67,115 +304,421 @@ export class TtsService {
     return this.fetchJson(REFERENCE_LIST_RESPONSE_SCHEMA, `${baseUrl}/v1/references/list?format=json`);
   }
 
+  async getSessionPerformanceState(sessionId: string): Promise<SessionTtsPerformanceState> {
+    const session = await this.store.getSession(sessionId);
+    if (!session) {
+      throw new HttpError(404, "Session not found");
+    }
+
+    const [events, appConfig, storedBatchJob] = await Promise.all([
+      this.store.getEvents(sessionId),
+      this.store.getAppConfig(),
+      this.store.getSessionTtsBatchJob(sessionId)
+    ]);
+
+    const readables = buildSessionReadableContents(session, events);
+    const preparedItems = readables.map((readable) => this.prepareReadableContent(sessionId, readable, appConfig));
+    const cacheMap = await this.loadCacheMap(preparedItems.map((item) => item.cacheKey));
+    const batchJob = storedBatchJob ? await this.normalizeStoredBatchJob(storedBatchJob) : null;
+
+    let cachedReadableCount = 0;
+    let readyReadableCount = 0;
+    const missingVoiceSpeakers = new Set<string>();
+
+    const items = [];
+    for (const prepared of preparedItems) {
+      const cachedRecord = cacheMap.get(prepared.cacheKey) ?? null;
+      const isCached = Boolean(cachedRecord);
+      const durationMs = cachedRecord?.durationMs && cachedRecord.durationMs > 0 ? cachedRecord.durationMs : undefined;
+      const readyForPlayback = Boolean(isCached && durationMs);
+      if (isCached) {
+        cachedReadableCount += 1;
+      }
+      if (readyForPlayback) {
+        readyReadableCount += 1;
+      }
+      if (!prepared.hasVoiceMapping) {
+        missingVoiceSpeakers.add(prepared.readable.ttsSpeaker);
+      }
+      items.push({
+        readable: prepared.readable,
+        cacheKey: prepared.cacheKey,
+        hasVoiceMapping: prepared.hasVoiceMapping,
+        referenceId: prepared.referenceId,
+        isCached,
+        durationMs,
+        readyForPlayback
+      });
+    }
+
+    return sessionTtsPerformanceStateSchema.parse({
+      sessionId,
+      items,
+      ttsBaseUrlConfigured: Boolean(appConfig.tts?.baseUrl?.trim()),
+      totalReadableCount: items.length,
+      cachedReadableCount,
+      readyReadableCount,
+      missingReadableCount: Math.max(0, items.length - readyReadableCount),
+      missingVoiceSpeakers: Array.from(missingVoiceSpeakers),
+      readyForFullPlayback: items.length > 0 && readyReadableCount === items.length && missingVoiceSpeakers.size === 0,
+      batchJob
+    });
+  }
+
+  async startSessionBatchSynthesis(sessionId: string): Promise<SessionTtsPerformanceState> {
+    const active = this.activeBatchJobs.get(sessionId);
+    const existingJob = await this.store.getSessionTtsBatchJob(sessionId);
+    if (active && existingJob?.status === "running") {
+      return this.getSessionPerformanceState(sessionId);
+    }
+
+    const state = await this.getSessionPerformanceState(sessionId);
+    if (!state.ttsBaseUrlConfigured) {
+      throw new HttpError(400, "TTS API 地址尚未配置");
+    }
+    if (state.missingVoiceSpeakers.length > 0) {
+      throw new HttpError(400, `以下角色还没有配置 TTS 音色：${state.missingVoiceSpeakers.join("、")}`);
+    }
+
+    const pendingReadables = state.items
+      .filter((item) => !item.readyForPlayback)
+      .map((item) => item.readable);
+
+    if (pendingReadables.length === 0) {
+      return state;
+    }
+
+    const now = new Date().toISOString();
+    await this.store.saveSessionTtsBatchJob({
+      sessionId,
+      status: "running",
+      totalItems: pendingReadables.length,
+      completedItems: 0,
+      cancelRequested: false,
+      startedAt: now,
+      updatedAt: now
+    });
+    this.activeBatchJobs.set(sessionId, {
+      cancelRequested: false
+    });
+    void this.runSessionBatchSynthesis(sessionId, pendingReadables);
+    return this.getSessionPerformanceState(sessionId);
+  }
+
+  async cancelSessionBatchSynthesis(sessionId: string): Promise<SessionTtsPerformanceState> {
+    const job = await this.store.getSessionTtsBatchJob(sessionId);
+    if (!job) {
+      return this.getSessionPerformanceState(sessionId);
+    }
+
+    const now = new Date().toISOString();
+    const active = this.activeBatchJobs.get(sessionId);
+    if (active && job.status === "running") {
+      active.cancelRequested = true;
+      await this.store.saveSessionTtsBatchJob({
+        ...job,
+        cancelRequested: true,
+        updatedAt: now
+      });
+      return this.getSessionPerformanceState(sessionId);
+    }
+
+    if (job.status === "running") {
+      await this.store.saveSessionTtsBatchJob({
+        ...job,
+        status: "cancelled",
+        cancelRequested: true,
+        currentReadableId: undefined,
+        currentTitle: undefined,
+        updatedAt: now,
+        finishedAt: now
+      });
+    }
+
+    return this.getSessionPerformanceState(sessionId);
+  }
+
   async synthesizeEventAudio(sessionId: string, seq: number): Promise<TtsAudioResult> {
     const event = await this.store.getEvent(sessionId, seq);
     if (!event) {
       throw new HttpError(404, `Session event ${seq} not found`);
     }
-    const eventTtsPayload = this.buildEventTtsPayload(event);
-    const sourceText = eventTtsPayload.text;
-    const speaker = eventTtsPayload.speaker;
-    if (!sourceText.trim()) {
-      throw new HttpError(400, "This speech event has no text to synthesize");
-    }
-    if (!speaker) {
-      throw new HttpError(400, "This speech event has no speaker information");
+
+    const readable = buildReadableContentFromEvent(event);
+    if (!readable) {
+      throw new HttpError(400, "Only player messages, character speech, stage direction, and story effect events can be read aloud");
     }
 
+    return this.synthesizeReadableContentAudio(sessionId, readable);
+  }
+
+  async synthesizeReadableAudio(sessionId: string, readableId: string): Promise<TtsAudioResult> {
+    const readable = await this.getReadableContent(sessionId, readableId);
+    return this.synthesizeReadableContentAudio(sessionId, readable);
+  }
+
+  private async getReadableContent(sessionId: string, readableId: string): Promise<SessionReadableContent> {
+    const session = await this.store.getSession(sessionId);
+    if (!session) {
+      throw new HttpError(404, "Session not found");
+    }
+
+    const events = await this.store.getEvents(sessionId);
+    const readable = buildSessionReadableContents(session, events).find((item) => item.id === readableId);
+    if (!readable) {
+      throw new HttpError(404, `Readable content ${readableId} not found`);
+    }
+
+    return readable;
+  }
+
+  private async synthesizeReadableContentAudio(
+    sessionId: string,
+    readable: SessionReadableContent,
+    options: {
+      requireDuration?: boolean;
+    } = {}
+  ): Promise<TtsAudioResult> {
     const appConfig = await this.store.getAppConfig();
-    const ttsConfig = appConfig.tts ?? {
-      baseUrl: undefined,
-      roleMappings: []
-    };
-    const baseUrl = this.requireBaseUrl(ttsConfig.baseUrl);
-    const referenceId = this.resolveReferenceId(speaker, ttsConfig.roleMappings);
-    const normalizedText = normalizeTtsText(sourceText);
-    if (!normalizedText) {
+    const prepared = this.prepareReadableContent(sessionId, readable, appConfig);
+    const baseUrl = prepared.baseUrl ? this.requireBaseUrl(prepared.baseUrl) : undefined;
+    if (!baseUrl) {
+      throw new HttpError(400, "TTS API 地址尚未配置");
+    }
+    if (!prepared.normalizedText) {
       throw new HttpError(400, "The speech text became empty after TTS normalization");
     }
+    if (!prepared.referenceId) {
+      throw new HttpError(400, `未找到角色 “${readable.ttsSpeaker}” 对应的 TTS reference_id，请先在设置页配置`);
+    }
 
-    const key = crypto
-      .createHash("sha256")
-      .update(JSON.stringify({
-        sessionId,
-        seq,
-        baseUrl,
-        referenceId,
-        normalizedText,
-        format: DEFAULT_TTS_REQUEST_BODY.format
-      }))
-      .digest("hex");
-
-    const cached = await this.store.getTtsAudioCache(key);
-    if (cached && await this.fileExists(cached.filePath)) {
-      await this.store.touchTtsAudioCache(key, new Date().toISOString());
+    const now = new Date().toISOString();
+    const cached = await this.hydrateCachedRecord(
+      await this.store.getTtsAudioCache(prepared.cacheKey),
+      options.requireDuration ?? false
+    );
+    if (cached) {
+      await this.store.touchTtsAudioCache(prepared.cacheKey, now);
       return {
         filePath: cached.filePath,
         mimeType: cached.mimeType,
-        cacheHit: true
+        cacheHit: true,
+        durationMs: cached.durationMs,
+        readableId: readable.id
       };
     }
 
-    const audioBuffer = await this.requestTtsAudio(baseUrl, normalizedText, referenceId);
+    const audioBuffer = await this.requestTtsAudio(baseUrl, prepared.normalizedText, prepared.referenceId);
+    const durationMs = estimateMp3DurationMs(audioBuffer);
+    if (options.requireDuration && (!durationMs || durationMs <= 0)) {
+      throw new HttpError(502, `无法解析条目 “${readable.title}” 的音频时长，无法加入全文播放时间轴`);
+    }
+
     await mkdir(this.cacheDir, { recursive: true });
-    const filePath = path.resolve(this.cacheDir, `${sessionId}-${seq}-${key.slice(0, 16)}.mp3`);
+    const readableLabel = readable.id.replace(/[^a-z0-9_-]+/gi, "-");
+    const filePath = path.resolve(this.cacheDir, `${sessionId}-${readableLabel}-${prepared.cacheKey.slice(0, 16)}.mp3`);
     await writeFile(filePath, audioBuffer);
 
-    const now = new Date().toISOString();
-    await this.store.saveTtsAudioCache({
-      key,
+    const record: TtsAudioCacheRecord = {
+      key: prepared.cacheKey,
       sessionId,
-      eventSeq: seq,
-      eventType: event.type,
-      speaker,
-      referenceId,
+      readableId: readable.id,
+      sourceKind: readable.source,
+      eventSeq: readable.seq,
+      eventType: readable.eventType,
+      speaker: readable.ttsSpeaker,
+      referenceId: prepared.referenceId,
       baseUrl,
-      sourceText,
-      normalizedText,
+      sourceText: readable.text,
+      normalizedText: prepared.normalizedText,
       filePath,
       mimeType: "audio/mpeg",
+      durationMs,
       createdAt: now,
       lastAccessedAt: now
-    });
+    };
+    await this.store.saveTtsAudioCache(record);
 
     return {
       filePath,
       mimeType: "audio/mpeg",
-      cacheHit: false
+      cacheHit: false,
+      durationMs,
+      readableId: readable.id
     };
   }
 
-  private buildEventTtsPayload(event: {
-    type: string;
-    payload: Record<string, unknown>;
-  }): {
-    text: string;
-    speaker: string;
-  } {
-    switch (event.type) {
-      case "player.message":
-        return {
-          text: typeof event.payload.text === "string" ? event.payload.text : "",
-          speaker: "玩家"
-        };
-      case "agent.speak_player":
-        return {
-          text: typeof event.payload.message === "string" ? event.payload.message : "",
-          speaker: typeof event.payload.speaker === "string" ? event.payload.speaker.trim() : ""
-        };
-      case "agent.stage_direction":
-        return {
-          text: typeof event.payload.direction === "string" ? event.payload.direction : "",
-          speaker: "旁白"
-        };
-      case "agent.story_effect":
-        return {
-          text: typeof event.payload.description === "string" ? event.payload.description : "",
-          speaker: "旁白"
-        };
-      default:
-        throw new HttpError(400, "Only player messages, character speech, stage direction, and story effect events can be read aloud");
+  private async runSessionBatchSynthesis(sessionId: string, readables: SessionReadableContent[]): Promise<void> {
+    const activeJob = this.activeBatchJobs.get(sessionId);
+    if (!activeJob) {
+      return;
     }
+
+    let completedItems = 0;
+    try {
+      for (const readable of readables) {
+        if (activeJob.cancelRequested) {
+          const now = new Date().toISOString();
+          await this.store.saveSessionTtsBatchJob({
+            sessionId,
+            status: "cancelled",
+            totalItems: readables.length,
+            completedItems,
+            cancelRequested: true,
+            startedAt: (await this.store.getSessionTtsBatchJob(sessionId))?.startedAt,
+            updatedAt: now,
+            finishedAt: now
+          });
+          return;
+        }
+
+        await this.store.saveSessionTtsBatchJob({
+          sessionId,
+          status: "running",
+          totalItems: readables.length,
+          completedItems,
+          currentReadableId: readable.id,
+          currentTitle: readable.title,
+          cancelRequested: activeJob.cancelRequested,
+          startedAt: (await this.store.getSessionTtsBatchJob(sessionId))?.startedAt,
+          updatedAt: new Date().toISOString()
+        });
+
+        await this.synthesizeReadableContentAudio(sessionId, readable, {
+          requireDuration: true
+        });
+        completedItems += 1;
+
+        await this.store.saveSessionTtsBatchJob({
+          sessionId,
+          status: "running",
+          totalItems: readables.length,
+          completedItems,
+          currentReadableId: readable.id,
+          currentTitle: readable.title,
+          cancelRequested: activeJob.cancelRequested,
+          startedAt: (await this.store.getSessionTtsBatchJob(sessionId))?.startedAt,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      const now = new Date().toISOString();
+      await this.store.saveSessionTtsBatchJob({
+        sessionId,
+        status: "completed",
+        totalItems: readables.length,
+        completedItems,
+        cancelRequested: false,
+        startedAt: (await this.store.getSessionTtsBatchJob(sessionId))?.startedAt,
+        updatedAt: now,
+        finishedAt: now
+      });
+    } catch (error) {
+      const now = new Date().toISOString();
+      await this.store.saveSessionTtsBatchJob({
+        sessionId,
+        status: "failed",
+        totalItems: readables.length,
+        completedItems,
+        currentReadableId: undefined,
+        currentTitle: undefined,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        cancelRequested: activeJob.cancelRequested,
+        startedAt: (await this.store.getSessionTtsBatchJob(sessionId))?.startedAt,
+        updatedAt: now,
+        finishedAt: now
+      });
+    } finally {
+      this.activeBatchJobs.delete(sessionId);
+    }
+  }
+
+  private prepareReadableContent(
+    sessionId: string,
+    readable: SessionReadableContent,
+    appConfig: AppConfig
+  ): PreparedReadableContent {
+    const baseUrl = appConfig.tts?.baseUrl?.trim() ? appConfig.tts.baseUrl.replace(/\/+$/, "") : undefined;
+    const normalizedText = normalizeTtsText(readable.text);
+    const referenceId = baseUrl
+      ? this.findReferenceId(readable.ttsSpeaker, appConfig.tts?.roleMappings ?? [])
+      : undefined;
+    return {
+      readable,
+      cacheKey: buildReadableCacheKey(sessionId, readable, baseUrl ?? "", referenceId ?? "", normalizedText),
+      normalizedText,
+      baseUrl,
+      referenceId,
+      hasVoiceMapping: Boolean(baseUrl && referenceId && normalizedText)
+    };
+  }
+
+  private findReferenceId(
+    speaker: string,
+    mappings: TtsRoleMapping[]
+  ): string | undefined {
+    const normalizedSpeaker = normalizeSpeakerName(speaker);
+    if (!normalizedSpeaker) {
+      return undefined;
+    }
+
+    const exactMatch = mappings.find((mapping) => normalizeSpeakerName(mapping.characterName) === normalizedSpeaker);
+    return exactMatch?.referenceId.trim() || undefined;
+  }
+
+  private async loadCacheMap(keys: string[]): Promise<Map<string, TtsAudioCacheRecord>> {
+    const records = await this.store.getTtsAudioCaches(keys);
+    const hydratedRecords = await Promise.all(records.map(async (record) => this.hydrateCachedRecord(record, false)));
+    return new Map(
+      hydratedRecords
+        .filter((record): record is TtsAudioCacheRecord => Boolean(record))
+        .map((record) => [record.key, record])
+    );
+  }
+
+  private async hydrateCachedRecord(
+    record: TtsAudioCacheRecord | null,
+    requireDuration: boolean
+  ): Promise<TtsAudioCacheRecord | null> {
+    if (!record || !await this.fileExists(record.filePath)) {
+      return null;
+    }
+
+    if (record.durationMs && record.durationMs > 0) {
+      return record;
+    }
+
+    const buffer = await readFile(record.filePath);
+    const durationMs = estimateMp3DurationMs(buffer);
+    if (!durationMs || durationMs <= 0) {
+      return requireDuration ? null : record;
+    }
+
+    const updatedRecord = {
+      ...record,
+      durationMs
+    };
+    await this.store.saveTtsAudioCache(updatedRecord);
+    return updatedRecord;
+  }
+
+  private async normalizeStoredBatchJob(job: SessionTtsBatchJob): Promise<SessionTtsBatchJob> {
+    if (job.status !== "running" || this.activeBatchJobs.has(job.sessionId)) {
+      return job;
+    }
+
+    const now = new Date().toISOString();
+    const interruptedJob: SessionTtsBatchJob = {
+      ...job,
+      status: "interrupted",
+      currentReadableId: undefined,
+      currentTitle: undefined,
+      errorMessage: job.errorMessage ?? "批量任务在服务重启或异常后中断了。",
+      updatedAt: now,
+      finishedAt: now
+    };
+    await this.store.saveSessionTtsBatchJob(interruptedJob);
+    return interruptedJob;
   }
 
   private async getConfiguredBaseUrl(): Promise<string> {
@@ -195,25 +738,6 @@ export class TtsService {
       throw new HttpError(400, "TTS API 地址尚未配置");
     }
     return baseUrl.replace(/\/+$/, "");
-  }
-
-  private resolveReferenceId(
-    speaker: string,
-    mappings: Array<{ characterName: string; referenceId: string }>
-  ): string {
-    const normalizedSpeaker = speaker.trim();
-    const exactMatch = mappings.find((mapping) => mapping.characterName.trim() === normalizedSpeaker);
-    if (exactMatch) {
-      return exactMatch.referenceId.trim();
-    }
-
-    const normalizedLowerSpeaker = normalizedSpeaker.toLocaleLowerCase();
-    const looseMatch = mappings.find((mapping) => mapping.characterName.trim().toLocaleLowerCase() === normalizedLowerSpeaker);
-    if (looseMatch) {
-      return looseMatch.referenceId.trim();
-    }
-
-    throw new HttpError(400, `未找到角色 “${speaker}” 对应的 TTS reference_id，请先在设置页配置`);
   }
 
   private async requestTtsAudio(baseUrl: string, text: string, referenceId: string): Promise<Buffer> {

@@ -684,6 +684,257 @@ export const sessionEventSchema = z.object({
 
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
 
+export const sessionReadableContentSourceSchema = z.enum(["setup", "event"]);
+export type SessionReadableContentSource = z.infer<typeof sessionReadableContentSourceSchema>;
+
+export const sessionReadableContentKindSchema = z.enum([
+  "world_summary",
+  "opening_situation",
+  "player_state",
+  "player_message",
+  "character_speech",
+  "stage_direction",
+  "story_effect"
+]);
+export type SessionReadableContentKind = z.infer<typeof sessionReadableContentKindSchema>;
+
+export const sessionReadableContentSchema = z.object({
+  id: z.string().min(1),
+  source: sessionReadableContentSourceSchema,
+  kind: sessionReadableContentKindSchema,
+  seq: nullToUndefined(z.number().int().nonnegative()),
+  eventType: nullToUndefined(eventTypeSchema),
+  title: z.string().min(1),
+  kicker: z.string().min(1),
+  displaySpeaker: z.string().min(1),
+  ttsSpeaker: z.string().min(1),
+  text: z.string().min(1),
+  createdAt: z.string().datetime()
+});
+
+export type SessionReadableContent = z.infer<typeof sessionReadableContentSchema>;
+
+export const sessionTtsBatchJobStatusSchema = z.enum([
+  "running",
+  "completed",
+  "cancelled",
+  "failed",
+  "interrupted"
+]);
+export type SessionTtsBatchJobStatus = z.infer<typeof sessionTtsBatchJobStatusSchema>;
+
+export const sessionTtsBatchJobSchema = z.object({
+  sessionId: z.string().min(1),
+  status: sessionTtsBatchJobStatusSchema,
+  totalItems: z.number().int().nonnegative(),
+  completedItems: z.number().int().nonnegative(),
+  currentReadableId: nullToUndefined(z.string().min(1)),
+  currentTitle: nullToUndefined(z.string().min(1)),
+  errorMessage: nullToUndefined(z.string().min(1)),
+  cancelRequested: z.boolean().default(false),
+  startedAt: nullToUndefined(z.string().datetime()),
+  updatedAt: z.string().datetime(),
+  finishedAt: nullToUndefined(z.string().datetime())
+});
+
+export type SessionTtsBatchJob = z.infer<typeof sessionTtsBatchJobSchema>;
+
+export const sessionTtsReadableStateSchema = z.object({
+  readable: sessionReadableContentSchema,
+  cacheKey: z.string().min(1),
+  hasVoiceMapping: z.boolean(),
+  referenceId: nullToUndefined(z.string().min(1)),
+  isCached: z.boolean(),
+  durationMs: nullToUndefined(z.number().int().positive()),
+  readyForPlayback: z.boolean()
+});
+
+export type SessionTtsReadableState = z.infer<typeof sessionTtsReadableStateSchema>;
+
+export const sessionTtsPerformanceStateSchema = z.object({
+  sessionId: z.string().min(1),
+  items: z.array(sessionTtsReadableStateSchema),
+  ttsBaseUrlConfigured: z.boolean(),
+  totalReadableCount: z.number().int().nonnegative(),
+  cachedReadableCount: z.number().int().nonnegative(),
+  readyReadableCount: z.number().int().nonnegative(),
+  missingReadableCount: z.number().int().nonnegative(),
+  missingVoiceSpeakers: z.array(z.string().min(1)).default([]),
+  readyForFullPlayback: z.boolean(),
+  batchJob: sessionTtsBatchJobSchema.nullable()
+});
+
+export type SessionTtsPerformanceState = z.infer<typeof sessionTtsPerformanceStateSchema>;
+
+function sanitizeReadableText(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/<delay>\s*\d+\s*<\/delay>/gi, " ")
+    .replace(/<emo_inst>([\s\S]*?)<\/emo_inst>/gi, (_match, content: string) => {
+      const normalized = content.trim();
+      return normalized ? `<emo_inst>${normalized}</emo_inst>` : "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .trim();
+}
+
+function createSetupReadableContent(
+  id: string,
+  kind: SessionReadableContentKind,
+  title: string,
+  kicker: string,
+  text: string,
+  createdAt: string
+): SessionReadableContent | null {
+  const normalizedText = sanitizeReadableText(text);
+  if (!normalizedText) {
+    return null;
+  }
+
+  return {
+    id,
+    source: "setup",
+    kind,
+    title,
+    kicker,
+    displaySpeaker: "旁白",
+    ttsSpeaker: "旁白",
+    text: normalizedText,
+    createdAt
+  };
+}
+
+export function buildReadableContentFromEvent(event: SessionEvent): SessionReadableContent | null {
+  switch (event.type) {
+    case "player.message": {
+      const text = sanitizeReadableText(event.payload.text);
+      if (!text) {
+        return null;
+      }
+      return {
+        id: `event:${event.seq}`,
+        source: "event",
+        kind: "player_message",
+        seq: event.seq,
+        eventType: event.type,
+        title: "你说",
+        kicker: "玩家输入",
+        displaySpeaker: "玩家",
+        ttsSpeaker: "玩家",
+        text,
+        createdAt: event.createdAt
+      };
+    }
+    case "agent.speak_player": {
+      const text = sanitizeReadableText(event.payload.message);
+      const speaker = typeof event.payload.speaker === "string" ? event.payload.speaker.trim() : "";
+      if (!text || !speaker) {
+        return null;
+      }
+      return {
+        id: `event:${event.seq}`,
+        source: "event",
+        kind: "character_speech",
+        seq: event.seq,
+        eventType: event.type,
+        title: speaker,
+        kicker: "角色发言",
+        displaySpeaker: speaker,
+        ttsSpeaker: speaker,
+        text,
+        createdAt: event.createdAt
+      };
+    }
+    case "agent.stage_direction": {
+      const text = sanitizeReadableText(event.payload.direction);
+      const speaker = typeof event.payload.speaker === "string" ? event.payload.speaker.trim() : "";
+      if (!text) {
+        return null;
+      }
+      return {
+        id: `event:${event.seq}`,
+        source: "event",
+        kind: "stage_direction",
+        seq: event.seq,
+        eventType: event.type,
+        title: speaker ? `${speaker} 的动作` : "舞台动作",
+        kicker: "舞台动作",
+        displaySpeaker: speaker || "旁白",
+        ttsSpeaker: "旁白",
+        text,
+        createdAt: event.createdAt
+      };
+    }
+    case "agent.story_effect": {
+      const text = sanitizeReadableText(event.payload.description);
+      const label = typeof event.payload.label === "string" ? event.payload.label.trim() : "";
+      if (!text) {
+        return null;
+      }
+      return {
+        id: `event:${event.seq}`,
+        source: "event",
+        kind: "story_effect",
+        seq: event.seq,
+        eventType: event.type,
+        title: label || "剧情变化",
+        kicker: "剧情变化",
+        displaySpeaker: "旁白",
+        ttsSpeaker: "旁白",
+        text,
+        createdAt: event.createdAt
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+export function buildSessionReadableContents(session: Session, events: SessionEvent[]): SessionReadableContent[] {
+  const setupSource = session.confirmedSetup ?? session.draft;
+  const createdAt = session.createdAt;
+  const items: SessionReadableContent[] = [
+    createSetupReadableContent(
+      "setup:worldSummary",
+      "world_summary",
+      "世界背景",
+      "背景",
+      setupSource.worldSummary,
+      createdAt
+    ),
+    createSetupReadableContent(
+      "setup:openingSituation",
+      "opening_situation",
+      "开场局势",
+      "开场",
+      setupSource.openingSituation,
+      createdAt
+    ),
+    createSetupReadableContent(
+      "setup:playerState",
+      "player_state",
+      "玩家处境",
+      "视角",
+      setupSource.playerState,
+      createdAt
+    )
+  ].filter((item): item is SessionReadableContent => Boolean(item));
+
+  for (const event of events) {
+    const readable = buildReadableContentFromEvent(event);
+    if (readable) {
+      items.push(readable);
+    }
+  }
+
+  return items;
+}
+
 export const recentRawTurnSchema = z.object({
   id: z.string().min(1),
   fromSeq: z.number().int().nonnegative(),

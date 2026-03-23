@@ -10,13 +10,15 @@ import {
   normalizeAppConfig,
   normalizeLlmConfig,
   sessionSchema,
+  sessionTtsBatchJobSchema,
   type AppConfig,
   type LlmCallListQuery,
   type LlmCallListResponse,
   type LlmCallRecord,
   type LlmConfig,
   type Session,
-  type SessionEvent
+  type SessionEvent,
+  type SessionTtsBatchJob
 } from "@dglab-ai/shared";
 import type { LlmCallStore, SessionStore, TtsAudioCacheRecord } from "../types/contracts.js";
 
@@ -54,6 +56,10 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return this.client.db(this.dbName).collection("tts_audio_cache");
   }
 
+  private get sessionTtsBatchJobs(): Collection<SessionTtsBatchJob> {
+    return this.client.db(this.dbName).collection("session_tts_batch_jobs");
+  }
+
   async init(): Promise<void> {
     await this.client.connect();
     await Promise.all([
@@ -64,7 +70,10 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       this.llmCalls.createIndex({ startedAt: -1 }),
       this.llmCalls.createIndex({ sessionId: 1, startedAt: -1 }),
       this.ttsAudioCache.createIndex({ key: 1 }, { unique: true }),
-      this.ttsAudioCache.createIndex({ sessionId: 1, eventSeq: 1, createdAt: -1 })
+      this.ttsAudioCache.createIndex({ sessionId: 1, readableId: 1, createdAt: -1 }),
+      this.ttsAudioCache.createIndex({ sessionId: 1, eventSeq: 1, createdAt: -1 }),
+      this.sessionTtsBatchJobs.createIndex({ sessionId: 1 }, { unique: true }),
+      this.sessionTtsBatchJobs.createIndex({ updatedAt: -1 })
     ]);
   }
 
@@ -210,6 +219,15 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     return this.ttsAudioCache.findOne({ key }, { projection: { _id: 0 } });
   }
 
+  async getTtsAudioCaches(keys: string[]): Promise<TtsAudioCacheRecord[]> {
+    if (keys.length === 0) {
+      return [];
+    }
+    return this.ttsAudioCache
+      .find({ key: { $in: keys } }, { projection: { _id: 0 } })
+      .toArray();
+  }
+
   async saveTtsAudioCache(record: TtsAudioCacheRecord): Promise<TtsAudioCacheRecord> {
     await this.ttsAudioCache.updateOne(
       { key: record.key },
@@ -224,6 +242,21 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
       { key },
       { $set: { lastAccessedAt: accessedAt } }
     );
+  }
+
+  async getSessionTtsBatchJob(sessionId: string): Promise<SessionTtsBatchJob | null> {
+    const document = await this.sessionTtsBatchJobs.findOne({ sessionId }, { projection: { _id: 0 } });
+    return document ? sessionTtsBatchJobSchema.parse(document) : null;
+  }
+
+  async saveSessionTtsBatchJob(job: SessionTtsBatchJob): Promise<SessionTtsBatchJob> {
+    const normalized = sessionTtsBatchJobSchema.parse(job);
+    await this.sessionTtsBatchJobs.updateOne(
+      { sessionId: normalized.sessionId },
+      { $set: normalized },
+      { upsert: true }
+    );
+    return normalized;
   }
 
   async recordLlmCall(record: LlmCallRecord): Promise<void> {

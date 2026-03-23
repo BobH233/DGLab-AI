@@ -60,8 +60,11 @@ class ConfigStoreStub {
   async getEvents() { return []; }
   async listSchedulableSessions() { return []; }
   async getTtsAudioCache() { return null; }
+  async getTtsAudioCaches() { return []; }
   async saveTtsAudioCache(record: unknown) { return record; }
   async touchTtsAudioCache() {}
+  async getSessionTtsBatchJob() { return null; }
+  async saveSessionTtsBatchJob(job: unknown) { return job; }
 }
 
 describe("ConfigService", () => {

@@ -34,5 +34,43 @@ export function createTtsRoutes(ttsService: TtsService): Router {
     }
   });
 
+  router.get("/sessions/:sessionId/performance", async (request, response, next) => {
+    try {
+      response.json(await ttsService.getSessionPerformanceState(request.params.sessionId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sessions/:sessionId/performance/batch", async (request, response, next) => {
+    try {
+      response.json(await ttsService.startSessionBatchSynthesis(request.params.sessionId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/sessions/:sessionId/performance/batch", async (request, response, next) => {
+    try {
+      response.json(await ttsService.cancelSessionBatchSynthesis(request.params.sessionId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/sessions/:sessionId/readables/:readableId", async (request, response, next) => {
+    try {
+      const audio = await ttsService.synthesizeReadableAudio(
+        request.params.sessionId,
+        request.params.readableId
+      );
+      response.type(audio.mimeType);
+      response.setHeader("x-tts-cache", audio.cacheHit ? "HIT" : "MISS");
+      response.sendFile(audio.filePath);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 }
