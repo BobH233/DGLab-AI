@@ -131,17 +131,25 @@ afterEach(async () => {
 });
 
 describe("normalizeTtsText", () => {
-  it("converts emo tags, strips delays, and replaces periods with short pauses", () => {
+  it("converts emo tags, strips delays, and replaces sentence punctuation with Chinese commas", () => {
     expect(normalizeTtsText(
       "<emo_inst>low voice</emo_inst> 妈妈是不是教过你，<emo_inst>emphasis</emo_inst> 在我的房间里，你没有点单的资格。<delay>1000</delay> <emo_inst>whisper</emo_inst> 不过……既然你这么诚心诚意地祈求了，这份刺骨的奖励，你可要连一滴都不剩地咽下去哦。"
     )).toBe(
-      "[low voice] 妈妈是不是教过你，[emphasis] 在我的房间里，你没有点单的资格[short pause][whisper] 不过[short pause]既然你这么诚心诚意地祈求了，这份刺骨的奖励，你可要连一滴都不剩地咽下去哦[short pause]"
+      "[low voice]妈妈是不是教过你，[emphasis]在我的房间里，你没有点单的资格，[whisper]不过，既然你这么诚心诚意地祈求了，这份刺骨的奖励，你可要连一滴都不剩地咽下去哦，"
     );
   });
 
   it("normalizes decorative quote punctuation before sending text to TTS", () => {
     expect(normalizeTtsText("「好啦，『余兴节目』开始了。”她轻声说。")).toBe(
-      "\"好啦，\"余兴节目\"开始了[short pause]\"她轻声说[short pause]"
+      "\"好啦，\"余兴节目\"开始了，\"她轻声说，"
+    );
+  });
+
+  it("merges adjacent emo tags into a single instruction block", () => {
+    expect(normalizeTtsText(
+      "<emo_inst>gentle</emo_inst> <emo_inst>low voice</emo_inst> 还是说……<delay>1200</delay><emo_inst>short pause</emo_inst> 离开了我视野的这段时间，我们的大将连怎么向我回话，"
+    )).toBe(
+      "[gentle,low voice]还是说，[short pause]离开了我视野的这段时间，我们的大将连怎么向我回话，"
     );
   });
 
@@ -187,7 +195,7 @@ describe("TtsService", () => {
       expect(second.cacheHit).toBe(true);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(store.ttsAudioCache.size).toBe(1);
-      expect([...store.ttsAudioCache.values()][0]?.normalizedText).toContain("[short pause]");
+      expect([...store.ttsAudioCache.values()][0]?.normalizedText).toContain("，");
       expect(first.filePath).toBe(second.filePath);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -333,7 +341,7 @@ describe("TtsService", () => {
         text?: string;
       };
       expect(requestBody.reference_id).toBe("player_voice");
-      expect(requestBody.text).toContain("[short pause]");
+      expect(requestBody.text).toContain("，");
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

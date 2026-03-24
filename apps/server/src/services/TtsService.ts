@@ -38,6 +38,7 @@ const DEFAULT_TTS_REQUEST_BODY = {
 } as const;
 
 const SHORT_PAUSE_TOKEN = "[short pause]";
+const TTS_SENTENCE_PAUSE_PUNCTUATION = "，";
 const DEFAULT_TTS_SEGMENT_CHAR_LIMIT = parsePositiveInteger(process.env.TTS_MAX_SEGMENT_CHARS, 180);
 const DEFAULT_TTS_SEGMENT_OVERFLOW_CHARS = parsePositiveInteger(process.env.TTS_SEGMENT_OVERFLOW_CHARS, 30);
 const MIN_TTS_SEGMENT_CHAR_LIMIT = parsePositiveInteger(process.env.TTS_MIN_SEGMENT_CHARS, 32);
@@ -52,6 +53,15 @@ const TTS_PUNCTUATION_NORMALIZATION_MAP: Record<string, string> = {
   "‘": "'",
   "’": "'"
 };
+
+function mergeAdjacentEmotionInstructionTags(source: string): string {
+  return source.replace(/(?:\[[^\]]+\]\s*){2,}/g, (match) => {
+    const tags = [...match.matchAll(/\[([^\]]+)\]/g)]
+      .map((tagMatch) => tagMatch[1]?.trim())
+      .filter((tag): tag is string => Boolean(tag));
+    return tags.length > 0 ? `[${tags.join(",")}]` : "";
+  });
+}
 
 const MPEG_SAMPLE_RATES: Record<number, [number, number, number]> = {
   0: [11025, 12000, 8000],
@@ -108,18 +118,21 @@ type Mp3FrameHeader = {
 };
 
 export function normalizeTtsText(source: string): string {
-  return source
+  return mergeAdjacentEmotionInstructionTags(
+    source
     .replace(/[「」『』“”‘’]/g, (char) => TTS_PUNCTUATION_NORMALIZATION_MAP[char] ?? char)
     .replace(/<delay>\s*\d+\s*<\/delay>/gi, "")
     .replace(/<emo_inst>([\s\S]*?)<\/emo_inst>/gi, (_match, value: string) => {
       const content = value.trim();
       return content ? `[${content}]` : "";
     })
-    .replace(/(?:\.{3,}|…+|。|\.)/g, SHORT_PAUSE_TOKEN)
-    .replace(new RegExp(`\\s+\\${SHORT_PAUSE_TOKEN}`, "g"), SHORT_PAUSE_TOKEN)
-    .replace(new RegExp(`\\${SHORT_PAUSE_TOKEN}\\s+(?=\\[[^\\]]+\\])`, "g"), SHORT_PAUSE_TOKEN)
+    .replace(/(?:\.{3,}|…+|。|\.)/g, TTS_SENTENCE_PAUSE_PUNCTUATION)
+    .replace(new RegExp(`\\s+${TTS_SENTENCE_PAUSE_PUNCTUATION}`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
+    .replace(new RegExp(`${TTS_SENTENCE_PAUSE_PUNCTUATION}\\s+(?=\\[[^\\]]+\\])`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
+    .replace(/\]\s+(?=[^\[\s])/g, "]")
     .replace(/[ \t]{2,}/g, " ")
-    .trim();
+    .trim()
+  );
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
