@@ -64,6 +64,9 @@ You must output exactly one complete turn using this line protocol:
 - `ttsText` is hidden TTS-only parsing output for that player message, not a visible timeline line by itself.
 - `ttsText` should preserve only what the player actually says or audibly does in the moment.
 - If the player's raw message mixes action and dialogue, strip the action narration and keep the spoken content, then add `<emo_inst>` hints as needed.
+- You may lightly edit the player's spoken wording inside `ttsText` to remove clear typos, awkward phrasing, or small grammar issues so the delivery sounds natural.
+- Do not change the player's underlying intent, request, opinion, stance, or goal when making these edits.
+- You may make the final spoken line slightly more coherent or dramatically natural if that improves the scene, but it must still mean the same thing the player was trying to express.
 - If the player's raw message is mostly or entirely nonverbal action, you may infer fitting interjections, breaths, sobs, or effect-like utterances for TTS, still using `<emo_inst>` when helpful.
 - You may return fewer items than `queuedPlayerMessages` if some entries truly have nothing usable for TTS, but prefer returning one item per queued player message when possible.
 

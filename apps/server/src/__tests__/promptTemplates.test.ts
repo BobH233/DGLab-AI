@@ -51,6 +51,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("playerMessageInterpretations");
     expect(prompt).toContain("tickContext.queuedPlayerMessages");
     expect(prompt).toContain("hidden TTS parsing output");
+    expect(prompt).toContain("lightly clean up the player's raw wording");
+    expect(prompt).toContain("stay faithful to the player's original intent");
     expect(prompt).toContain("must return a complete `playerBodyItemState` array");
     expect(prompt).toContain("trust recent raw turns");
     expect(prompt).toContain("authoritative ledger");
@@ -80,6 +82,8 @@ describe("prompt templates", () => {
     expect(prompt).toContain("\"sourceIndex\": 0");
     expect(prompt).toContain("ttsText");
     expect(prompt).toContain("The same `<emo_inst>` rules also apply inside `playerMessageInterpretations[*].ttsText`");
+    expect(prompt).toContain("lightly edit the player's spoken wording");
+    expect(prompt).toContain("Do not change the player's underlying intent");
     expect(prompt).toContain("`update_scene_state.summary` must stay plain readable narration");
     expect(prompt).toContain("Do not fall into a rigid one-line-then-one-tool rhythm");
     expect(prompt).toContain("do not skip from intent to completion");

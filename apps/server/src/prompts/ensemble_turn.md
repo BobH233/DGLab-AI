@@ -67,6 +67,9 @@ You must decide the next ordered action batch for all currently active agents in
 - Each `playerMessageInterpretations` item is hidden TTS parsing output keyed by zero-based `sourceIndex` into `tickContext.queuedPlayerMessages`.
 - Use `playerMessageInterpretations[*].ttsText` to capture what the player actually says or audibly does, not the raw action narration they typed.
 - If a player message mixes free-form action with dialogue, strip away the action narration and keep only the spoken or audible part, then add `<emo_inst>` tags to reflect the implied delivery.
+- You may lightly clean up the player's raw wording inside `playerMessageInterpretations[*].ttsText` to remove obvious typos, broken phrasing, or awkward grammar when that helps the spoken line feel more natural.
+- Any cleanup must stay faithful to the player's original intent, stance, goal, and emotional direction. Do not change what the player is trying to say or soften, intensify, or redirect their meaning.
+- When helpful, you may make the spoken line slightly more coherent, vivid, or dramatically natural so the surrounding story beat lands better, but only within the same underlying meaning the player expressed.
 - If a player message is pure action, expression, or atmosphere with little direct dialogue, you may infer suitable breaths, sobs, mutters, gasps, or short effect-like utterances so downstream TTS still has something performable.
 - `playerMessageInterpretations[*].ttsText` is hidden structured output for storage and TTS only. Do not repeat it as a visible character action or timeline narration.
 - When the scene materially changes, include `update_scene_state`.
