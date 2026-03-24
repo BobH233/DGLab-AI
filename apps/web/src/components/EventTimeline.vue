@@ -181,6 +181,18 @@
             </template>
             <template v-else>{{ item.main }}</template>
           </p>
+          <div v-if="hasInlineMain(item.supplementaryParts, item.supplementary)" class="event-supplementary">
+            <strong v-if="item.supplementaryLabel" class="event-supplementary__label">{{ item.supplementaryLabel }}</strong>
+            <p class="event-supplementary__body">
+              <template v-if="item.supplementaryParts?.length">
+                <template v-for="(part, index) in item.supplementaryParts" :key="`${item.id}:supplementary:${index}`">
+                  <span v-if="part.type === 'text'">{{ part.text }}</span>
+                  <span v-else class="event-inline-tag">{{ part.value }}</span>
+                </template>
+              </template>
+              <template v-else>{{ item.supplementary }}</template>
+            </p>
+          </div>
           <div v-if="item.diffLines?.length" class="event-diff" aria-label="状态差异">
             <p
               v-for="line in item.diffLines"

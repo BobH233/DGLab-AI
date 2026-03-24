@@ -159,8 +159,8 @@ class InMemoryStore {
 describe("SessionService", () => {
   it("publishes tick_started before waiting for the model response", async () => {
     let finishTick!: () => void;
-    const pendingTick = new Promise<{ events: SessionEvent[]; usageCalls: [] }>((resolve) => {
-      finishTick = () => resolve({ events: [], usageCalls: [] });
+    const pendingTick = new Promise<{ events: SessionEvent[]; playerMessageInterpretations: []; usageCalls: [] }>((resolve) => {
+      finishTick = () => resolve({ events: [], playerMessageInterpretations: [], usageCalls: [] });
     });
     const store = new InMemoryStore();
     const channel = {
@@ -253,8 +253,8 @@ describe("SessionService", () => {
 
   it("keeps a reconnectable preview snapshot while a tick is streaming", async () => {
     let finishTick!: () => void;
-    const pendingTick = new Promise<{ events: SessionEvent[]; usageCalls: [] }>((resolve) => {
-      finishTick = () => resolve({ events: [], usageCalls: [] });
+    const pendingTick = new Promise<{ events: SessionEvent[]; playerMessageInterpretations: []; usageCalls: [] }>((resolve) => {
+      finishTick = () => resolve({ events: [], playerMessageInterpretations: [], usageCalls: [] });
     });
     const store = new InMemoryStore();
     const channel = {
@@ -376,6 +376,105 @@ describe("SessionService", () => {
     expect(service.getPreviewSnapshot("session_test")).toBeNull();
   });
 
+  it("stores interpreted player TTS text as a linked session event after tick completion", async () => {
+    const store = new InMemoryStore();
+    store.events = [
+      {
+        sessionId: "session_test",
+        seq: 1,
+        type: "player.message",
+        source: "player",
+        createdAt: "2026-03-24T08:00:00.000Z",
+        payload: {
+          text: "可怜巴巴的望向八重神子，抽噎）神子，你还想把我怎么样啊！我明明都这么惨了！"
+        }
+      }
+    ];
+    store.session.lastSeq = 1;
+    store.session.timerState.queuedPlayerMessages = [
+      "可怜巴巴的望向八重神子，抽噎）神子，你还想把我怎么样啊！我明明都这么惨了！"
+    ];
+    const channel = {
+      publish: vi.fn(),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      normalizeInbound: vi.fn()
+    };
+    const orchestrator = {
+      generateDraft: vi.fn(),
+      summarizeScene: vi.fn(),
+      runTick: vi.fn(async () => ({
+        events: [],
+        playerMessageInterpretations: [
+          {
+            sourceIndex: 0,
+            ttsText: "<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！<emo_inst>low voice</emo_inst>我明明都这么惨了！"
+          }
+        ],
+        usageCalls: []
+      }))
+    };
+    const prompts = {
+      getTemplate: vi.fn(),
+      render: vi.fn(),
+      versions: vi.fn(() => ({}))
+    };
+    const memoryService = {
+      refreshSessionMemory: vi.fn(),
+      markRefreshFailure: vi.fn()
+    };
+    const memoryContextAssembler = {
+      assemble: vi.fn(() => ({
+        coreState: {
+          sessionDraft: "{}",
+          storyState: "{}",
+          agentStates: "{}",
+          playerBodyItemState: "[]"
+        },
+        archiveBlock: "",
+        episodeBlocks: [],
+        turnSummaryBlocks: [],
+        recentRawTurns: [],
+        recentRawTurnsBlock: "",
+        playerMessagesBlock: "",
+        tickContextBlock: "{}",
+        stats: {
+          charCounts: {
+            archive: 0,
+            episodes: 0,
+            turns: 0,
+            rawTurns: 0,
+            playerMessages: 0,
+            tickContext: 0,
+            coreState: 0
+          },
+          droppedBlocks: [],
+          rawTurnsIncluded: 0,
+          episodeCountIncluded: 0,
+          turnSummaryCountIncluded: 0,
+          usedFallback: false
+        }
+      }))
+    };
+    const service = new SessionService(
+      store as never,
+      channel as never,
+      orchestrator as never,
+      prompts as never,
+      memoryService as never,
+      memoryContextAssembler as never
+    );
+
+    await service.processTick("session_test", "player_message");
+
+    const interpreted = store.events.find((event) => event.type === "player.message_interpreted");
+    expect(interpreted?.payload).toEqual({
+      sourceIndex: 0,
+      sourceMessageSeq: 1,
+      ttsText: "<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！<emo_inst>low voice</emo_inst>我明明都这么惨了！"
+    });
+  });
+
   it("records a retryable failure event when a tick crashes", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const store = new InMemoryStore();
@@ -478,6 +577,7 @@ describe("SessionService", () => {
         vi.setSystemTime(new Date("2026-03-17T12:00:15.000Z"));
         return {
           events: [],
+          playerMessageInterpretations: [],
           usageCalls: []
         };
       })

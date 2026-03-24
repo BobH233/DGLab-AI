@@ -154,6 +154,16 @@
               </template>
               <template v-else>{{ item.main }}</template>
             </p>
+            <div v-if="item.supplementaryParts?.length || item.supplementary" class="print-timeline-item__supplementary">
+              <strong v-if="item.supplementaryLabel">{{ item.supplementaryLabel }}：</strong>
+              <template v-if="item.supplementaryParts?.length">
+                <template v-for="(part, index) in item.supplementaryParts" :key="`${item.id}:print-supplementary:${index}`">
+                  <span v-if="part.type === 'text'">{{ part.text }}</span>
+                  <span v-else class="print-inline-tag">{{ part.value }}</span>
+                </template>
+              </template>
+              <template v-else>{{ item.supplementary }}</template>
+            </div>
             <div v-if="item.diffLines?.length" class="print-timeline-item__diff">
               <p v-for="line in item.diffLines" :key="`${item.id}-${line.prefix}-${line.value}`" :data-prefix="line.prefix">
                 <strong>{{ line.prefix }}</strong> {{ line.value }}

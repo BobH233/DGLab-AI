@@ -199,6 +199,7 @@ class FakeProvider {
         return lines;
       }),
       `@turnControl ${JSON.stringify(this.batch.turnControl)}`,
+      `@playerMessageInterpretations ${JSON.stringify(this.batch.playerMessageInterpretations ?? [])}`,
       `@playerBodyItemState ${JSON.stringify(this.batch.playerBodyItemState)}`,
       "@done"
     ].join("\n");
@@ -257,6 +258,12 @@ describe("DefaultOrchestratorService", () => {
         endStory: false,
         needsHandoff: false
       },
+      playerMessageInterpretations: [
+        {
+          sourceIndex: 0,
+          ttsText: "<emo_inst>low voice</emo_inst>你好。"
+        }
+      ],
       playerBodyItemState: [
         "你现在戴着一副遮光眼罩",
         "你现在双手被红色绳子捆在身后"
@@ -311,6 +318,12 @@ describe("DefaultOrchestratorService", () => {
     expect(result.events.some((event) => event.type === "player.body_item_state_updated")).toBe(true);
     expect(result.events.some((event) => event.type === "agent.stage_direction")).toBe(true);
     expect(result.events.some((event) => event.type === "agent.speak_player")).toBe(true);
+    expect(result.playerMessageInterpretations).toEqual([
+      {
+        sourceIndex: 0,
+        ttsText: "<emo_inst>low voice</emo_inst>你好。"
+      }
+    ]);
     expect(session.usageTotals.session.totalTokens).toBe(30);
     expect(provider.calls).toBe(1);
     expect(result.usageCalls).toHaveLength(1);
@@ -324,6 +337,7 @@ describe("DefaultOrchestratorService", () => {
         endStory: false,
         needsHandoff: false
       },
+      playerMessageInterpretations: [],
       playerBodyItemState: ["你现在戴着一副遮光眼罩"]
     });
     const promptService = new FakePromptService();

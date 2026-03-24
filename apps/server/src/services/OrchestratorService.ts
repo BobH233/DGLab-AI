@@ -189,6 +189,7 @@ function toolExamplesForPrompt(): string {
     "@endaction",
     "",
     "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerMessageInterpretations []",
     "@playerBodyItemState [\"你现在戴着一副遮光眼罩\"]",
     "@done",
     "```",
@@ -225,6 +226,12 @@ function toolExamplesForPrompt(): string {
     "@endaction",
     "",
     "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerMessageInterpretations [",
+    "  {",
+    "    \"sourceIndex\": 0,",
+    "    \"ttsText\": \"<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！<emo_inst>low voice</emo_inst>我明明都这么惨了！\"",
+    "  }",
+    "]",
     "@playerBodyItemState [\"你现在戴着一副遮光眼罩\",\"你现在双手被红色绳子捆在身后\"]",
     "@done",
     "```",
@@ -246,6 +253,7 @@ function toolExamplesForPrompt(): string {
     "@endaction",
     "",
     "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+    "@playerMessageInterpretations []",
     "@playerBodyItemState [\"你现在戴着一副遮光眼罩\"]",
     "@done",
     "```"
@@ -521,6 +529,7 @@ export class DefaultOrchestratorService implements OrchestratorService {
     }
     return {
       events,
+      playerMessageInterpretations: actionBatch.playerMessageInterpretations,
       usageCalls
     };
   }

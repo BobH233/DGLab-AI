@@ -132,6 +132,8 @@ export function formatEventLine(event: SessionEvent): string {
     }
     case "player.message":
       return `[${event.seq}] 玩家: ${truncateText(textOf(event.payload.text), 180)}`;
+    case "player.message_interpreted":
+      return `[${event.seq}] 玩家发声解析: message_seq=${textOf(event.payload.sourceMessageSeq)} | ${truncateText(textOf(event.payload.ttsText), 180)}`;
     case "agent.speak_player":
       return `[${event.seq}] ${textOf(event.payload.speaker, "角色")} 对玩家说: ${truncateText(textOf(event.payload.message), 180)}`;
     case "agent.speak_agent":

@@ -24,6 +24,7 @@ describe("LineProtocolTurnParser", () => {
       "@endfield",
       "@endaction",
       "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerMessageInterpretations []",
       "@playerBodyItemState [\"你现在戴着一副眼罩\"]",
       "@done"
     ].join("\n"));
@@ -54,6 +55,7 @@ describe("LineProtocolTurnParser", () => {
       "@endfield",
       "@endaction",
       "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerMessageInterpretations []",
       "@playerBodyItemState []",
       "@done"
     ].join("\n"));
@@ -94,6 +96,7 @@ describe("LineProtocolTurnParser", () => {
       "@endfield",
       "@endaction",
       "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerMessageInterpretations []",
       "@playerBodyItemState []",
       "@done"
     ].join("\n"));
@@ -135,6 +138,12 @@ describe("LineProtocolTurnParser", () => {
       "@endfield",
       "@endaction",
       "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerMessageInterpretations [",
+      "  {",
+      "    \"sourceIndex\": 0,",
+      "    \"ttsText\": \"<emo_inst>sad</emo_inst>神子，你还想把我怎么样啊！\"",
+      "  }",
+      "]",
       "@playerBodyItemState [",
       "  \"你现在戴着一副严密的遮光眼罩\",",
       "  \"你现在双手被束在身后\"",
@@ -144,6 +153,12 @@ describe("LineProtocolTurnParser", () => {
 
     const result = parser.finish();
 
+    expect(result.data.playerMessageInterpretations).toEqual([
+      {
+        sourceIndex: 0,
+        ttsText: "<emo_inst>sad</emo_inst>神子，你还想把我怎么样啊！"
+      }
+    ]);
     expect(result.data.playerBodyItemState).toEqual([
       "你现在戴着一副严密的遮光眼罩",
       "你现在双手被束在身后"
@@ -191,5 +206,40 @@ describe("LineProtocolTurnParser", () => {
     expect(consoleError).toHaveBeenCalledWith("[LLM DEBUG] line_protocol_control_json_parse_failed");
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("\"label\": \"@playerBodyItemState\""));
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("\"rawJson\": \"[\\\"mask\\\"\""));
+  });
+
+  it("parses multiline player message interpretations JSON", () => {
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_player_interp"
+    });
+
+    parser.push([
+      "@turnControl {\"continue\":true,\"endStory\":false,\"needsHandoff\":false}",
+      "@playerMessageInterpretations [",
+      "  {",
+      "    \"sourceIndex\": 0,",
+      "    \"ttsText\": \"<emo_inst>low voice</emo_inst>唔，这个强度，好像有些适应了呢。\"",
+      "  },",
+      "  {",
+      "    \"sourceIndex\": 1,",
+      "    \"ttsText\": \"<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！\"",
+      "  }",
+      "]",
+      "@playerBodyItemState []",
+      "@done"
+    ].join("\n"));
+
+    const result = parser.finish();
+
+    expect(result.data.playerMessageInterpretations).toEqual([
+      {
+        sourceIndex: 0,
+        ttsText: "<emo_inst>low voice</emo_inst>唔，这个强度，好像有些适应了呢。"
+      },
+      {
+        sourceIndex: 1,
+        ttsText: "<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！"
+      }
+    ]);
   });
 });

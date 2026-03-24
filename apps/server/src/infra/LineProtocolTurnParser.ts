@@ -1,6 +1,7 @@
 import {
   actionBatchSchema,
-  type ActionBatch
+  type ActionBatch,
+  type QueuedPlayerMessageInterpretation
 } from "@dglab-ai/shared";
 import { isLlmDebugEnabled } from "../lib/llmDebug.js";
 import type { OrchestratorPreviewEvent } from "../types/contracts.js";
@@ -16,6 +17,7 @@ type DraftAction = {
 type DraftBatch = {
   actions: DraftAction[];
   turnControl?: ActionBatch["turnControl"];
+  playerMessageInterpretations?: QueuedPlayerMessageInterpretation[];
   playerBodyItemState?: string[];
 };
 
@@ -24,7 +26,7 @@ type ParserOptions = {
   emitPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
 };
 
-type MultilineControlLabel = "@turnControl" | "@playerBodyItemState";
+type MultilineControlLabel = "@turnControl" | "@playerMessageInterpretations" | "@playerBodyItemState";
 
 const PREVIEWABLE_TEXT_FIELDS = new Set([
   "speak_to_player:args.message",
@@ -168,6 +170,7 @@ export class LineProtocolTurnParser {
         endStory: false,
         needsHandoff: false
       },
+      playerMessageInterpretations: this.draft.playerMessageInterpretations ?? [],
       playerBodyItemState: this.draft.playerBodyItemState ?? []
     });
 
@@ -360,6 +363,17 @@ export class LineProtocolTurnParser {
       return;
     }
 
+    if (trimmed.startsWith("@playerMessageInterpretations ")) {
+      if (this.currentAction || this.currentFieldPath) {
+        throw new Error("@playerMessageInterpretations must appear after all actions are closed");
+      }
+      this.parseOrBufferMultilineControl(
+        "@playerMessageInterpretations",
+        trimmed.slice("@playerMessageInterpretations ".length)
+      );
+      return;
+    }
+
     if (trimmed === "@done") {
       this.seenDone = true;
       return;
@@ -368,7 +382,10 @@ export class LineProtocolTurnParser {
     throw new Error(`Unknown line protocol control line: ${trimmed}`);
   }
 
-  private parseControlJson(label: "@action" | "@turnControl" | "@playerBodyItemState", rawJson: string): unknown {
+  private parseControlJson(
+    label: "@action" | "@turnControl" | "@playerMessageInterpretations" | "@playerBodyItemState",
+    rawJson: string
+  ): unknown {
     try {
       return JSON.parse(rawJson);
     } catch (error) {
@@ -431,6 +448,18 @@ export class LineProtocolTurnParser {
         payload: {
           turnId: this.turnId,
           value: this.draft.turnControl
+        }
+      });
+      return;
+    }
+
+    if (label === "@playerMessageInterpretations") {
+      this.draft.playerMessageInterpretations = this.parseControlJson(label, rawJson) as QueuedPlayerMessageInterpretation[];
+      this.emitPreviewEvent?.({
+        type: "llm.turn.player_message_interpretations",
+        payload: {
+          turnId: this.turnId,
+          value: this.draft.playerMessageInterpretations
         }
       });
       return;

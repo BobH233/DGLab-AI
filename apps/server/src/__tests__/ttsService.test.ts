@@ -57,6 +57,7 @@ class TtsStoreStub {
       message: "<emo_inst>low voice</emo_inst> 妈妈是不是教过你，<emo_inst>emphasis</emo_inst> 在我的房间里，你没有点单的资格。<delay>1000</delay> <emo_inst>whisper</emo_inst> 不过……既然你这么诚心诚意地祈求了。"
     }
   };
+  public events: SessionEvent[] = [];
 
   public ttsAudioCache = new Map<string, TtsAudioCacheRecord>();
 
@@ -72,11 +73,12 @@ class TtsStoreStub {
   async createSession() { throw new Error("not implemented"); }
   async getSession() { return null; }
   async getEvent(sessionId: string, seq: number) {
-    return sessionId === this.event.sessionId && seq === this.event.seq ? this.event : null;
+    return this.events.find((event) => event.sessionId === sessionId && event.seq === seq)
+      ?? (sessionId === this.event.sessionId && seq === this.event.seq ? this.event : null);
   }
   async replaceSession() {}
   async appendEvents() { return []; }
-  async getEvents() { return [this.event]; }
+  async getEvents() { return [this.event, ...this.events.filter((event) => event.seq !== this.event.seq)]; }
   async listSchedulableSessions() { return []; }
   async getTtsAudioCache(key: string) { return this.ttsAudioCache.get(key) ?? null; }
   async getTtsAudioCacheByContentKey(contentKey: string) {
@@ -342,6 +344,58 @@ describe("TtsService", () => {
       };
       expect(requestBody.reference_id).toBe("player_voice");
       expect(requestBody.text).toContain("，");
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers interpreted player TTS text when available", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
+    const store = new TtsStoreStub();
+    store.event = {
+      sessionId: "session-1",
+      seq: 14,
+      type: "player.message",
+      source: "player",
+      createdAt: "2026-03-23T10:03:00.000Z",
+      payload: {
+        text: "可怜巴巴的望向八重神子，抽噎）神子，你还想把我怎么样啊！我明明都这么惨了！"
+      }
+    };
+    store.events = [
+      {
+        sessionId: "session-1",
+        seq: 15,
+        type: "player.message_interpreted",
+        source: "system",
+        createdAt: "2026-03-23T10:03:02.000Z",
+        payload: {
+          sourceMessageSeq: 14,
+          sourceIndex: 0,
+          ttsText: "<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！<emo_inst>low voice</emo_inst>我明明都这么惨了！"
+        }
+      }
+    ];
+    const fetchMock = vi.fn(async () => new Response(Buffer.from("fake-mp3"), {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/mpeg"
+      }
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      const service = new TtsService(store as never, tempDir);
+      await service.synthesizeEventAudio("session-1", 14);
+
+      const requestCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined] | undefined;
+      const requestInit = requestCall?.[1];
+      const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as {
+        text?: string;
+      };
+      expect(requestBody.text).toContain("[sad,angry]");
+      expect(requestBody.text).toContain("[low voice]");
+      expect(requestBody.text).not.toContain("可怜巴巴的望向八重神子");
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

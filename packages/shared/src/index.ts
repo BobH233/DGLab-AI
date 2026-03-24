@@ -654,6 +654,7 @@ export const eventTypeSchema = z.enum([
   "session.confirmed",
   "player.body_item_state_updated",
   "player.message",
+  "player.message_interpreted",
   "agent.device_control",
   "agent.speak_player",
   "agent.speak_agent",
@@ -683,6 +684,21 @@ export const sessionEventSchema = z.object({
 });
 
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
+
+export const queuedPlayerMessageInterpretationSchema = z.object({
+  sourceIndex: z.number().int().nonnegative(),
+  ttsText: z.string().min(1)
+});
+
+export type QueuedPlayerMessageInterpretation = z.infer<typeof queuedPlayerMessageInterpretationSchema>;
+
+export const playerMessageInterpretationPayloadSchema = z.object({
+  sourceMessageSeq: z.number().int().nonnegative(),
+  sourceIndex: z.number().int().nonnegative().optional(),
+  ttsText: z.string().min(1)
+});
+
+export type PlayerMessageInterpretationPayload = z.infer<typeof playerMessageInterpretationPayloadSchema>;
 
 export const sessionReadableContentSourceSchema = z.enum(["setup", "event"]);
 export type SessionReadableContentSource = z.infer<typeof sessionReadableContentSourceSchema>;
@@ -895,9 +911,59 @@ export function buildReadableContentFromEvent(event: SessionEvent): SessionReada
   }
 }
 
+export function collectPlayerMessageInterpretationMap(
+  events: SessionEvent[]
+): Map<number, PlayerMessageInterpretationPayload> {
+  const interpretations = new Map<number, PlayerMessageInterpretationPayload>();
+  for (const event of events) {
+    if (event.type !== "player.message_interpreted") {
+      continue;
+    }
+    const parsed = playerMessageInterpretationPayloadSchema.safeParse(event.payload);
+    if (!parsed.success) {
+      continue;
+    }
+    interpretations.set(parsed.data.sourceMessageSeq, parsed.data);
+  }
+  return interpretations;
+}
+
+export function buildReadableContentFromEventWithContext(
+  event: SessionEvent,
+  options: {
+    playerMessageInterpretations?: Map<number, PlayerMessageInterpretationPayload>;
+  } = {}
+): SessionReadableContent | null {
+  switch (event.type) {
+    case "player.message": {
+      const interpreted = options.playerMessageInterpretations?.get(event.seq);
+      const text = sanitizeReadableText(interpreted?.ttsText ?? event.payload.text);
+      if (!text) {
+        return null;
+      }
+      return {
+        id: `event:${event.seq}`,
+        source: "event",
+        kind: "player_message",
+        seq: event.seq,
+        eventType: event.type,
+        title: "你说",
+        kicker: "玩家输入",
+        displaySpeaker: "玩家",
+        ttsSpeaker: "玩家",
+        text,
+        createdAt: event.createdAt
+      };
+    }
+    default:
+      return buildReadableContentFromEvent(event);
+  }
+}
+
 export function buildSessionReadableContents(session: Session, events: SessionEvent[]): SessionReadableContent[] {
   const setupSource = session.confirmedSetup ?? session.draft;
   const createdAt = session.createdAt;
+  const playerMessageInterpretations = collectPlayerMessageInterpretationMap(events);
   const items: SessionReadableContent[] = [
     createSetupReadableContent(
       "setup:worldSummary",
@@ -926,7 +992,9 @@ export function buildSessionReadableContents(session: Session, events: SessionEv
   ].filter((item): item is SessionReadableContent => Boolean(item));
 
   for (const event of events) {
-    const readable = buildReadableContentFromEvent(event);
+    const readable = buildReadableContentFromEventWithContext(event, {
+      playerMessageInterpretations
+    });
     if (readable) {
       items.push(readable);
     }
@@ -1012,6 +1080,7 @@ export type TurnControl = z.infer<typeof turnControlSchema>;
 export const actionBatchSchema = z.object({
   actions: z.array(toolCallSchema).max(24),
   turnControl: turnControlSchema,
+  playerMessageInterpretations: z.array(queuedPlayerMessageInterpretationSchema).max(24).default([]),
   playerBodyItemState: requiredPlayerBodyItemStateSchema
 });
 
@@ -1092,6 +1161,7 @@ export const sseEventSchema = z.object({
     "llm.reasoning_summary.delta",
     "llm.preview.snapshot",
     "llm.turn.control",
+    "llm.turn.player_message_interpretations",
     "llm.turn.player_body_item_state",
     "llm.turn.completed",
     "llm.turn.failed",
@@ -1125,8 +1195,8 @@ export function mergeUsageEntry(base: UsageEntry, next: Partial<UsageEntry>): Us
 export function defaultPromptVersions(): PromptVersions {
   return {
     sharedSafety: "1.3.0",
-    toolContract: "3.0.0",
+    toolContract: "3.1.0",
     worldBuilder: "1.6.0",
-    ensembleTurn: "1.6.0"
+    ensembleTurn: "1.7.0"
   };
 }

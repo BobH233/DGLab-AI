@@ -30,6 +30,50 @@ describe("EventTimeline", () => {
     expect(wrapper.text()).toContain("测试消息");
   });
 
+  it("renders player TTS parsing as supplementary content on the same player card", () => {
+    const createdAt = new Date().toISOString();
+    const wrapper = mount(EventTimeline, {
+      props: {
+        events: [
+          {
+            sessionId: "session_1",
+            seq: 1,
+            type: "player.message",
+            source: "player",
+            createdAt,
+            payload: {
+              text: "可怜巴巴的望向八重神子，抽噎）神子，你还想把我怎么样啊！我明明都这么惨了！"
+            }
+          },
+          {
+            sessionId: "session_1",
+            seq: 2,
+            type: "player.message_interpreted",
+            source: "system",
+            createdAt,
+            payload: {
+              sourceMessageSeq: 1,
+              sourceIndex: 0,
+              ttsText: "<emo_inst>sad</emo_inst><emo_inst>angry</emo_inst>神子，你还想把我怎么样啊！<emo_inst>low voice</emo_inst>我明明都这么惨了！"
+            }
+          }
+        ]
+      }
+    });
+
+    const playerCard = wrapper.find('.timeline-item[data-kind="player"] .event-card');
+    const supplementary = wrapper.find(".event-supplementary");
+    const inlineTags = supplementary.findAll(".event-inline-tag");
+
+    expect(playerCard.exists()).toBe(true);
+    expect(playerCard.text()).toContain("可怜巴巴的望向八重神子");
+    expect(playerCard.text()).toContain("TTS 解析");
+    expect(playerCard.text()).toContain("神子，你还想把我怎么样啊！");
+    expect(playerCard.text()).toContain("我明明都这么惨了！");
+    expect(inlineTags.map((tag) => tag.text())).toEqual(["sad", "angry", "low voice"]);
+    expect(wrapper.find('.timeline-item[data-kind="system"] .event-card').exists()).toBe(false);
+  });
+
   it("renders live pause state as a compact timeline note", () => {
     const wrapper = mount(EventTimeline, {
       props: {

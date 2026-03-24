@@ -10,6 +10,7 @@ You must output exactly one complete turn using this line protocol:
 - `@endfield`
 - `@endaction`
 - `@turnControl {json}`
+- `@playerMessageInterpretations [json array]`
 - `@playerBodyItemState [json array]`
 - `@done`
 
@@ -17,6 +18,7 @@ You must output exactly one complete turn using this line protocol:
 
 - `@action` must be followed by a single-line JSON object.
 - `@turnControl` should be followed by a compact single-line JSON object.
+- `@playerMessageInterpretations` should be followed by a valid JSON array. Each item must use the exact shape `{"sourceIndex":0,"ttsText":"..."}`.
 - `@playerBodyItemState` should be followed by a compact single-line JSON array.
 - Every action header must include `actorAgentId` and `tool`.
 - You may also include `targetScope` and `whyVisible` in the `@action` header.
@@ -50,6 +52,21 @@ You must output exactly one complete turn using this line protocol:
 }
 ```
 
+### `playerMessageInterpretations` must use this exact item shape:
+```json
+{
+  "sourceIndex": 0,
+  "ttsText": "<emo_inst>low voice</emo_inst>唔，这个强度，好像有些适应了呢。"
+}
+```
+
+- `sourceIndex` is the zero-based index into `tickContext.queuedPlayerMessages`.
+- `ttsText` is hidden TTS-only parsing output for that player message, not a visible timeline line by itself.
+- `ttsText` should preserve only what the player actually says or audibly does in the moment.
+- If the player's raw message mixes action and dialogue, strip the action narration and keep the spoken content, then add `<emo_inst>` hints as needed.
+- If the player's raw message is mostly or entirely nonverbal action, you may infer fitting interjections, breaths, sobs, or effect-like utterances for TTS, still using `<emo_inst>` when helpful.
+- You may return fewer items than `queuedPlayerMessages` if some entries truly have nothing usable for TTS, but prefer returning one item per queued player message when possible.
+
 ### Valid full streamed examples:
 {{toolExamples}}
 
@@ -78,6 +95,7 @@ Use only the exact tool ids and argument keys shown in the Tool reference above.
 - Valid chaining example:
   `<emo_inst>professional broadcast tone</emo_inst> <emo_inst>low volume</emo_inst> 在我允许之前，你不需要解释，<emo_inst>short pause</emo_inst> 更不需要替自己找借口。<emo_inst>low voice</emo_inst> 你现在要学的，只是安静、站稳，<emo_inst>inhale</emo_inst> 然后把每一分紧张都……<emo_inst>emphasis</emo_inst> 老老实实交到我手里。<emo_inst>whisper</emo_inst> 现在你已经看不见了，那就更该学会听。记住这种感觉——<emo_inst>short pause</emo_inst> 不是你来判断什么时候开口、什么时候放松，<emo_inst>emphasis</emo_inst> 而是由我来决定。<emo_inst>low voice</emo_inst> 你只需要站稳，安静，<emo_inst>short pause</emo_inst> 然后把每一次想躲开的念头……<emo_inst>whisper in small voice</emo_inst> 都忍住。`
 - Treat `<delay>...</delay>` and `<emo_inst>...</emo_inst>` as display cues inside the same turn, not as separate actions and not as spoken text.
+- The same `<emo_inst>` rules also apply inside `playerMessageInterpretations[*].ttsText`.
 - `update_scene_state.summary` must stay plain readable narration with no inline pause tags, `<emo_inst>`, XML-like markers, or other display-only control syntax.
 - `update_scene_state.memorySummary`, `update_scene_state.memoryKeyDevelopments`, and `update_scene_state.memoryCharacterStates` are hidden long-context hints, not player-visible text. Write them as concise continuity notes in Simplified Chinese.
 - Do not copy dialogue lines or vivid prose into hidden memory fields.
@@ -92,6 +110,6 @@ Use only the exact tool ids and argument keys shown in the Tool reference above.
 - Avoid repetitive fixation on a single device or mechanic.
 - Favor variety. Mix tool use with dialogue, staging, atmosphere, emotional feints, environmental detail, and scene-state changes.
 - Do not stall waiting for the player to invent the next move.
-- If nothing should happen, return no `@action` blocks and still emit `@turnControl`, `@playerBodyItemState`, and `@done`.
+- If nothing should happen, return no `@action` blocks and still emit `@turnControl`, `@playerMessageInterpretations`, `@playerBodyItemState`, and `@done`.
 - Never invent tools outside the provided tool list.
 - For `control_e_stim_toy`, never emit a single `@field args` block containing the whole JSON object. Always use the canonical field paths required by the tool reference.

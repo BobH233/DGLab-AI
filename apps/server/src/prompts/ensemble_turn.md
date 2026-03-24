@@ -63,6 +63,12 @@ You must decide the next ordered action batch for all currently active agents in
 - If a line or narration should briefly breathe, insert `<delay>1000</delay>` inside the relevant player-visible string instead of creating a separate pause action.
 - If a spoken or narrated beat would benefit from expressive delivery, you may insert `<emo_inst>...</emo_inst>` directly inside the same player-visible string. The content is free-form natural language for TTS-style delivery hints such as emotion, tone, breath, loudness, accent, pacing, or vocal style, and is not limited to any fixed preset list.
 - Keep each `<emo_inst>` block to one word or one short phrase only. Do not combine multiple hints inside one block with commas or list-like phrasing. If you need multiple simultaneous hints, chain multiple `<emo_inst>` blocks in sequence.
+- In the same response, also fill `playerMessageInterpretations` for the current `tickContext.queuedPlayerMessages` whenever there are pending player messages.
+- Each `playerMessageInterpretations` item is hidden TTS parsing output keyed by zero-based `sourceIndex` into `tickContext.queuedPlayerMessages`.
+- Use `playerMessageInterpretations[*].ttsText` to capture what the player actually says or audibly does, not the raw action narration they typed.
+- If a player message mixes free-form action with dialogue, strip away the action narration and keep only the spoken or audible part, then add `<emo_inst>` tags to reflect the implied delivery.
+- If a player message is pure action, expression, or atmosphere with little direct dialogue, you may infer suitable breaths, sobs, mutters, gasps, or short effect-like utterances so downstream TTS still has something performable.
+- `playerMessageInterpretations[*].ttsText` is hidden structured output for storage and TTS only. Do not repeat it as a visible character action or timeline narration.
 - When the scene materially changes, include `update_scene_state`.
 - Keep `update_scene_state.summary` clean and plain-text. Do not place `<delay>...</delay>`, `<emo_inst>...</emo_inst>`, or any other display tags inside it.
 - When you use `update_scene_state`, populate the hidden memory fields whenever you can so long-context memory can keep an abstract continuity note instead of replaying sensory detail.
@@ -98,4 +104,4 @@ Return one complete streamed turn using the line protocol from the tool contract
 
 - Text fields like `args.message`, `args.direction`, and `args.description` must be written as raw text inside the field body, not as JSON strings.
 - Non-text fields like numbers, booleans, arrays, and objects must be written as valid JSON literals inside the field body.
-- Always finish with `@turnControl`, `@playerBodyItemState`, and `@done`.
+- Always finish with `@turnControl`, `@playerMessageInterpretations`, `@playerBodyItemState`, and `@done`.

@@ -1,4 +1,5 @@
 import {
+  playerMessageInterpretationPayloadSchema,
   createEmptyMemoryState,
   createEmptyUsageStats,
   defaultPromptVersions,
@@ -54,6 +55,87 @@ function mergeToolContext(base: ToolContext | undefined, next: ToolContext | und
     ...(base ?? {}),
     ...(next ?? {})
   };
+}
+
+function interpretedSourceMessageSeqs(events: SessionEvent[]): Set<number> {
+  return new Set(
+    events
+      .filter((event) => event.type === "player.message_interpreted")
+      .map((event) => playerMessageInterpretationPayloadSchema.safeParse(event.payload))
+      .filter((result) => result.success)
+      .map((result) => result.data.sourceMessageSeq)
+  );
+}
+
+function resolveQueuedPlayerMessageSeqs(events: SessionEvent[], queuedPlayerMessages: string[]): number[] {
+  if (queuedPlayerMessages.length === 0) {
+    return [];
+  }
+
+  const interpreted = interpretedSourceMessageSeqs(events);
+  const candidates = events.filter((event) => {
+    return event.type === "player.message" && !interpreted.has(event.seq);
+  });
+
+  const resolved = new Array<number | undefined>(queuedPlayerMessages.length);
+  let candidateIndex = candidates.length - 1;
+  for (let queueIndex = queuedPlayerMessages.length - 1; queueIndex >= 0; queueIndex -= 1) {
+    const expectedText = queuedPlayerMessages[queueIndex];
+    while (candidateIndex >= 0) {
+      const candidate = candidates[candidateIndex]!;
+      candidateIndex -= 1;
+      const candidateText = typeof candidate.payload.text === "string"
+        ? candidate.payload.text
+        : String(candidate.payload.text ?? "");
+      if (candidateText === expectedText) {
+        resolved[queueIndex] = candidate.seq;
+        break;
+      }
+    }
+  }
+
+  if (resolved.every((seq) => typeof seq === "number")) {
+    return resolved as number[];
+  }
+
+  return candidates.slice(-queuedPlayerMessages.length).map((event) => event.seq);
+}
+
+function buildPlayerMessageInterpretationEvents(
+  sourceMessageSeqs: number[],
+  interpretations: Array<{ sourceIndex: number; ttsText: string }>,
+  createdAt: string
+): Array<Omit<SessionEvent, "seq" | "sessionId">> {
+  const usedSourceIndexes = new Set<number>();
+  const events: Array<Omit<SessionEvent, "seq" | "sessionId">> = [];
+
+  for (const interpretation of interpretations) {
+    const sourceIndex = interpretation.sourceIndex;
+    const sourceMessageSeq = sourceMessageSeqs[sourceIndex];
+    const ttsText = interpretation.ttsText.trim();
+    if (
+      usedSourceIndexes.has(sourceIndex)
+      || sourceIndex < 0
+      || !Number.isInteger(sourceIndex)
+      || !sourceMessageSeq
+      || !ttsText
+    ) {
+      continue;
+    }
+    usedSourceIndexes.add(sourceIndex);
+    events.push({
+      type: "player.message_interpreted",
+      source: "system",
+      createdAt,
+      payload: {
+        sourceIndex,
+        sourceMessageSeq,
+        ttsText
+      }
+    });
+  }
+
+  return events;
 }
 
 export class SessionService {
@@ -227,9 +309,9 @@ export class SessionService {
       session.promptVersions = {
         ...defaultPromptVersions(),
         sharedSafety: versions.shared_safety_preamble ?? "1.3.0",
-        toolContract: versions.tool_contract ?? "3.0.0",
+        toolContract: versions.tool_contract ?? "3.1.0",
         worldBuilder: versions.world_builder ?? "1.6.0",
-        ensembleTurn: versions.ensemble_turn ?? "1.6.0"
+        ensembleTurn: versions.ensemble_turn ?? "1.7.0"
       };
       session.storyState = {
         ...session.storyState,
@@ -428,6 +510,7 @@ export class SessionService {
         try {
           const currentEvents = await this.getAllEvents(session);
           const contextBundle = this.memoryContextAssembler.assemble(session, currentEvents, reason);
+          const queuedPlayerMessageSeqs = resolveQueuedPlayerMessageSeqs(currentEvents, queuedPlayerMessages);
           session.updatedAt = now;
           const startEvents = await this.store.appendEvents(sessionId, session.lastSeq, [tickStartEvent]);
           const turnId = `tick_${startEvents[0]?.seq ?? session.lastSeq + 1}`;
@@ -448,6 +531,11 @@ export class SessionService {
           session.timerState.queuedReasons = [];
           session.timerState.queuedPlayerMessages = [];
           const tickCompletedAt = new Date().toISOString();
+          const playerMessageInterpretationEvents = buildPlayerMessageInterpretationEvents(
+            queuedPlayerMessageSeqs,
+            result.playerMessageInterpretations,
+            tickCompletedAt
+          );
           const tickEndEvent = {
             type: "system.tick_completed" as const,
             source: "system" as const,
@@ -462,7 +550,11 @@ export class SessionService {
             ? new Date(Date.parse(tickCompletedAt) + session.timerState.intervalMs).toISOString()
             : undefined;
           session.updatedAt = tickCompletedAt;
-          const events = await this.store.appendEvents(sessionId, session.lastSeq, [...result.events, tickEndEvent]);
+          const events = await this.store.appendEvents(
+            sessionId,
+            session.lastSeq,
+            [...result.events, ...playerMessageInterpretationEvents, tickEndEvent]
+          );
           session.lastSeq += events.length;
           await this.store.replaceSession(session);
           this.clearPreviewSnapshot(sessionId);

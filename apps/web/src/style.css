@@ -1359,6 +1359,30 @@ a {
   font-style: italic;
 }
 
+.event-supplementary {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(90, 127, 152, 0.12);
+  background: rgba(244, 247, 255, 0.76);
+}
+
+.event-supplementary__label {
+  color: #4c7087;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.event-supplementary__body {
+  margin: 0;
+  color: #304b5d;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
 .event-detail-list {
   display: grid;
   gap: 6px;
@@ -2962,6 +2986,12 @@ a {
 .print-timeline-item__main {
   color: #203645;
   font-size: 0.98rem;
+}
+
+.print-timeline-item__supplementary {
+  margin-top: 10px;
+  color: #325167;
+  line-height: 1.65;
 }
 
 .print-inline-tag {

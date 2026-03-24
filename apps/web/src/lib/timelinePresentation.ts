@@ -1,4 +1,10 @@
-import { isToolRequired, type AgentProfile, type SessionEvent } from "@dglab-ai/shared";
+import {
+  collectPlayerMessageInterpretationMap,
+  isToolRequired,
+  type AgentProfile,
+  type PlayerMessageInterpretationPayload,
+  type SessionEvent
+} from "@dglab-ai/shared";
 import type { ElectroStimExecutionState } from "./eStim";
 import {
   extractInlineDisplayParts,
@@ -31,6 +37,9 @@ export type PresentationItem = {
   title: string;
   main: string;
   mainParts?: InlineDisplayPart[];
+  supplementaryLabel?: string;
+  supplementary?: string;
+  supplementaryParts?: InlineDisplayPart[];
   details?: PresentationDetail[];
   diffLines?: PresentationDiffLine[];
   meta?: string;
@@ -55,6 +64,7 @@ export function buildTimelinePresentationItems(
   agents: AgentProfile[] = []
 ): PresentationItem[] {
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+  const playerMessageInterpretations = collectPlayerMessageInterpretationMap(events);
   return events.reduce<PresentationItem[]>((items, event, index) => {
     const itemId = `${event.seq}:${index}:${event.type}`;
     const isLatestEvent = index === events.length - 1;
@@ -63,7 +73,11 @@ export function buildTimelinePresentationItems(
         items.push(buildPlayerBodyItemStateItem(event, itemId));
         return items;
       case "player.message":
-        items.push(...expandInlineDelayItems(event, itemId, buildPlayerMessageItem));
+        items.push(...expandInlineDelayItems(event, itemId, (nextEvent, nextItemId) => (
+          buildPlayerMessageItem(nextEvent, nextItemId, playerMessageInterpretations.get(nextEvent.seq))
+        )));
+        return items;
+      case "player.message_interpreted":
         return items;
       case "agent.speak_player":
         items.push(...expandInlineDelayItems(event, itemId, buildAgentSpeakPlayerItem));
@@ -551,6 +565,18 @@ function withInlineDisplayParts(item: PresentationItem, parts: InlineDisplayPart
   };
 }
 
+function withSupplementaryDisplayParts(item: PresentationItem, parts: InlineDisplayPart[]): PresentationItem {
+  const normalized = trimInlineDisplayParts(parts);
+  if (normalized.length === 0) {
+    return item;
+  }
+  return {
+    ...item,
+    supplementary: inlineDisplayPartsToText(normalized),
+    supplementaryParts: normalized
+  };
+}
+
 function expandInlineDelayItems(
   event: SessionEvent,
   itemId: string,
@@ -672,18 +698,30 @@ function buildInlineDelayPauseItem(
   }, itemId);
 }
 
-function buildPlayerMessageItem(event: SessionEvent, itemId: string): PresentationItem {
-  return {
+function buildPlayerMessageItem(
+  event: SessionEvent,
+  itemId: string,
+  interpretation?: PlayerMessageInterpretationPayload
+): PresentationItem {
+  const baseItem: PresentationItem = {
     id: itemId,
     seq: event.seq,
     kind: "player",
     kicker: "玩家输入",
     title: "你说",
     main: textOf(event.payload.text),
+    supplementaryLabel: interpretation ? "TTS 解析" : undefined,
+    supplementary: interpretation?.ttsText,
     tags: ["玩家"],
     createdAt: event.createdAt,
     timeLabel: formatTime(event.createdAt)
   };
+
+  if (!interpretation?.ttsText) {
+    return baseItem;
+  }
+
+  return withSupplementaryDisplayParts(baseItem, extractInlineDisplayParts(splitInlineDelays(interpretation.ttsText)));
 }
 
 function buildReasoningItem(event: SessionEvent, itemId: string): PresentationItem {

@@ -15,6 +15,7 @@ import type {
   SessionEvent,
   SessionTtsBatchJob,
   SseEvent,
+  QueuedPlayerMessageInterpretation,
   ToolContext,
   UsageEntry
 } from "@dglab-ai/shared";
@@ -210,6 +211,7 @@ export interface PromptTemplateService {
 
 export interface OrchestratorTurnResult {
   events: Array<Omit<SessionEvent, "seq" | "sessionId">>;
+  playerMessageInterpretations: QueuedPlayerMessageInterpretation[];
   usageCalls: Array<{
     id: string;
     agentId?: string;

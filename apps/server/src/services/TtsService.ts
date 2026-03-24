@@ -3,7 +3,9 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildReadableContentFromEvent,
+  buildReadableContentFromEventWithContext,
   buildSessionReadableContents,
+  collectPlayerMessageInterpretationMap,
   sessionTtsPerformanceStateSchema,
   type AppConfig,
   type SessionReadableContent,
@@ -652,7 +654,11 @@ export class TtsService {
       throw new HttpError(404, `Session event ${seq} not found`);
     }
 
-    const readable = buildReadableContentFromEvent(event);
+    const readable = event.type === "player.message"
+      ? buildReadableContentFromEventWithContext(event, {
+        playerMessageInterpretations: collectPlayerMessageInterpretationMap(await this.store.getEvents(sessionId))
+      })
+      : buildReadableContentFromEvent(event);
     if (!readable) {
       throw new HttpError(400, "Only player messages, character speech, stage direction, and story effect events can be read aloud");
     }
