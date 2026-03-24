@@ -37,7 +37,9 @@ describe("LlmCallHistoryPage", () => {
           sessionId: "session_1",
           context: {
             kind: "ensemble-turn",
-            sessionId: "session_1"
+            sessionId: "session_1",
+            protocolFallback: true,
+            missingProtocolBlocks: ["playerBodyItemState"]
           },
           errorMessage: null
         },
@@ -76,6 +78,8 @@ describe("LlmCallHistoryPage", () => {
     expect(wrapper.text()).toContain("gpt-4.1-mini");
     expect(wrapper.text()).toContain("ensemble-turn");
     expect(wrapper.text()).toContain("memory-turn-summary");
+    expect(wrapper.text()).toContain("协议降级成功");
+    expect(wrapper.text()).toContain("缺失 playerBodyItemState");
     expect(wrapper.text()).toContain("Provider request timed out");
     expect(wrapper.text()).toContain("50%");
   });

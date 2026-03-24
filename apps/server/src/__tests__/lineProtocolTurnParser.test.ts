@@ -242,4 +242,44 @@ describe("LineProtocolTurnParser", () => {
       }
     ]);
   });
+
+  it("rejects an empty response instead of defaulting to an empty action batch", () => {
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_empty"
+    });
+
+    expect(() => parser.finish()).toThrowError("Line protocol missing required @done terminator");
+  });
+
+  it("accepts omitted control blocks when @done is present and preserves defaults", () => {
+    const parser = new LineProtocolTurnParser({
+      turnId: "tick_missing_body_state",
+      defaultTurnControl: {
+        continue: true,
+        endStory: false,
+        needsHandoff: false
+      },
+      defaultPlayerMessageInterpretations: [],
+      defaultPlayerBodyItemState: ["你现在戴着一副严丝合缝的黑色遮光眼罩"]
+    });
+
+    parser.push([
+      "@action {\"actorAgentId\":\"director\",\"tool\":\"perform_stage_direction\",\"targetScope\":\"scene\"}",
+      "@field args.direction",
+      "你听见她靠近了一步。",
+      "@endfield",
+      "@endaction",
+      "@done"
+    ].join("\n"));
+
+    const result = parser.finish();
+
+    expect(result.data.turnControl).toEqual({
+      continue: true,
+      endStory: false,
+      needsHandoff: false
+    });
+    expect(result.data.playerMessageInterpretations).toEqual([]);
+    expect(result.data.playerBodyItemState).toEqual(["你现在戴着一副严丝合缝的黑色遮光眼罩"]);
+  });
 });

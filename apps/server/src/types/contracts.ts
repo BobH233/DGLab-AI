@@ -68,6 +68,7 @@ export interface LLMProvider {
     usage: ProviderUsage;
     rawText: string;
     reasoningSummary?: string;
+    llmCallId?: string;
   }>;
 }
 
@@ -200,6 +201,7 @@ export interface SessionStore {
 
 export interface LlmCallStore {
   recordLlmCall(record: LlmCallRecord): Promise<void>;
+  updateLlmCallContext(id: string, contextPatch: Record<string, unknown>): Promise<void>;
   listLlmCalls(query: LlmCallListQuery): Promise<LlmCallListResponse>;
 }
 

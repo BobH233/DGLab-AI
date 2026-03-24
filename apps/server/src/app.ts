@@ -39,7 +39,7 @@ export async function createServerApp() {
   const provider = new OpenAICompatibleProvider(store);
   const channel = new WebChannelAdapter();
   const toolRegistry = createDefaultToolRegistry();
-  const orchestrator = new DefaultOrchestratorService(provider, promptService, toolRegistry);
+  const orchestrator = new DefaultOrchestratorService(provider, promptService, toolRegistry, store);
   const memoryService = new MemoryService(provider);
   const memoryContextAssembler = new MemoryContextAssembler();
   const configService = new ConfigService(store);

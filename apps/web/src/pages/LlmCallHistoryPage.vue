@@ -76,6 +76,7 @@
               <div class="llm-call-detail">
                 <strong>{{ item.kind }}</strong>
                 <small v-if="item.sessionId">Session: {{ item.sessionId }}</small>
+                <small v-if="isProtocolFallback(item)">协议降级成功：{{ protocolFallbackText(item) }}</small>
                 <small v-if="item.errorMessage">{{ item.errorMessage }}</small>
               </div>
             </td>
@@ -102,7 +103,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { api } from "../api";
-import type { LlmCallListResponse } from "@dglab-ai/shared";
+import type { LlmCallListResponse, LlmCallRecord } from "@dglab-ai/shared";
 
 const loading = ref(false);
 const error = ref("");
@@ -151,6 +152,20 @@ function formatDuration(durationMs: number): string {
     return `${durationMs} ms`;
   }
   return `${(durationMs / 1000).toFixed(durationMs >= 10000 ? 0 : 1)} s`;
+}
+
+function isProtocolFallback(item: LlmCallRecord): boolean {
+  return item.context?.protocolFallback === true;
+}
+
+function protocolFallbackText(item: LlmCallRecord): string {
+  const missingBlocks = Array.isArray(item.context?.missingProtocolBlocks)
+    ? item.context.missingProtocolBlocks.filter((value): value is string => typeof value === "string")
+    : [];
+  if (missingBlocks.length === 0) {
+    return "使用默认控制块";
+  }
+  return `缺失 ${missingBlocks.join(", ")}`;
 }
 
 function goToPage(nextPage: number) {

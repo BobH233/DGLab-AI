@@ -24,6 +24,16 @@ type DraftBatch = {
 type ParserOptions = {
   turnId: string;
   emitPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
+  defaultTurnControl?: ActionBatch["turnControl"];
+  defaultPlayerMessageInterpretations?: QueuedPlayerMessageInterpretation[];
+  defaultPlayerBodyItemState?: string[];
+};
+
+type LineProtocolDiagnostics = {
+  sawDone: boolean;
+  usedDefaultTurnControl: boolean;
+  usedDefaultPlayerMessageInterpretations: boolean;
+  usedDefaultPlayerBodyItemState: boolean;
 };
 
 type MultilineControlLabel = "@turnControl" | "@playerMessageInterpretations" | "@playerBodyItemState";
@@ -100,6 +110,9 @@ export class LineProtocolTurnParser {
 
   private readonly turnId: string;
   private readonly emitPreviewEvent?: (event: OrchestratorPreviewEvent) => void;
+  private readonly defaultTurnControl: ActionBatch["turnControl"];
+  private readonly defaultPlayerMessageInterpretations: QueuedPlayerMessageInterpretation[];
+  private readonly defaultPlayerBodyItemState: string[];
   private readonly rawParts: string[] = [];
 
   private controlLineBuffer = "";
@@ -115,11 +128,21 @@ export class LineProtocolTurnParser {
         rawJson: string;
       }
     | null = null;
+  private hasTurnControl = false;
+  private hasPlayerMessageInterpretations = false;
+  private hasPlayerBodyItemState = false;
   private seenDone = false;
 
   constructor(options: ParserOptions) {
     this.turnId = options.turnId;
     this.emitPreviewEvent = options.emitPreviewEvent;
+    this.defaultTurnControl = options.defaultTurnControl ?? {
+      continue: true,
+      endStory: false,
+      needsHandoff: false
+    };
+    this.defaultPlayerMessageInterpretations = options.defaultPlayerMessageInterpretations ?? [];
+    this.defaultPlayerBodyItemState = options.defaultPlayerBodyItemState ?? [];
   }
 
   push(chunk: string): void {
@@ -140,7 +163,7 @@ export class LineProtocolTurnParser {
     }
   }
 
-  finish(): { data: ActionBatch; rawText: string } {
+  finish(): { data: ActionBatch; rawText: string; diagnostics: LineProtocolDiagnostics } {
     if (this.currentFieldPath) {
       if (this.fieldControlCandidate === "@endfield") {
         this.completeField();
@@ -163,20 +186,26 @@ export class LineProtocolTurnParser {
       throw new Error(`Line protocol ended before action ${this.currentAction.tool} was closed`);
     }
 
+    if (!this.seenDone) {
+      throw new Error("Line protocol missing required @done terminator");
+    }
+
     const data = actionBatchSchema.parse({
       actions: this.draft.actions,
-      turnControl: this.draft.turnControl ?? {
-        continue: true,
-        endStory: false,
-        needsHandoff: false
-      },
-      playerMessageInterpretations: this.draft.playerMessageInterpretations ?? [],
-      playerBodyItemState: this.draft.playerBodyItemState ?? []
+      turnControl: this.draft.turnControl ?? this.defaultTurnControl,
+      playerMessageInterpretations: this.draft.playerMessageInterpretations ?? this.defaultPlayerMessageInterpretations,
+      playerBodyItemState: this.draft.playerBodyItemState ?? this.defaultPlayerBodyItemState
     });
 
     return {
       data,
-      rawText: this.rawParts.join("")
+      rawText: this.rawParts.join(""),
+      diagnostics: {
+        sawDone: this.seenDone,
+        usedDefaultTurnControl: !this.hasTurnControl,
+        usedDefaultPlayerMessageInterpretations: !this.hasPlayerMessageInterpretations,
+        usedDefaultPlayerBodyItemState: !this.hasPlayerBodyItemState
+      }
     };
   }
 
@@ -351,6 +380,7 @@ export class LineProtocolTurnParser {
       if (this.currentAction || this.currentFieldPath) {
         throw new Error("@turnControl must appear after all actions are closed");
       }
+      this.hasTurnControl = true;
       this.parseOrBufferMultilineControl("@turnControl", trimmed.slice("@turnControl ".length));
       return;
     }
@@ -359,6 +389,7 @@ export class LineProtocolTurnParser {
       if (this.currentAction || this.currentFieldPath) {
         throw new Error("@playerBodyItemState must appear after all actions are closed");
       }
+      this.hasPlayerBodyItemState = true;
       this.parseOrBufferMultilineControl("@playerBodyItemState", trimmed.slice("@playerBodyItemState ".length));
       return;
     }
@@ -367,6 +398,7 @@ export class LineProtocolTurnParser {
       if (this.currentAction || this.currentFieldPath) {
         throw new Error("@playerMessageInterpretations must appear after all actions are closed");
       }
+      this.hasPlayerMessageInterpretations = true;
       this.parseOrBufferMultilineControl(
         "@playerMessageInterpretations",
         trimmed.slice("@playerMessageInterpretations ".length)

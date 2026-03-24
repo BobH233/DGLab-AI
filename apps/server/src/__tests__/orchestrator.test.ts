@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createEmptyMemoryState, createEmptyUsageStats, defaultToolStates, type ActionBatch, type LlmConfig, type NarrativeContextBundle, type Session } from "@dglab-ai/shared";
 import { DefaultOrchestratorService } from "../services/OrchestratorService.js";
 import { createDefaultToolRegistry } from "../tools/defaultTools.js";
@@ -399,5 +399,137 @@ describe("DefaultOrchestratorService", () => {
     expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("control_vibe_toy");
     expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("强度 72%");
     expect(String(ensembleRender?.data.toolRuntimeContext)).toContain("模式：pulse");
+  });
+
+  it("fails the turn when the provider returns empty streamed text", async () => {
+    const provider = {
+      async streamText() {
+        return {
+          rawText: "",
+          usage: {
+            model: "test-model",
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            calls: 1,
+            lastModel: "test-model",
+            lastUpdatedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+    const orchestrator = new DefaultOrchestratorService(
+      provider as never,
+      new FakePromptService(),
+      createDefaultToolRegistry()
+    );
+    const session = createSession();
+    const contextBundle: NarrativeContextBundle = {
+      coreState: {
+        sessionDraft: "{}",
+        storyState: "{}",
+        agentStates: "{}",
+        playerBodyItemState: "[]"
+      },
+      archiveBlock: "No archive summary yet.",
+      episodeBlocks: [],
+      turnSummaryBlocks: [],
+      recentRawTurns: [],
+      recentRawTurnsBlock: "No recent raw turns retained.",
+      playerMessagesBlock: "No player messages yet.",
+      tickContextBlock: "{\"reason\":\"player_message\"}",
+      stats: {
+        charCounts: {
+          archive: 0,
+          episodes: 0,
+          turns: 0,
+          rawTurns: 0,
+          playerMessages: 0,
+          tickContext: 0,
+          coreState: 0
+        },
+        droppedBlocks: [],
+        rawTurnsIncluded: 0,
+        episodeCountIncluded: 0,
+        turnSummaryCountIncluded: 0,
+        usedFallback: false
+      }
+    };
+
+    await expect(orchestrator.runTick(session, "player_message", contextBundle, config))
+      .rejects
+      .toThrow("Provider returned empty line-protocol content");
+    expect(session.playerBodyItemState).toEqual(["你现在戴着一副遮光眼罩"]);
+    expect(session.usageTotals.session.totalTokens).toBe(0);
+  });
+
+  it("preserves player body item state when the provider returns only @done", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const provider = {
+      async streamText({ onTextDelta }: { onTextDelta?: (delta: string) => void }) {
+        const rawText = "@done";
+        onTextDelta?.(rawText);
+        return {
+          rawText,
+          usage: {
+            model: "test-model",
+            promptTokens: 5,
+            completionTokens: 1,
+            totalTokens: 6,
+            calls: 1,
+            lastModel: "test-model",
+            lastUpdatedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+    const orchestrator = new DefaultOrchestratorService(
+      provider as never,
+      new FakePromptService(),
+      createDefaultToolRegistry()
+    );
+    const session = createSession();
+    const contextBundle: NarrativeContextBundle = {
+      coreState: {
+        sessionDraft: "{}",
+        storyState: "{}",
+        agentStates: "{}",
+        playerBodyItemState: "[]"
+      },
+      archiveBlock: "No archive summary yet.",
+      episodeBlocks: [],
+      turnSummaryBlocks: [],
+      recentRawTurns: [],
+      recentRawTurnsBlock: "No recent raw turns retained.",
+      playerMessagesBlock: "No player messages yet.",
+      tickContextBlock: "{\"reason\":\"player_message\"}",
+      stats: {
+        charCounts: {
+          archive: 0,
+          episodes: 0,
+          turns: 0,
+          rawTurns: 0,
+          playerMessages: 0,
+          tickContext: 0,
+          coreState: 0
+        },
+        droppedBlocks: [],
+        rawTurnsIncluded: 0,
+        episodeCountIncluded: 0,
+        turnSummaryCountIncluded: 0,
+        usedFallback: false
+      }
+    };
+
+    const result = await orchestrator.runTick(session, "player_message", contextBundle, config);
+
+    expect(result.events.some((event) => event.type === "player.body_item_state_updated")).toBe(false);
+    expect(result.playerMessageInterpretations).toEqual([]);
+    expect(session.playerBodyItemState).toEqual(["你现在戴着一副遮光眼罩"]);
+    expect(session.usageTotals.session.totalTokens).toBe(6);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[LLM_PROTOCOL_FALLBACK]",
+      expect.stringContaining("\"missingBlocks\":[\"turnControl\",\"playerMessageInterpretations\",\"playerBodyItemState\"]")
+    );
   });
 });

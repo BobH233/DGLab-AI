@@ -321,6 +321,22 @@ export class MongoSessionStore implements SessionStore, LlmCallStore {
     await this.llmCalls.insertOne(llmCallRecordSchema.parse(record));
   }
 
+  async updateLlmCallContext(id: string, contextPatch: Record<string, unknown>): Promise<void> {
+    const existing = await this.llmCalls.findOne({ id }, { projection: { _id: 0, context: 1 } });
+    const nextContext = {
+      ...(existing?.context ?? {}),
+      ...contextPatch
+    };
+    await this.llmCalls.updateOne(
+      { id },
+      {
+        $set: {
+          context: nextContext
+        }
+      }
+    );
+  }
+
   async listLlmCalls(query: LlmCallListQuery): Promise<LlmCallListResponse> {
     const page = query.page;
     const pageSize = query.pageSize;

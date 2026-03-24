@@ -15,6 +15,7 @@ import { LineProtocolTurnParser } from "../infra/LineProtocolTurnParser.js";
 import { createId } from "../lib/ids.js";
 import type {
   LLMProvider,
+  LlmCallStore,
   OrchestratorService,
   OrchestratorPreviewEvent,
   OrchestratorTurnResult,
@@ -328,7 +329,8 @@ export class DefaultOrchestratorService implements OrchestratorService {
   constructor(
     private readonly provider: LLMProvider,
     private readonly prompts: PromptTemplateService,
-    private readonly tools: ToolRegistry
+    private readonly tools: ToolRegistry,
+    private readonly llmCallStore?: Pick<LlmCallStore, "updateLlmCallContext">
   ) {}
 
   async generateDraft(playerBrief: string, config: LlmConfig, toolContext?: ToolContext): Promise<SessionDraft> {
@@ -403,7 +405,14 @@ export class DefaultOrchestratorService implements OrchestratorService {
     const turnId = options?.turnId ?? createId("tick");
     const parser = new LineProtocolTurnParser({
       turnId,
-      emitPreviewEvent: options?.onPreviewEvent
+      emitPreviewEvent: options?.onPreviewEvent,
+      defaultTurnControl: {
+        continue: true,
+        endStory: false,
+        needsHandoff: false
+      },
+      defaultPlayerMessageInterpretations: [],
+      defaultPlayerBodyItemState: [...session.playerBodyItemState]
     });
     const response = await this.provider.streamText({
       modelConfig: config,
@@ -435,8 +444,33 @@ export class DefaultOrchestratorService implements OrchestratorService {
         });
       }
     });
+    if (!response.rawText.trim()) {
+      throw new Error("Provider returned empty line-protocol content");
+    }
     const parsed = parser.finish();
     const actionBatch = actionBatchSchema.parse(parsed.data);
+    const missingProtocolBlocks = [
+      parsed.diagnostics.usedDefaultTurnControl ? "turnControl" : null,
+      parsed.diagnostics.usedDefaultPlayerMessageInterpretations ? "playerMessageInterpretations" : null,
+      parsed.diagnostics.usedDefaultPlayerBodyItemState ? "playerBodyItemState" : null
+    ].filter((value): value is string => value !== null);
+    if (missingProtocolBlocks.length > 0) {
+      console.warn("[LLM_PROTOCOL_FALLBACK]", JSON.stringify({
+        sessionId: session.id,
+        turnId,
+        model: response.usage.model,
+        kind: "ensemble-turn",
+        missingBlocks: missingProtocolBlocks,
+        actionCount: actionBatch.actions.length
+      }));
+      if (response.llmCallId && this.llmCallStore) {
+        await this.llmCallStore.updateLlmCallContext(response.llmCallId, {
+          protocolFallback: true,
+          missingProtocolBlocks,
+          protocolFallbackActionCount: actionBatch.actions.length
+        });
+      }
+    }
     options?.onPreviewEvent?.({
       type: "llm.turn.completed",
       payload: {

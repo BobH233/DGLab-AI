@@ -829,12 +829,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
     usageContext: Record<string, unknown>;
     onTextDelta?: (delta: string) => void;
     onReasoningSummaryDelta?: (delta: string) => void;
-  }): Promise<{ usage: ProviderUsage; rawText: string; reasoningSummary?: string }> {
+  }): Promise<{ usage: ProviderUsage; rawText: string; reasoningSummary?: string; llmCallId?: string }> {
     const effectiveTimeoutMs = Math.max(modelConfig.requestTimeoutMs, 120000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     const startedAt = new Date().toISOString();
     let usage: ProviderUsage | undefined;
+    const llmCallId = createId("llm_call");
     let liveStreamStatus: "completed" | "error" = "completed";
     const debugStream = createLiveStreamDebugLogger({
       model: modelConfig.model,
@@ -861,7 +862,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           ? usageContext.sessionId
           : undefined;
         await this.llmCallStore.recordLlmCall({
-          id: createId("llm_call"),
+          id: llmCallId,
           provider: modelConfig.provider,
           model: modelConfig.model,
           kind,
@@ -930,7 +931,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
         return {
           rawText: streamed.rawText,
           reasoningSummary: streamed.reasoningSummary,
-          usage
+          usage,
+          llmCallId
         };
       } catch (error) {
         if (!(error instanceof ResponsesApiUnsupportedError)) {
@@ -989,7 +991,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       return {
         rawText: streamed.rawText,
         reasoningSummary: undefined,
-        usage
+        usage,
+        llmCallId
       };
     } catch (error) {
       liveStreamStatus = "error";
