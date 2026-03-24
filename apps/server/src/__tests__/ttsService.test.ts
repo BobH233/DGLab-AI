@@ -155,6 +155,12 @@ describe("normalizeTtsText", () => {
     );
   });
 
+  it("appends a Chinese comma after question marks for TTS pacing", () => {
+    expect(normalizeTtsText("你是在躲我吗？<emo_inst>whisper</emo_inst>还是想让我亲自把你抓回来?")).toBe(
+      "你是在躲我吗？，[whisper]还是想让我亲自把你抓回来?，"
+    );
+  });
+
   it("splits long normalized text on short pauses before hard cutting", () => {
     expect(splitNormalizedTtsText(
       "第一句先慢慢说完[short pause]第二句也要完整停顿[short pause]第三句最后收尾",

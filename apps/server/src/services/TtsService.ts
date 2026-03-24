@@ -120,18 +120,19 @@ type Mp3FrameHeader = {
 export function normalizeTtsText(source: string): string {
   return mergeAdjacentEmotionInstructionTags(
     source
-    .replace(/[「」『』“”‘’]/g, (char) => TTS_PUNCTUATION_NORMALIZATION_MAP[char] ?? char)
-    .replace(/<delay>\s*\d+\s*<\/delay>/gi, "")
-    .replace(/<emo_inst>([\s\S]*?)<\/emo_inst>/gi, (_match, value: string) => {
-      const content = value.trim();
-      return content ? `[${content}]` : "";
-    })
-    .replace(/(?:\.{3,}|…+|。|\.)/g, TTS_SENTENCE_PAUSE_PUNCTUATION)
-    .replace(new RegExp(`\\s+${TTS_SENTENCE_PAUSE_PUNCTUATION}`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
-    .replace(new RegExp(`${TTS_SENTENCE_PAUSE_PUNCTUATION}\\s+(?=\\[[^\\]]+\\])`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
-    .replace(/\]\s+(?=[^\[\s])/g, "]")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim()
+      .replace(/[「」『』“”‘’]/g, (char) => TTS_PUNCTUATION_NORMALIZATION_MAP[char] ?? char)
+      .replace(/<delay>\s*\d+\s*<\/delay>/gi, "")
+      .replace(/<emo_inst>([\s\S]*?)<\/emo_inst>/gi, (_match, value: string) => {
+        const content = value.trim();
+        return content ? `[${content}]` : "";
+      })
+      .replace(/(?:\.{3,}|…+|。|\.)/g, TTS_SENTENCE_PAUSE_PUNCTUATION)
+      .replace(/([?？])(?![，,])/g, `$1${TTS_SENTENCE_PAUSE_PUNCTUATION}`)
+      .replace(new RegExp(`\\s+${TTS_SENTENCE_PAUSE_PUNCTUATION}`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
+      .replace(new RegExp(`${TTS_SENTENCE_PAUSE_PUNCTUATION}\\s+(?=\\[[^\\]]+\\])`, "g"), TTS_SENTENCE_PAUSE_PUNCTUATION)
+      .replace(/\]\s+(?=[^\[\s])/g, "]")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim()
   );
 }
 
