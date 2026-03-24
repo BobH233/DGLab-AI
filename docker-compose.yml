@@ -24,6 +24,24 @@ services:
     restart: unless-stopped
     networks:
       - dglab-ai-network
+    
+  coyote-game-hub:
+    image: ghcr.io/bobh233/dg-lab-coyote-game-hub:latest
+    container_name: coyote-game-hub
+    user: "0:0"
+    ports:
+      - "18920:8920"
+    volumes:
+      - ${CGH_DATA_PATH:-./coyote_data}:/app/server/data
+    restart: unless-stopped
+    networks:
+      - dglab-ai-network
+    environment:
+      CGH_WEB_BASE_URL: ${CGH_WEB_BASE_URL:-}
+      CGH_WEB_WS_BASE_URL: ${CGH_WEB_WS_BASE_URL:-}
+      CGH_CLIENT_WS_BASE_URL: ${CGH_CLIENT_WS_BASE_URL:-}
+      CGH_API_BASE_HTTP_URL: ${CGH_API_BASE_HTTP_URL:-}
+
 
   mongodb:
     image: mongo:7
