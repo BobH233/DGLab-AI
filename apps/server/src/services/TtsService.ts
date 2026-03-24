@@ -26,14 +26,12 @@ const REFERENCE_LIST_RESPONSE_SCHEMA = z.object({
 });
 
 const TTS_TIMEOUT_MS = 120_000;
-const DEFAULT_TTS_REQUEST_BODY = {
-  use_memory_cache: "on",
-  format: "mp3",
-  streaming: false,
-  chunk_length: 200,
-  max_new_tokens: 1024,
-  top_p: 0.9,
-  repetition_penalty: 1.05,
+const DEFAULT_TTS_AUDIO_FORMAT = "mp3";
+const DEFAULT_TTS_REQUEST_OPTIONS = {
+  chunkLength: 200,
+  maxNewTokens: 1024,
+  topP: 0.9,
+  repetitionPenalty: 1.05,
   temperature: 0.9
 } as const;
 
@@ -140,6 +138,27 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parsePositiveFloat(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseFloat(value ?? "");
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getTtsRequestBody() {
+  return {
+    use_memory_cache: "on" as const,
+    format: DEFAULT_TTS_AUDIO_FORMAT,
+    streaming: false,
+    chunk_length: parsePositiveInteger(process.env.TTS_CHUNK_LENGTH, DEFAULT_TTS_REQUEST_OPTIONS.chunkLength),
+    max_new_tokens: parsePositiveInteger(process.env.TTS_MAX_NEW_TOKENS, DEFAULT_TTS_REQUEST_OPTIONS.maxNewTokens),
+    top_p: parsePositiveFloat(process.env.TTS_TOP_P, DEFAULT_TTS_REQUEST_OPTIONS.topP),
+    repetition_penalty: parsePositiveFloat(
+      process.env.TTS_REPETITION_PENALTY,
+      DEFAULT_TTS_REQUEST_OPTIONS.repetitionPenalty
+    ),
+    temperature: parsePositiveFloat(process.env.TTS_TEMPERATURE, DEFAULT_TTS_REQUEST_OPTIONS.temperature)
+  };
+}
+
 function normalizeSpeakerName(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -151,14 +170,14 @@ function buildTtsAudioCacheIdentityPayload(identity: TtsAudioCacheIdentity) {
       seq: identity.eventSeq,
       referenceId: identity.referenceId,
       normalizedText: identity.normalizedText,
-      format: DEFAULT_TTS_REQUEST_BODY.format
+      format: DEFAULT_TTS_AUDIO_FORMAT
     }
     : {
       sessionId: identity.sessionId,
       readableId: identity.readableId,
       referenceId: identity.referenceId,
       normalizedText: identity.normalizedText,
-      format: DEFAULT_TTS_REQUEST_BODY.format
+      format: DEFAULT_TTS_AUDIO_FORMAT
     };
 }
 
@@ -1092,7 +1111,7 @@ export class TtsService {
         body: JSON.stringify({
           text,
           reference_id: referenceId,
-          ...DEFAULT_TTS_REQUEST_BODY
+          ...getTtsRequestBody()
         }),
         signal: AbortSignal.timeout(TTS_TIMEOUT_MS)
       });

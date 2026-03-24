@@ -347,6 +347,61 @@ describe("TtsService", () => {
     }
   });
 
+  it("overrides TTS request options from environment variables", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
+    const store = new TtsStoreStub();
+    store.event = {
+      sessionId: "session-1",
+      seq: 17,
+      type: "player.message",
+      source: "player",
+      createdAt: "2026-03-23T10:06:00.000Z",
+      payload: {
+        text: "测试一下环境变量覆盖。"
+      }
+    };
+    process.env.TTS_CHUNK_LENGTH = "321";
+    process.env.TTS_MAX_NEW_TOKENS = "2048";
+    process.env.TTS_TOP_P = "0.75";
+    process.env.TTS_REPETITION_PENALTY = "1.2";
+    process.env.TTS_TEMPERATURE = "0.65";
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => new Response(Buffer.from("fake-mp3"), {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/mpeg"
+      }
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      const service = new TtsService(store as never, tempDir);
+      await service.synthesizeEventAudio("session-1", 17);
+
+      const requestCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined] | undefined;
+      const requestInit = requestCall?.[1];
+      const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as {
+        chunk_length?: number;
+        max_new_tokens?: number;
+        top_p?: number;
+        repetition_penalty?: number;
+        temperature?: number;
+      };
+      expect(requestBody.chunk_length).toBe(321);
+      expect(requestBody.max_new_tokens).toBe(2048);
+      expect(requestBody.top_p).toBe(0.75);
+      expect(requestBody.repetition_penalty).toBe(1.2);
+      expect(requestBody.temperature).toBe(0.65);
+    } finally {
+      delete process.env.TTS_CHUNK_LENGTH;
+      delete process.env.TTS_MAX_NEW_TOKENS;
+      delete process.env.TTS_TOP_P;
+      delete process.env.TTS_REPETITION_PENALTY;
+      delete process.env.TTS_TEMPERATURE;
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("splits long requests into multiple TTS calls and merges the audio", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "dglabai-tts-"));
     const store = new TtsStoreStub();

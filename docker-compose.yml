@@ -9,6 +9,14 @@ services:
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DB: dglab_ai
       TTS_CACHE_DIR: /app/data/tts-cache
+      TTS_MAX_SEGMENT_CHARS: "1000"
+      TTS_SEGMENT_OVERFLOW_CHARS: "50"
+      TTS_MIN_SEGMENT_CHARS: "64"
+      TTS_CHUNK_LENGTH: "200"
+      TTS_MAX_NEW_TOKENS: "4096"
+      TTS_TOP_P: "0.9"
+      TTS_REPETITION_PENALTY: "1.05"
+      TTS_TEMPERATURE: "0.9"
     ports:
       - "17039:3001"
     volumes:
