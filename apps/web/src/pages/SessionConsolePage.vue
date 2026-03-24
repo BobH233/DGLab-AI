@@ -510,8 +510,9 @@ const automationTimelineStatus = computed(() => {
 });
 const ttsPlayableBySeq = computed<Record<number, boolean>>(() => {
   const result: Record<number, boolean> = {};
+  const settledPlayerMessageSeqs = collectSettledPlayerMessageSeqs(events.value);
   for (const event of events.value) {
-    result[event.seq] = isEventTtsPlayable(event);
+    result[event.seq] = isEventTtsPlayable(event, settledPlayerMessageSeqs);
   }
   return result;
 });
@@ -934,11 +935,37 @@ function hasConfiguredTtsVoice(characterName: string): boolean {
   ));
 }
 
-function isEventTtsPlayable(event: SessionEvent): boolean {
+function collectSettledPlayerMessageSeqs(sourceEvents: SessionEvent[]): Set<number> {
+  const pending = new Set<number>();
+  const settled = new Set<number>();
+
+  for (const event of sourceEvents) {
+    if (event.type === "player.message") {
+      pending.add(event.seq);
+      continue;
+    }
+
+    if (
+      event.type === "system.tick_completed"
+      || event.type === "system.tick_failed"
+      || event.type === "system.story_ended"
+    ) {
+      for (const seq of pending) {
+        settled.add(seq);
+      }
+      pending.clear();
+    }
+  }
+
+  return settled;
+}
+
+function isEventTtsPlayable(event: SessionEvent, settledPlayerMessageSeqs: Set<number>): boolean {
   switch (event.type) {
     case "player.message":
       return typeof event.payload.text === "string"
         && event.payload.text.trim().length > 0
+        && settledPlayerMessageSeqs.has(event.seq)
         && hasConfiguredTtsVoice("玩家");
     case "agent.speak_player":
       return typeof event.payload.message === "string"

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createDefaultAppConfig, defaultToolStates, type Session, type SessionEvent } from "@dglab-ai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useConfigStore } from "../../configStore";
 import SessionConsolePage from "../SessionConsolePage.vue";
 
 const apiMocks = vi.hoisted(() => ({
@@ -156,6 +157,22 @@ function normalizedText(wrapper: ReturnType<typeof mount>): string {
   return wrapper.text().replace(/\s+/g, " ").trim();
 }
 
+function createPlayablePlayerTtsConfig() {
+  return {
+    ...createDefaultAppConfig(),
+    tts: {
+      baseUrl: "http://tts.example.test",
+      roleMappings: [
+        {
+          id: "player-voice",
+          characterName: "玩家",
+          referenceId: "player_ref"
+        }
+      ]
+    }
+  };
+}
+
 describe("SessionConsolePage", () => {
   const originalFetch = globalThis.fetch;
 
@@ -216,6 +233,75 @@ describe("SessionConsolePage", () => {
     expect(normalizedText(wrapper)).toContain("下一次计划触发时间");
     expect(normalizedText(wrapper)).toContain("玩家身体道具");
     expect(normalizedText(wrapper)).toContain("你现在戴着一副眼罩");
+  });
+
+  it("hides the player TTS button until the current tick finishes", async () => {
+    apiMocks.getAppConfig.mockResolvedValue(createPlayablePlayerTtsConfig());
+    await useConfigStore().reloadConfig();
+    apiMocks.getSession.mockResolvedValue(createSession({
+      timerState: {
+        enabled: true,
+        intervalMs: 5000,
+        inFlight: true,
+        nextTickAt: "2026-03-17T12:00:05.000Z",
+        queuedReasons: ["player_message"],
+        queuedPlayerMessages: ["心海大人……我！当时明明不应该像你说的这样做，如果我不制止，会更糟糕！"],
+        pendingWaits: []
+      }
+    }));
+    apiMocks.getEvents.mockResolvedValue([
+      {
+        sessionId: "session_1",
+        seq: 15,
+        type: "player.message",
+        source: "player",
+        createdAt: "2026-03-17T12:00:06.000Z",
+        payload: {
+          text: "心海大人……我！当时明明不应该像你说的这样做，如果我不制止，会更糟糕！"
+        }
+      },
+      {
+        sessionId: "session_1",
+        seq: 16,
+        type: "system.tick_started",
+        source: "system",
+        createdAt: "2026-03-17T12:00:06.200Z",
+        payload: {
+          reason: "player_message"
+        }
+      }
+    ]);
+
+    const wrapper = mount(SessionConsolePage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: "<a><slot /></a>"
+          }
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.find('.timeline-item[data-kind="player"] .tts-trigger').exists()).toBe(false);
+
+    FakeEventSource.instances[0]?.emit("event.appended", {
+      event: {
+        sessionId: "session_1",
+        seq: 17,
+        type: "system.tick_completed",
+        source: "system",
+        createdAt: "2026-03-17T12:00:07.000Z",
+        payload: {
+          reason: "player_message",
+          status: "active"
+        }
+      }
+    });
+    await flushPromises();
+
+    expect(wrapper.find('.timeline-item[data-kind="player"] .tts-trigger').exists()).toBe(true);
   });
 
   it("submits the composer when Enter is pressed", async () => {
