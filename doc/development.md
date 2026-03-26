@@ -6,13 +6,13 @@
 
 - Node.js 20+
 - npm 10+
-- MongoDB 6+
+- MongoDB 6+ 或 7+
 
 原因：
 
-- 后端依赖 Node 原生 `fetch`
-- 项目使用 ES Module 和 TypeScript
-- MongoDB 是当前唯一持久化存储
+- 后端依赖原生 `fetch`
+- 项目使用 ESM + TypeScript
+- MongoDB 是当前唯一持久化数据库
 
 ## 2. 安装依赖
 
@@ -22,21 +22,20 @@
 npm install
 ```
 
-项目采用 npm workspaces，根目录统一管理 `apps/*` 与 `packages/*`。
+项目使用 npm workspaces，统一管理：
+
+- `apps/server`
+- `apps/web`
+- `packages/shared`
 
 ## 3. 启动 MongoDB
 
-默认参数：
+默认值：
 
-- URI：`mongodb://127.0.0.1:27017`
-- DB：`dglab_ai`
+- `MONGODB_URI=mongodb://127.0.0.1:27017`
+- `MONGODB_DB=dglab_ai`
 
-如需自定义：
-
-```bash
-export MONGODB_URI="mongodb://127.0.0.1:27017"
-export MONGODB_DB="dglab_ai"
-```
+如果本地已有 Mongo 实例，通常不需要额外改动。
 
 ## 4. 启动项目
 
@@ -46,7 +45,9 @@ export MONGODB_DB="dglab_ai"
 npm run dev:server
 ```
 
-默认端口：`3001`
+默认监听端口：
+
+- `3001`
 
 ### 4.2 启动前端
 
@@ -54,89 +55,112 @@ npm run dev:server
 npm run dev:web
 ```
 
-默认端口：`5173`
+默认访问地址：
 
-### 4.3 访问页面
+- `http://localhost:5173`
 
-- 首页：`http://localhost:5173`
-- 配置页：`http://localhost:5173/settings`
+### 4.3 首次访问
+
+当前项目默认启用了统一密码门禁，因此第一次进入页面时通常会先看到登录页。
+
+如果没有显式设置环境变量，当前默认密码回退值是：
+
+```text
+bobh888888
+```
+
+本地调试可以先用这个值；正式环境请务必覆盖。
 
 ## 5. 环境变量
 
-### 5.1 服务端
+## 5.1 服务端
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PORT` | `3001` | Express 监听端口 |
 | `MONGODB_URI` | `mongodb://127.0.0.1:27017` | Mongo 连接串 |
 | `MONGODB_DB` | `dglab_ai` | 数据库名 |
-| `DEBUG_LLM` | 未开启 | 为 `1` 时打印模型调试日志 |
+| `AUTH_PASSWORD` | `bobh888888` | 统一访问密码 |
+| `DEBUG_LLM` | 未开启 | 为 `1` 时打印模型请求与响应调试信息 |
+| `TTS_CACHE_DIR` | `.data/tts-cache` | TTS 音频缓存目录 |
+| `TTS_MAX_SEGMENT_CHARS` | `180` | TTS 文本分段首选长度 |
+| `TTS_SEGMENT_OVERFLOW_CHARS` | `30` | TTS 分段向后容忍长度 |
+| `TTS_MIN_SEGMENT_CHARS` | `32` | TTS 最小分段长度 |
+| `TTS_CHUNK_LENGTH` | `200` | 发给 TTS 服务的 `chunk_length` |
+| `TTS_MAX_NEW_TOKENS` | `1024` | 发给 TTS 服务的 `max_new_tokens` |
+| `TTS_TOP_P` | `0.9` | 发给 TTS 服务的 `top_p` |
+| `TTS_REPETITION_PENALTY` | `1.05` | 发给 TTS 服务的 `repetition_penalty` |
+| `TTS_TEMPERATURE` | `0.9` | 发给 TTS 服务的 `temperature` |
 
-### 5.2 前端
+## 5.2 前端
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `VITE_API_BASE` | `http://localhost:3001/api` | 后端 API 基础地址 |
+| `VITE_API_BASE` | `/api` | 后端 API 基础地址 |
 
-## 6. 构建与测试
+当前 `apps/web/vite.config.ts` 已经把 `/api` 代理到 `http://localhost:3001`，所以默认本地开发通常不需要改这个值；如果你的前后端不按这个端口组合运行，再显式覆盖成自定义地址即可。
 
-### 6.1 构建
+## 6. 常用脚本
+
+仓库根目录：
 
 ```bash
 npm run build
+npm run dev:server
+npm run dev:web
+npm test
 ```
 
-构建顺序：
+服务端子包额外脚本：
+
+```bash
+npm run migrate:tts-cache-content-keys -w @dglab-ai/server
+```
+
+这个迁移脚本用于修复旧版 TTS 缓存键结构。
+
+## 7. 构建说明
+
+### 7.1 工作区构建顺序
+
+`npm run build` 会按顺序构建：
 
 1. `@dglab-ai/shared`
 2. `@dglab-ai/server`
 3. `@dglab-ai/web`
 
-### 6.2 测试
+### 7.2 服务端构建补充
 
-```bash
-npm test
-```
+服务端构建过程中还会：
 
-当前仓库测试通过情况为：
+- 复制提示词文件到 `dist`
 
-- 服务端：`43` 个测试
-- 前端：`17` 个测试
-- 合计：`60` 个测试
+### 7.3 前端构建补充
 
-覆盖重点包括：
+镜像构建流程里还会执行：
 
-- 提示词模板约束
-- Provider JSON Schema / fallback / SSE 解析
-- 世界草案归一化
-- 工具参数校验与执行
-- 编排器共享 action batch
-- Session Tick 失败与恢复
-- 调度器原因合并
-- 记忆摘要与上下文装配
-- 前端时间线、内联 delay 和自动推进显示
+- `node scripts/write-build-info.mjs`
 
-## 7. 配置模型后端
+用于生成前端可查看的构建信息。
 
-第一次启动后，应先打开前端配置页补充至少一个可用后端。
+## 8. 本地开发推荐顺序
 
-每个后端可以配置：
+如果是第一次接手当前项目，建议按这个顺序验证：
 
-- 名称
-- API Base URL
-- API Key
-- Model
-- Temperature
-- Top P
-- Max Tokens
-- Request Timeout
-- 工具默认开关
+1. 启动 Mongo
+2. `npm install`
+3. `npm run dev:server`
+4. `npm run dev:web`
+5. 登录进入首页
+6. 在“设置”页补一个可用模型后端
+7. 生成草案并确认一次
+8. 打开会话页确认 SSE、自动推进和预览流正常
+9. 如需 TTS，再到设置页补 TTS 地址和角色映射
+10. 如需本地设备联动，再配置 `/devices/e-stim`
 
-项目使用 OpenAI-compatible `/chat/completions`，并优先尝试 `response_format=json_schema`；若目标服务不支持，则自动回退到“提示词要求 JSON 输出”模式。
+## 9. 调试建议
 
-## 8. 调试建议
-
-### 8.1 调试模型请求
+### 9.1 调试 LLM 请求
 
 ```bash
 DEBUG_LLM=1 npm run dev:server
@@ -145,70 +169,139 @@ DEBUG_LLM=1 npm run dev:server
 会打印：
 
 - 请求目标地址
-- 模型名
-- schema 名称
-- 发送给模型的 messages
+- messages
 - 原始响应
-- 提取出的 JSON
-- Zod 校验后的结果
+- reasoning summary
+- 解析后的文本 / JSON
+- schema 校验结果
 
-### 8.2 调试前端事件流
+### 9.2 调试流式预览
 
-在浏览器开发者工具中观察：
+当前正式推演是流式 line protocol，所以除了看正式事件，也建议观察：
 
-- `EventSource` 是否正常连接
-- `session.updated` 与 `event.appended` 是否持续到达
-- 时间线中的 `system.wait_scheduled` 是否符合预期
+- SSE 是否持续收到 `llm.action.text.delta`
+- 刷新页面后是否能收到 `llm.preview.snapshot`
+- 推理结束后预览是否被正式事件替换
 
-### 8.3 调试记忆链路
+### 9.3 调试记忆
 
-进入某个 Session 的：
+直接访问：
 
 ```text
 /sessions/:id/debug
 ```
 
-可以直接查看：
+可以确认：
 
-- turn / episode / archive 摘要树
-- 下一轮真正会送给模型的上下文块
-- 被字符预算丢弃的 block
-- 最近记忆运行记录
+- 下一轮真正送给模型的上下文块
+- recent raw turns 的裁剪结果
+- 被预算丢弃的 block
+- 当前消息队列
 
-## 9. 建议的阅读顺序
+### 9.4 调试 TTS
 
-如果要快速理解项目，推荐按下面顺序阅读：
+建议依次检查：
+
+1. 设置页的 TTS 健康检查
+2. `reference_id` 是否能加载成功
+3. 角色映射是否完整
+4. 会话页单条朗读是否命中缓存
+5. 演出模式是否能计算全部条目时长
+
+如果音频不完整，优先检查：
+
+- `TTS_MAX_NEW_TOKENS`
+- 文本是否过长被切段
+- 角色映射是否命中正确 `reference_id`
+
+### 9.5 调试 e-stim
+
+本地设备问题通常分三层排查：
+
+1. `/devices/e-stim` 中连接码是否能解析
+2. 本地 bridge 是否能返回 pulse 列表
+3. Session 操作时是否把 `toolContext.eStim` 正确同步给后端
+
+## 10. Docker 部署
+
+当前仓库已经支持单容器部署。
+
+### 10.1 Dockerfile 特点
+
+- 前端先构建成静态资源
+- 后端在生产环境中同时托管 `/api/*` 和前端页面
+- 最终镜像只启动一个 Node 进程
+
+本地构建：
+
+```bash
+docker build -t dglab-ai:latest .
+```
+
+本地运行：
+
+```bash
+docker run --rm -p 3001:3001 \
+  -e MONGODB_URI=mongodb://host.docker.internal:27017 \
+  -e MONGODB_DB=dglab_ai \
+  -e AUTH_PASSWORD=replace-me \
+  dglab-ai:latest
+```
+
+## 10.2 docker-compose
+
+仓库根目录已提供 `docker-compose.yml`，当前会拉起：
+
+- `app`
+- `mongodb`
+- `coyote-game-hub`
+
+其中 `app` 服务已经预置了一批 TTS 相关环境变量与缓存目录挂载。
+
+## 11. 部署时要特别注意的点
+
+### 11.1 密码门禁只是最小保护
+
+当前鉴权是统一密码，并不是完整用户系统；正式环境至少还应补：
+
+- 更可靠的身份体系
+- HTTPS
+- 反向代理
+- 访问日志和限流
+
+### 11.2 自动推进不是后台守护任务
+
+现在的自动推进仍依赖打开中的会话页，因此：
+
+- 不能把它理解成服务器后台定时器
+- 关闭页面后不会自动继续推进
+
+### 11.3 e-stim 是前端本地能力
+
+即使服务端部署到远端，只要浏览器本地能够访问 bridge，依旧可以同步 `toolContext`；但真正的设备执行不在服务端发生。
+
+## 12. 建议阅读顺序
+
+如果要快速理解“当前这版项目”而不是旧版本，推荐按下面顺序阅读：
 
 1. `packages/shared/src/index.ts`
 2. `apps/server/src/app.ts`
 3. `apps/server/src/services/SessionService.ts`
 4. `apps/server/src/services/OrchestratorService.ts`
-5. `apps/server/src/services/MemoryService.ts`
-6. `apps/server/src/services/MemoryContextAssembler.ts`
+5. `apps/server/src/infra/OpenAICompatibleProvider.ts`
+6. `apps/server/src/services/TtsService.ts`
 7. `apps/server/src/tools/defaultTools.ts`
 8. `apps/web/src/pages/SessionConsolePage.vue`
-9. `apps/web/src/components/EventTimeline.vue`
-10. `apps/web/src/pages/SessionMemoryDebugPage.vue`
+9. `apps/web/src/pages/PerformanceModePage.vue`
+10. `apps/web/src/pages/SettingsPage.vue`
+11. `apps/web/src/pages/ElectroStimSettingsPage.vue`
+12. `apps/web/src/pages/SessionPrintPage.vue`
 
-## 10. 当前已知限制
+## 13. 当前已知限制
 
-- 没有 Dockerfile、compose 或 CI 配置
-- 没有数据库 migration 机制
-- 没有用户体系和权限隔离
-- 没有后台守护进程式自动推进服务
+- 没有完整用户体系和权限隔离
 - 自动推进依赖打开中的前端会话页
-- `UsageStats.byAgent` 结构已定义但尚未真正统计
-- 只有 Web SSE 通道，没有其他渠道适配器
-
-## 11. 部署建议
-
-当前仓库更适合本地开发与原型验证。若要投入正式环境，至少需要补：
-
-- 鉴权与权限控制
-- API 限流
-- HTTPS 与反向代理
-- 配置与密钥管理
-- MongoDB 备份策略
-- 日志、监控与告警
-- 后台任务或守护式自动推进
-- 更完整的故障恢复和重试机制
+- `usageTotals.byAgent` 仍未做真实分摊
+- e-stim 真执行依赖浏览器本地 bridge
+- TTS 服务完全依赖外部接口能力和 `reference_id` 配置
+- 目前没有看到 CI / CD 规范文档沉淀在 `doc/` 内

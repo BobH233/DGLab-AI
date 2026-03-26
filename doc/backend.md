@@ -4,25 +4,38 @@
 
 后端启动入口是 `apps/server/src/index.ts`，真正的依赖装配在 `apps/server/src/app.ts`。
 
-当前装配顺序如下：
+当前装配顺序大致如下：
 
 1. 初始化 `MongoSessionStore`
-2. 初始化 `FilePromptTemplateService`
-3. 初始化 `OpenAICompatibleProvider`
-4. 初始化 `WebChannelAdapter`
-5. 创建默认工具注册表 `createDefaultToolRegistry()`
-6. 创建 `DefaultOrchestratorService`
-7. 创建 `MemoryService`
-8. 创建 `MemoryContextAssembler`
-9. 创建 `ConfigService`
-10. 创建 `SessionService`
-11. 创建 `SchedulerService`
-12. 注册 `/api/config` 与 `/api/sessions` 路由
-13. 注册统一错误处理中间件
+2. 定位前端构建产物目录和提示词目录
+3. 初始化 `FilePromptTemplateService`
+4. 初始化 `OpenAICompatibleProvider`
+5. 初始化 `WebChannelAdapter`
+6. 创建默认工具注册表 `createDefaultToolRegistry()`
+7. 创建 `DefaultOrchestratorService`
+8. 创建 `MemoryService`
+9. 创建 `MemoryContextAssembler`
+10. 创建 `ConfigService`
+11. 创建 `SessionService`
+12. 创建 `SchedulerService`
+13. 创建 `LlmCallService`
+14. 创建 `TtsService`
+15. 注册鉴权中间件、REST 路由和错误处理中间件
+16. 若存在 `apps/web/dist`，则同时托管前端静态资源
+
+也就是说，生产环境下当前是“一个 Node 进程同时提供 API 与前端页面”。
 
 ## 2. 路由层
 
-### 2.1 配置路由
+### 2.1 鉴权路由
+
+`authRoutes.ts` 暴露：
+
+- `POST /api/auth/login`
+
+这里只负责校验访问密码是否正确。真正的 API 鉴权由 `apiAuthMiddleware` 统一负责。
+
+### 2.2 配置路由
 
 `configRoutes.ts` 暴露：
 
@@ -30,9 +43,9 @@
 - `PUT /api/config`
 - `PATCH /api/config/active-backend`
 
-这里返回和保存的是 `AppConfig`，不是早期单一 `LlmConfig` 结构。
+当前保存的是完整 `AppConfig`，其中除了多模型后端，还包括全局 `tts` 配置。
 
-### 2.2 Session 路由
+### 2.3 Session 路由
 
 `sessionRoutes.ts` 暴露：
 
@@ -49,316 +62,408 @@
 - `GET /api/sessions/:id/memory-debug`
 - `GET /api/sessions/:id/stream`
 
-路由层只做轻量请求解析和 Zod 校验，主要业务都在服务层。
+其中 `draft`、`confirm`、`messages`、`retry`、`auto-tick` 都支持携带 `toolContext`。
 
-## 3. ConfigService
+### 2.4 LLM 调用记录路由
 
-`ConfigService` 负责多模型后端配置管理。
+`llmCallRoutes.ts` 暴露：
 
-当前职责包括：
+- `GET /api/llm-calls`
 
-- 读取 `AppConfig`
-- 保存完整 `AppConfig`
-- 切换当前激活后端
+用于按页查看全部模型调用记录，而不是只看某个 Session 的统计。
 
-注意点：
+### 2.5 TTS 路由
 
-- 当前配置存储支持多个后端
-- 每个后端都有独立参数和工具默认开关
-- 新建 Session 时使用当前激活后端
+`ttsRoutes.ts` 暴露：
 
-## 4. SessionService
+- `GET /api/tts/health`
+- `GET /api/tts/references`
+- `GET /api/tts/sessions/:sessionId/events/:seq`
+- `GET /api/tts/sessions/:sessionId/performance`
+- `POST /api/tts/sessions/:sessionId/performance/batch`
+- `DELETE /api/tts/sessions/:sessionId/performance/batch`
+- `GET /api/tts/sessions/:sessionId/readables/:readableId`
 
-`SessionService` 是后端最重要的业务入口，承担 Session 生命周期与运行时编排责任。
+这部分已经是一个独立子系统：既支持单条点击朗读，也支持“全文演出模式”的批量补齐。
 
-### 4.1 主要职责
+## 3. 鉴权实现
 
-- 列出 Session
-- 获取 Session 与事件
-- 生成草案
-- 更新草案
-- 确认 Session
+`apps/server/src/lib/auth.ts` 当前实现的是统一密码门禁：
+
+- 支持 `x-auth-password` 请求头
+- 支持 `Authorization: Bearer <password>`
+- SSE 场景还支持 `?authPassword=...` 查询参数
+
+注意：
+
+- 默认密码是硬编码回退值 `bobh888888`
+- 生产环境应显式设置 `AUTH_PASSWORD`
+
+路由层只有 `/api/auth/login` 在鉴权中间件之前；其余 `/api/*` 都必须先通过密码校验。
+
+## 4. ConfigService
+
+`ConfigService` 的职责现在包括两大块：
+
+- 多模型后端配置
+- 全局 TTS 配置
+
+### 4.1 模型后端
+
+每个后端包含：
+
+- `id`
+- `name`
+- `provider`
+- `baseUrl`
+- `apiKey`
+- `model`
+- `temperature`
+- `reasoningEffort`
+- `maxTokens`
+- `topP`
+- `requestTimeoutMs`
+- `toolStates`
+
+### 4.2 TTS 配置
+
+`appConfig.tts` 包含：
+
+- `baseUrl`
+- `roleMappings`
+
+其中 `roleMappings` 把剧情中的角色名映射到外部 TTS 服务的 `reference_id`。
+
+## 5. SessionService
+
+`SessionService` 依然是后端的业务中枢，但现在承担的职责比旧文档更多。
+
+### 5.1 主要职责
+
+- 创建、读取、列出 Session
+- 更新草案与确认草案
 - 接收玩家消息
-- 更新自动推进配置
-- 处理前端自动推进请求
-- 手动重试
-- 执行 Tick
-- 发布 SSE 更新
-- 触发记忆刷新
-- 提供记忆调试数据
+- 合并和保存 `toolContext`
+- 处理自动推进定时器
+- 启动正式 Tick
+- 维护 SSE 预览快照
+- 生成 `player.message_interpreted`
+- 维护 `playerBodyItemState`
+- 异步刷新记忆
 
-### 4.2 并发控制
+### 5.2 并发控制
 
-`SessionService` 使用 `LockManager` 按 `sessionId` 串行化关键操作，避免：
+`SessionService` 用两层机制控制并发：
 
-- 多个写请求同时修改同一 Session
-- 玩家消息与重试同时推进
-- 事件序号竞争
+- `LockManager`：按 `sessionId` 串行化关键写操作
+- `activeTicks`：标记当前正在运行的 Tick，辅助恢复异常中断状态
 
-此外，`activeTicks` 用于标记当前正在运行的 Tick，配合异常恢复逻辑判断“陈旧 inFlight 状态”。
+这样可以避免：
 
-### 4.3 createDraft
+- 多个消息同时推进同一 Session
+- 重试与自动推进互相踩踏
+- 事件序号冲突
 
-创建草案时的步骤：
+### 5.3 createDraft
+
+创建草案时：
 
 1. 读取当前激活后端配置
-2. 调用 `orchestrator.generateDraft`
-3. 初始化 `storyState`、`agentStates`、`memoryState`、`timerState`、`usageTotals`
-4. 保存 draft Session
-5. 追加 `session.created` 与 `draft.generated`
-6. 广播最新 Session 和事件
+2. 调用 `orchestrator.generateDraft(playerBrief, config, toolContext)`
+3. 初始化 `storyState`、`agentStates`、`memoryState`、`timerState`
+4. 初始化 `playerBodyItemState`
+5. 保存 Session 快照
+6. 追加 `session.created` 与 `draft.generated`
+7. 广播 `session.updated` 与 `event.appended`
 
-此时 Session 状态为 `draft`。
+当前草案阶段已经会记住本次传入的 `toolContext`。
 
-### 4.4 confirmSession
+### 5.4 confirmSession
 
-确认草案时会：
+确认草案时：
 
-- 将 `status` 从 `draft` 改为 `active`
-- 将当前草案冻结为 `confirmedSetup`
+- `status` 从 `draft` 切到 `active`
+- 把草案冻结到 `confirmedSetup`
 - 保存 `llmConfigSnapshot`
-- 保存提示词版本快照 `promptVersions`
-- 更新初始 `storyState.phase`
+- 保存提示词版本
+- 合并本次传入的 `toolContext`
+- 切换 `storyState.phase = opening`
 - 追加 `session.confirmed`
+- 如果已有初始身体道具状态，再追加 `player.body_item_state_updated`
 - 请求一次 `session_confirmed` Tick
 
-这一步保证正式推演时拥有稳定的配置和提示词上下文。
+### 5.5 postPlayerMessageWithContext
 
-### 4.5 postPlayerMessage
+玩家消息不会直接触发模型调用，而是：
 
-玩家消息不会立即调用模型，而是：
+- 先写入 `player.message`
+- 把消息文本放进 `timerState.queuedPlayerMessages`
+- 把原因写进 `queuedReasons`
+- 合并最新 `toolContext`
+- 请求调度器安排 Tick
 
-- 记录 `player.message` 事件
-- 将文本放入 `timerState.queuedPlayerMessages`
-- 将原因写入 `timerState.queuedReasons`
-- 请求调度器处理新的 Tick
+这样同一轮里可以合并多条消息和多个触发原因。
 
-这样可以把多条触发合并进同一轮推进。
+### 5.6 updateTimer / requestAutoTick
 
-### 4.6 updateTimer
+这两段逻辑一起组成当前自动推进实现：
 
-保存自动推进设置时会更新：
+- `updateTimer()` 保存 `enabled`、`intervalMs`、`nextTickAt`
+- `requestAutoTick()` 只在真正到点且未 in-flight 时才允许推进
 
-- `timerState.enabled`
-- `timerState.intervalMs`
-- `timerState.nextTickAt`
+`requestAutoTick()` 不做后台轮询；它只是响应前端会话页在合适时机发来的请求。
 
-同时写入 `system.timer_updated` 事件，并通过 SSE 单独发送一次 `timer.updated`。
+### 5.7 processTick
 
-### 4.7 requestAutoTick
+正式推进流程如下：
 
-这是当前自动推进的关键接口。其行为是：
+1. 标记 `activeTicks`
+2. 加锁读取最新 Session
+3. 读取配置快照或当前全局配置
+4. 复制当前排队消息和触发原因
+5. 将 `timerState.inFlight` 设为 `true`
+6. 拉取全部事件并装配记忆上下文
+7. 写入 `system.tick_started`
+8. 调用 `orchestrator.runTick(...)`
+9. 清空排队消息和原因
+10. 根据编排结果写入正式事件
+11. 追加 `player.message_interpreted`
+12. 追加 `system.tick_completed`
+13. 重置 `nextTickAt`
+14. 异步刷新记忆
+15. 如有用量记录，再额外广播 `usage.updated`
 
-- 只在 `active` 且 `timerState.enabled` 时考虑推进
-- 如果当前已 `inFlight`，直接返回
-- 如果 `nextTickAt` 还没到，也直接返回
-- 到点后把 `nextTickAt` 顺延一轮
-- 请求调度器执行 `timer_interval:frontend`
+### 5.8 失败恢复
 
-也就是说，后端不主动轮询时间，而是等前端会话页到点后请求它。
-
-### 4.8 processTick
-
-正式推进剧情的流程：
-
-1. 加锁读取最新 Session
-2. 跳过非 `active` 会话
-3. 读取配置快照或当前配置
-4. 复制排队中的玩家消息和触发原因
-5. 置 `timerState.inFlight = true`
-6. 拉取全部事件并交给 `MemoryContextAssembler`
-7. 先写入 `system.tick_started`
-8. 调用 `orchestrator.runTick`
-9. 清空消息队列
-10. 写入工具执行产生的事件与 `system.tick_completed`
-11. 更新 `nextTickAt`
-12. 异步刷新记忆
-13. 如有用量记录，则广播 `usage.updated`
-
-如果中途失败：
+如果 Tick 失败：
 
 - 不会终止 Session
-- 会写入一条可重试的 `system.tick_failed`
-- 会恢复 `inFlight` 和 `nextTickAt`
+- 会写入 `system.tick_failed`
+- 会恢复 `inFlight = false`
+- 会把 `nextTickAt` 顺延一轮
 
-### 4.9 reconcileStaleTick
+另外，`reconcileStaleTick()` 会在读取 Session / Events 前检查：
 
-`getSession()` 和 `getEvents()` 前会调用这段逻辑：
+- 如果 Session 被标记为 `inFlight`
+- 但实际上没有活跃 Tick
+- 且事件流中存在未闭合的 `system.tick_started`
 
-- 如果 Session 被标成 `inFlight`
-- 但事件流里存在未完成的 `system.tick_started`
-- 且当前实际上没有 active Tick
+那么系统会补一条 `system.tick_failed`，把这次中断标记为可重试失败。
 
-那么系统会补写一条 `system.tick_failed`，把中断的回合标记为失败。
+### 5.9 SSE 与预览快照
 
-### 4.10 记忆相关接口
+`SessionService` 现在除了广播正式事件，还维护一份 `previewSnapshots`：
 
-`getMemoryDebug()` 会返回：
+- 推理开始时广播 `llm.turn.started`
+- 解析 line protocol 过程中持续广播 `llm.action.*`
+- 推理失败广播 `llm.turn.failed`
+- 推理完成广播 `llm.turn.completed`
 
-- 当前 `memoryState`
-- 最近原始回合窗口
-- 下一轮真正会送给模型的 assembled context
-- 当前 `storyState` 快照
-- 当前消息队列快照
+当新的 SSE 连接建立时，如果当前回合仍在流式中，会先推送：
 
-这是后端暴露给前端调试页的重要调试接口。
+- `ready`
+- `llm.preview.snapshot`
 
-## 5. SchedulerService
+这样前端刷新页面后还能恢复当前预览卡片，而不会完全丢失“模型正在输出什么”。
 
-当前 `SchedulerService` 的实现很轻：
+## 6. SchedulerService
+
+`SchedulerService` 仍然是一个“轻调度器”，不是常驻后台任务系统。
+
+当前职责：
 
 - 记录同一 Session 的待处理原因集合
-- 使用 `queueMicrotask` 合并同一批次内的重复请求
-- 防止同一 Session 重复并发 flush
-- flush 时把多种原因拼成一个字符串传给 `processTick`
+- 使用 `queueMicrotask` 合并同一批次重复请求
+- 防止同一 Session 并发 flush
+- flush 时把多个原因合并成一个字符串传给 `processTick`
 
-重要说明：
+可以把它理解为“Session 级去抖 + 合并器”。
 
-- `syncSession()` 目前是空实现
-- 它不是一个常驻定时器服务
-- 自动推进的真正“到点判断”发生在前端和 `requestAutoTick()`
+## 7. DefaultOrchestratorService
 
-因此它更准确的角色是“Session 级 Tick 合并器”。
+这是模型编排核心，当前包含两条链路。
 
-## 6. DefaultOrchestratorService
+### 7.1 generateDraft
 
-这是后端的模型编排核心，包含两个主能力。
-
-### 6.1 generateDraft
-
-职责：
+草案生成时会：
 
 - 渲染 `world_builder`
 - 注入 `shared_safety_preamble`
 - 注入工具世界观钩子
-- 调用 Provider 生成 JSON
-- 归一化宽松字段为合法 `SessionDraft`
+- 调用 Provider 的 `completeJson`
+- 对宽松字段做归一化
 
-归一化包括：
+归一化内容包括：
 
-- `Director`/`Support` 到标准 role
+- `role` 到 `director/support`
 - `personality` 到 `persona`
-- 字符串到数组的拆分
-- 缺失字段的兜底文案
+- 字符串/数组的统一处理
+- `initialPlayerBodyItemState` 的清洗去重
 
-### 6.2 runTick
+### 7.2 runTick
 
-职责：
+正式推演时会：
 
-- 对角色排序，确保 `director` 优先
-- 组装工具说明与例子
+- 排序角色，保证 `director` 优先
+- 渲染工具参考与 line protocol 示例
 - 渲染 `tool_contract`
 - 渲染 `ensemble_turn`
-- 注入记忆上下文
-- 调用 Provider 生成 `actionBatch`
-- 记录本次调用用量
-- 逐条执行工具调用
+- 把记忆块和运行态上下文注入提示词
+- 调用 Provider 的流式 `streamText`
+- 用 `LineProtocolTurnParser` 解析 action batch
+- 通过工具注册表逐条执行动作
+- 更新 `usageTotals`
+- 产出 `playerMessageInterpretations`
+- 更新 `playerBodyItemState`
 
-关键点：
+如果 line protocol 缺失 `turnControl`、`playerMessageInterpretations` 或 `playerBodyItemState`，系统会使用默认值并在 `llm_calls` 中记录 `protocolFallback`。
 
-- 每个 Tick 只有一次模型调用
-- 用量会写入 `usageTotals.session` 和 `usageTotals.byCall`
-- 如果 `end_story` 被调用，后续工具执行会中断
+## 8. OpenAICompatibleProvider
 
-## 7. MemoryService
+当前 Provider 已经不是“只打一条 `/chat/completions`”的简单封装。
 
-`MemoryService` 负责把事件流压缩成分层记忆。
+### 8.1 文本流式策略
 
-### 7.1 refreshSessionMemory
+`streamText()` 会优先尝试：
 
-处理逻辑：
+1. OpenAI-compatible `/responses` 流式接口
+2. 如不支持，再回退到 `/chat/completions` 流式接口
 
-- 解析所有事件为完整回合
-- 找出尚未处理过的成功回合
-- 逐个生成 turn 摘要
-- 超过阈值时向上压缩为 episode
-- episode 过多时继续压缩为 archive
-- 维护 debug 状态和最近运行记录
+### 8.2 参数兼容策略
 
-### 7.2 摘要生成策略
+当前后端会尝试传递：
 
-turn 摘要优先走规则抽取：
+- `reasoning_effort`
+- `response_format=json_schema`
 
-- 从 `scene.updated` 中提取 `memorySummary`
-- 从剧情效果、动作、对白等事件推断关键发展
-- 从 active objectives 推断未完成线索
+如果目标后端不支持：
 
-只有当规则摘要信息不足时，才回退到较低温度的 LLM 压缩。
+- 会自动去掉不兼容字段重试
+- 并在部分情况下记录协议降级信息
 
-### 7.3 debug 信息
+### 8.3 调试能力
 
-系统会记录：
+启用 `DEBUG_LLM=1` 后，会输出：
 
-- 最近刷新时间与状态
-- 最近一次压缩模式
-- 最近若干次记忆运行记录
-- 是否发生过 fallback
+- 请求目标地址
+- 发送的 messages
+- 原始响应
+- 解析后的文本 / JSON
+- reasoning summary
 
-## 8. MemoryContextAssembler
+## 9. LineProtocolTurnParser
 
-这个服务负责把会话状态转成真正送给 `ensemble_turn` 的上下文块。
+这是当前正式推演和预览系统之间的关键粘合层。
 
-组装内容包括：
+它负责解析类似下面的结构：
 
-- `coreState`
-- `archiveBlock`
-- `episodeBlocks`
-- `turnSummaryBlocks`
-- `recentRawTurnsBlock`
-- `playerMessagesBlock`
-- `tickContextBlock`
+```text
+@action {"actorAgentId":"director","tool":"speak_to_player","targetScope":"player"}
+@field args.message
+把视线抬起来，看着我。
+@endfield
+@endaction
+@turnControl {"continue":true,"endStory":false,"needsHandoff":false}
+@playerMessageInterpretations []
+@playerBodyItemState ["你现在戴着一副遮光眼罩"]
+@done
+```
 
-其核心策略是：
+解析过程中会：
 
-- episode block 全量保留
-- turn summary 和 recent raw turn 按字符预算从新到旧选取
-- 记录被丢弃的 block，便于调试
+- 维护草稿版 `DraftBatch`
+- 把可预览文本字段持续作为 `llm.action.text.delta` 广播出去
+- 在字段完成时广播 `llm.action.field.completed`
+- 在 action 完成时广播 `llm.action.completed`
+- 最终产出合法 `ActionBatch`
 
-## 9. OpenAICompatibleProvider
+这也是前端能“边看模型输出边看到卡片逐渐成型”的原因。
 
-Provider 负责与模型服务交互，并统一结构化输出逻辑。
+## 10. TtsService
 
-已实现能力：
+`TtsService` 是本轮文档更新里最重要的新部分之一。
 
-- 调用 `/chat/completions`
-- 优先尝试 `response_format=json_schema`
-- 目标服务不支持时回退到“纯提示词 JSON 输出”
-- 兼容标准 JSON 响应和 SSE chunk 响应
-- 剥离 `<think>...</think>` 等推理块
-- 从文本中提取第一个平衡 JSON 对象
-- 用 Zod 再次严格校验返回结构
-- 记录调试日志 `DEBUG_LLM=1`
+### 10.1 主要职责
 
-## 10. MongoSessionStore
+- 检查 TTS 服务健康状态
+- 读取 reference 列表
+- 把 Session / Event 转成可朗读内容
+- 合成单条音频
+- 维护本地缓存
+- 计算音频时长
+- 启动、取消、恢复全文批量合成任务
 
-`MongoSessionStore` 同时承担：
+### 10.2 可朗读内容来源
 
-- 配置存储
-- Session 快照存储
-- 事件日志存储
+系统会把以下内容转成 `SessionReadableContent`：
 
-值得注意的行为：
+- `worldSummary`
+- `openingSituation`
+- `playerState`
+- `player.message`
+- `agent.speak_player`
+- `agent.stage_direction`
+- `agent.story_effect`
 
-- 启动时自动创建索引
-- `app_configs` 支持把旧版单配置结构归一化为新版 `AppConfig`
-- Session 写入前会通过 `sessionSchema` 重新校验
-- 事件通过 `startSeq + index + 1` 追加，保持序号递增
+其中玩家消息会优先使用 `player.message_interpreted.ttsText` 作为朗读版本。
 
-## 11. WebChannelAdapter
+### 10.3 文本预处理
 
-`WebChannelAdapter` 是当前唯一落地的通道实现。
+TTS 预处理当前会做：
 
-职责：
+- 去掉 `<delay>`
+- 把 `<emo_inst>...</emo_inst>` 转为 `[tag]`
+- 合并相邻情绪标签
+- 统一引号与标点
+- 适配问号后的停顿
+- 在过长文本时按边界分段
 
-- 按 `sessionId` 维护 SSE 监听集合
-- 发布 `session.updated`、`event.appended`、`usage.updated`、`timer.updated`
-- 处理连接 attach/detach
+### 10.4 缓存机制
 
-目前没有 QQ、Discord、Telegram 等其他渠道实现。
+缓存键会基于这些内容构造：
 
-## 12. 当前后端边界
+- `sessionId`
+- `readableId`
+- `eventSeq`
+- `referenceId`
+- `normalizedText`
 
-- 没有认证、鉴权、审计和限流
-- 没有独立后台自动推进守护进程
-- `byAgent` 用量统计尚未真正落地
-- 工具副作用主要局限于事件和会话状态，不涉及复杂外部事务
+当前缓存不再把后端 `baseUrl` 直接放进内容键里，从而避免切换 TTS 地址时误伤同内容缓存复用。
+
+### 10.5 演出模式批量任务
+
+全文模式会把缺失条目作为批量任务执行，状态包括：
+
+- `running`
+- `completed`
+- `cancelled`
+- `failed`
+- `interrupted`
+
+状态持久化到 `session_tts_batch_jobs`，因此页面刷新后仍然能恢复任务进度。
+
+## 11. LlmCallService 与可观测性
+
+`LlmCallService` 本身很薄，只做查询与分页参数解析；真正有价值的是持久化内容。
+
+当前 `llm_calls` 可用于排查：
+
+- 失败或超时调用
+- 模型、schema、耗时和 token 消耗
+- 某次调用属于 world builder 还是 ensemble turn
+- 是否发生了 protocol fallback
+
+前端的“模型调用记录”页面就是这个存储的直接可视化。
+
+## 12. Mongo 持久化结构
+
+`MongoSessionStore` 现在承担的存储范围已经扩展到：
+
+- `app_configs`
+- `sessions`
+- `session_events`
+- `llm_calls`
+- `tts_audio_cache`
+- `session_tts_batch_jobs`
+
+因此后端不只是“会话存储层”，而是整个运行时状态中心。

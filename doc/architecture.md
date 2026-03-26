@@ -2,88 +2,93 @@
 
 ## 1. 项目定位
 
-DGLabAI 是一个“单玩家 + 多智能体 + 持续会话”的互动叙事原型。系统的核心目标不是生成一段聊天文本，而是把：
+DGLabAI 现在已经不是“只有草案生成 + 会话页”的最小原型，而是一套围绕互动叙事运行时逐步长出来的系统：
 
-- 世界设定补全
-- 人工审阅确认
-- 共享回合编排
-- 工具化动作执行
-- 事件流持久化
-- 长程记忆压缩
-- 前端实时解释
+- 先由模型生成结构化世界草案
+- 允许人工审阅和编辑后再确认开局
+- 在正式推演阶段使用单次共享编排推进多角色回合
+- 用工具调用把模型决策落成事件、状态和设备动作
+- 通过 SSE 将正式事件和 LLM 预览流同步给前端
+- 提供 TTS 单条朗读、全文演出模式、打印导出和调试视图
+- 允许前端把本地 e-stim 设备能力同步给后端参与本轮编排
 
-组织成一套可持续运行的叙事系统。
+系统核心不是“生成一段回复”，而是维护一个长期存在、可解释、可回放、可扩展的叙事运行时。
 
 ## 2. 总体架构
 
 ```mermaid
 flowchart LR
     A["Vue Web App"] -->|"REST API"| B["Express Server"]
-    A -->|"SSE"| B
-    A -->|"POST /auto-tick"| B
-    B --> C["ConfigService"]
-    B --> D["SessionService"]
-    D --> E["SchedulerService"]
-    D --> F["DefaultOrchestratorService"]
-    D --> G["MemoryService"]
-    D --> H["MemoryContextAssembler"]
-    F --> I["PromptTemplateService"]
-    F --> J["ToolRegistry"]
-    F --> K["OpenAICompatibleProvider"]
-    C --> L["MongoSessionStore"]
-    D --> L
-    L --> M["MongoDB"]
+    A -->|"SSE /sessions/:id/stream"| B
+    A -->|"localhost 调用"| G["DGLab-GameHub / e-stim Bridge"]
+    B --> C["MongoSessionStore"]
+    B --> D["ConfigService"]
+    B --> E["SessionService"]
+    B --> F["TtsService"]
+    B --> H["LlmCallService"]
+    E --> I["SchedulerService"]
+    E --> J["DefaultOrchestratorService"]
+    E --> K["MemoryService"]
+    E --> L["MemoryContextAssembler"]
+    J --> M["PromptTemplateService"]
+    J --> N["ToolRegistry"]
+    J --> O["OpenAICompatibleProvider"]
+    C --> P[("MongoDB")]
+    O --> Q["OpenAI-compatible /responses or /chat/completions"]
+    F --> R["外部 TTS 服务"]
 ```
 
 ## 3. 分层说明
 
 ### 3.1 前端层
 
-前端负责：
+前端承担的职责已经扩展为：
 
-- 新建草案
-- 编辑和确认草案
-- 发送玩家消息
-- 展示会话时间线
-- 保存自动推进设置
-- 触发前端自动推进
-- 查看记忆调试视图
-- 管理多模型后端配置
+- 登录并保存访问密码
+- 新建与编辑草案
+- 运行正式会话与时间线播放
+- 显示流式 LLM 预览卡片
+- 单条 TTS 朗读与全文演出模式
+- PDF 打印导出
+- 记忆调试、模型调用历史、构建信息查看
+- 维护模型后端配置、TTS 配置
+- 维护仅保存在本地浏览器中的 e-stim 设备配置
 
-前端不理解提示词内部细节，也不直接执行工具，只消费后端返回的 Session 快照和事件流。
+前端不直接调用 LLM，也不做记忆压缩；它主要消费结构化 Session、事件流、TTS 状态和 SSE 预览事件。
 
 ### 3.2 API 与服务层
 
-后端 API 很薄，核心业务集中在服务层：
+后端 API 依旧很薄，核心职责集中在服务层：
 
-- `ConfigService`：读写多后端模型配置与激活后端
-- `SessionService`：管理 Session 生命周期、Tick、事件、SSE 广播和记忆刷新
-- `SchedulerService`：合并同一 Session 的多个待处理触发原因
-- `DefaultOrchestratorService`：负责世界构建和正式回合编排
-- `MemoryService`：生成和压缩多层记忆摘要
-- `MemoryContextAssembler`：把当前状态、记忆块、近期原始回合和玩家账本组装成推理上下文
+- `ConfigService`：管理多模型后端配置和全局 TTS 配置
+- `SessionService`：管理 Session 生命周期、Tick、SSE、记忆刷新、预览快照恢复
+- `SchedulerService`：做 Session 级 Tick 合并与去重
+- `DefaultOrchestratorService`：渲染提示词、流式读取 line protocol、执行工具
+- `MemoryService`：维护 turn / episode / archive 分层记忆
+- `MemoryContextAssembler`：把状态、记忆、消息账本和本轮上下文拼装成推演输入
+- `TtsService`：健康检查、reference 列表、音频合成、缓存和全文批量生成
+- `LlmCallService`：分页查询全部模型调用记录
 
 ### 3.3 基础设施层
 
-- `MongoSessionStore`：持久化配置、Session 快照和事件流
-- `OpenAICompatibleProvider`：对接模型接口，统一结构化 JSON 输出
-- `FilePromptTemplateService`：从磁盘读取并渲染提示词模板
-- `WebChannelAdapter`：通过 SSE 向前端广播增量事件
+- `MongoSessionStore`：持久化会话快照、事件、配置、LLM 调用、TTS 缓存和批量任务
+- `OpenAICompatibleProvider`：统一对接 OpenAI-compatible 接口，优先尝试 `/responses` 流式推理，再回退到 `/chat/completions`
+- `LineProtocolTurnParser`：把流式文本解析为结构化 `ActionBatch`，同时产生预览事件
+- `FilePromptTemplateService`：从磁盘读取 Markdown 模板并维护提示词版本
+- `WebChannelAdapter`：向浏览器 SSE 连接广播增量事件
 
-### 3.4 共享模型层
+### 3.4 共享契约层
 
-`packages/shared` 提供所有前后端共享的：
+`packages/shared` 是前后端共同依赖的数据契约中心，定义了：
 
-- Zod schema
-- TypeScript 类型
-- 事件类型
-- 工具目录
-- 请求/响应结构
-- 记忆状态模型
+- Session、Event、Usage、Memory、TTS 等 Zod schema
+- 工具目录与默认开关
+- e-stim `toolContext`
+- SSE 事件类型
+- 可朗读内容 `SessionReadableContent`
+- LLM 调用记录、TTS 批量任务等结构
 
-这一层是项目的数据契约中心。
-
-## 4. 核心流程
+## 4. 核心运行链路
 
 ### 4.1 草案生成
 
@@ -94,94 +99,116 @@ sequenceDiagram
     participant S as SessionService
     participant O as Orchestrator
     participant P as Provider
-    participant M as MongoDB
+    participant DB as MongoDB
 
     U->>W: 输入 playerBrief
-    W->>S: POST /sessions/draft
-    S->>M: 读取当前激活模型后端配置
-    S->>O: generateDraft(playerBrief, config)
+    W->>S: POST /api/sessions/draft
+    Note over W,S: 可附带 toolContext（如 e-stim 能力）
+    S->>O: generateDraft(playerBrief, activeConfig, toolContext)
     O->>P: world_builder + shared_safety
     P-->>O: 宽松 JSON
-    O-->>S: 归一化后的 SessionDraft
-    S->>M: 保存 draft Session + 初始事件
+    O-->>S: 归一化 SessionDraft
+    S->>DB: 保存 session 快照 + 初始事件
     S-->>W: 返回 draft Session
 ```
 
-关键点：
+与早期版本相比，草案生成现在还会吸收工具世界观钩子，比如：
 
-- 草案阶段是独立的一次模型调用
-- 模型输出可以是宽松 JSON，后端会进行归一化
-- 生成完成后 Session 状态为 `draft`
+- `control_vibe_toy`
+- `control_e_stim_toy`
+
+也就是说，工具可用性已经会影响世界设定阶段，而不只是正式推演阶段。
 
 ### 4.2 草案确认
 
 确认时系统会：
 
-- 将 `draft` 冻结为 `confirmedSetup`
-- 保存当前激活模型后端配置快照
-- 保存提示词版本快照
-- 把 Session 状态改为 `active`
+- 将 `draft` 冻结到 `confirmedSetup`
+- 保存 `llmConfigSnapshot`
+- 保存提示词版本快照 `promptVersions`
+- 合并本次请求带入的 `toolContext`
+- 将 `status` 切换为 `active`
+- 如有初始身体道具状态，写入 `player.body_item_state_updated`
 - 立即请求一次 `session_confirmed` Tick
 
-这一步的作用是把“可编辑设计阶段”和“正式运行阶段”分离开。
+这一步把“可编辑设定阶段”和“正式运行阶段”明确隔开。
 
 ### 4.3 正式推演
 
 ```mermaid
 sequenceDiagram
-    participant U as 玩家/前端自动推进
+    participant U as 玩家/自动推进
     participant W as Web
     participant S as SessionService
-    participant Q as Scheduler
     participant C as MemoryContextAssembler
     participant O as Orchestrator
+    participant P as Provider
     participant T as ToolRegistry
-    participant M as MongoDB
+    participant DB as MongoDB
 
-    U->>W: 发消息 / 倒计时到点
-    W->>S: POST /messages 或 POST /auto-tick
-    S->>Q: requestTick(reason)
-    Q->>S: processTick(sessionId, mergedReasons)
+    U->>W: 发消息 / auto-tick
+    W->>S: POST /messages or /auto-tick
     S->>C: assemble(session, events, reason)
-    S->>O: runTick(session, reason, contextBundle, config)
-    O->>T: 逐条执行 action batch
+    S->>O: runTick(...)
+    O->>P: 流式生成 line protocol
+    P-->>O: text delta + reasoning summary
+    O-->>W: SSE 预览事件
+    O->>T: 解析完成后逐条执行工具
     T-->>O: 事件与状态变更
-    O-->>S: events + usage
-    S->>M: 写入事件与最新 Session 快照
-    S-->>W: SSE 广播 session.updated / event.appended / usage.updated
+    O-->>S: events + playerMessageInterpretations + usage
+    S->>DB: 写入事件、快照、用量
+    S-->>W: session.updated / event.appended / usage.updated
 ```
 
-关键点：
+当前正式推演有三个关键特征：
 
-- 每个正式回合只有一次模型调用
-- 工具执行后才会形成最终事件
-- 事件流是前端时间线和记忆系统的共同基础
+- 每个 Tick 仍然只有一次共享 LLM 调用
+- 这次调用是流式的，前端可以边看边预览 action 草稿
+- 正式事件只有在 line protocol 解析完成并通过工具执行后才会持久化
+
+### 4.4 TTS 与演出模式
+
+TTS 现在已经是一条独立链路：
+
+1. 前端在设置页保存 TTS Base URL 和角色 `reference_id` 映射
+2. 后端 `TtsService` 根据 Session 和事件构造可朗读内容
+3. 朗读请求命中缓存时直接返回本地缓存音频
+4. 未命中时再向外部 TTS 服务请求音频并写入缓存
+5. 演出模式会先检查所有可朗读卡片是否都具备可播放音频和时长
+6. 如果不完整，可由后端批量合成缺失条目
+
+这条链路和正式推演解耦，但共享同一份 Session / Event 数据。
+
+### 4.5 本地 e-stim 集成
+
+e-stim 是一个“前端本地能力 + 后端上下文注入”的混合设计：
+
+- 浏览器本地保存连接码、通道、电极位置、强度曲线和允许波形
+- 新建草案、确认会话、发消息、自动推进前，前端会把 `toolContext.eStim` 同步给后端
+- 提示词会把这些本地能力描述进世界观或本轮工具上下文
+- 模型可调用 `control_e_stim_toy`
+- 正式事件只记录“前端待执行”的设备控制意图
+- 真正的本地设备调用发生在前端与 localhost bridge 之间
+
+因此，这条能力不会要求服务端直接连用户设备。
 
 ## 5. 记忆链路
 
-项目实现了分层记忆，而不是简单拼接全部历史事件。
-
 ### 5.1 记忆层级
 
-- `recentRawTurns`：最近若干个成功回合的原始事件窗口
-- `turnSummaries`：每个成功回合的摘要
-- `episodeSummaries`：多个 turn 摘要压缩后的中期摘要
+- `recentRawTurns`：最近成功回合的原始事件窗口
+- `turnSummaries`：单回合摘要
+- `episodeSummaries`：多回合压缩后的中期摘要
 - `archiveSummary`：更长期的归档摘要
 
-### 5.2 生成方式
+### 5.2 上下文装配
 
-- 优先使用规则抽取生成 turn 摘要
-- 当规则摘要信息不足时，再回退为 LLM 摘要
-- 当 turn 数量超阈值时，向上压缩为 episode
-- 当 episode 数量超阈值时，进一步压缩为 archive
+送入正式推演提示词的不是一段历史文本，而是一组结构化上下文块：
 
-### 5.3 上下文装配
-
-真正送入正式推演提示词的不是单一历史文本，而是：
-
-- 当前 `confirmedSetup` 或 `draft`
-- 当前 `storyState`
-- 当前 `agentStates`
+- `sessionDraft`
+- `storyState`
+- `agentStates`
+- `playerBodyItemState`
 - `archiveBlock`
 - `episodeBlocks`
 - `turnSummaryBlocks`
@@ -189,97 +216,120 @@ sequenceDiagram
 - `playerMessagesBlock`
 - `tickContextBlock`
 
-这使上下文既保留近期细节，又避免无限增长。
+这让系统既保留近期细节，又能把长期历史压到可控体量。
+
+### 5.3 调试可观测性
+
+记忆链路除了服务端内部运行，还显式暴露给前端：
+
+- `/sessions/:id/debug` 页面查看 assembled context
+- `memory-debug` API 返回实际被拼装的上下文块
+- 可看到字符预算、被丢弃的 block、最近原始回合和消息队列
 
 ## 6. 事件驱动模型
 
-系统的基本事实单位是 `SessionEvent`。模型不会直接生成页面文本，而是先生成工具调用，再被执行为事件。
-
-当前主要事件包括：
+系统事实的最小单位依然是 `SessionEvent`。但现在事件类型比早期更多，除了常规剧情事件，还包括：
 
 - 生命周期：`session.created`、`draft.generated`、`draft.updated`、`session.confirmed`
-- 玩家输入：`player.message`
+- 玩家状态：`player.message`、`player.message_interpreted`、`player.body_item_state_updated`
 - 角色输出：`agent.speak_player`、`agent.speak_agent`、`agent.reasoning`、`agent.stage_direction`
-- 叙事效果：`agent.device_control`、`agent.story_effect`
+- 效果与设备：`agent.device_control`、`agent.story_effect`
 - 场景状态：`scene.updated`
 - Tick 状态：`system.tick_started`、`system.tick_completed`、`system.tick_failed`
-- 自动推进：`system.timer_updated`
 - 节奏控制：`system.wait_scheduled`
-- 结束与用量：`system.story_ended`、`system.usage_recorded`
+- 自动推进：`system.timer_updated`
+- 结局与用量：`system.story_ended`、`system.usage_recorded`
+
+另外，SSE 中还存在一组“预览事件”，它们不会落库，但会实时驱动前端的预览卡片：
+
+- `llm.turn.started`
+- `llm.action.*`
+- `llm.reasoning_summary.delta`
+- `llm.turn.control`
+- `llm.turn.player_message_interpretations`
+- `llm.turn.player_body_item_state`
+- `llm.turn.completed`
+- `llm.turn.failed`
+- `llm.preview.snapshot`
 
 ## 7. 数据持久化
 
-MongoDB 中存在三类核心数据：
+MongoDB 中当前至少有这些核心集合：
 
-- `app_configs`：多后端模型配置
+- `app_configs`：模型后端配置 + 全局 TTS 配置
 - `sessions`：Session 最新快照
-- `session_events`：按序追加的事件日志
+- `session_events`：事件日志
+- `llm_calls`：全部模型调用记录
+- `tts_audio_cache`：TTS 音频缓存索引
+- `session_tts_batch_jobs`：全文 TTS 批量生成任务状态
 
-设计动机：
+这种设计带来的好处是：
 
-- 快照便于恢复最新状态
-- 事件流便于回放、调试和生成记忆
-- `lastSeq` 用于保证事件顺序追加
+- Session 恢复读取快照即可
+- 时间线、打印、朗读、演出模式都可复用同一份事件流
+- LLM 调用、TTS 和正式剧情可以分别排查
 
 ## 8. 自动推进的真实实现
 
-当前代码里的自动推进不是“后端后台定时器守护进程”，而是“前端倒计时 + 后端仲裁”。
+自动推进的本质仍然是“前端主导 + 后端仲裁”：
 
-具体表现为：
+- Session 中持久化 `timerState`
+- 会话页在前端周期性检查倒计时
+- 只有页面可见、当前不在播放停顿、没有 in-flight Tick 时才会请求 `/auto-tick`
+- 后端再根据 `enabled`、`nextTickAt`、`inFlight` 做最终判定
 
-- Session 持久化 `timerState.enabled/intervalMs/nextTickAt`
-- 会话页通过 `setInterval` 刷新倒计时
-- 到点后前端调用 `/sessions/:id/auto-tick`
-- 后端检查是否可触发，再向 `SchedulerService` 请求 Tick
-- `SchedulerService` 只负责合并原因和防止重复 flush
-
-因此，自动推进依赖打开中的会话页，不适合作为脱离前端的后台任务系统来理解。
+所以它依赖打开中的会话页，而不是独立后台守护进程。
 
 ## 9. 关键设计取舍
 
-### 9.1 共享回合编排，而不是逐角色独立推理
+### 9.1 共享回合编排，而不是多角色多次调用
 
 优点：
 
-- 降低总调用次数和 Token 成本
-- 保证单回合内角色顺序和节奏统一
-- 减少代理间上下文分叉
+- 降低 Token 成本
+- 保持单回合节奏统一
+- 便于把工具执行组织成一个可解释的 action batch
 
 代价：
 
-- 不直接暴露“每个角色单独思考”的完整轨迹
-- `byAgent` 级别的真实用量分摊目前没有实现
+- 不提供每个角色完全独立的推理轨迹
+- `usageTotals.byAgent` 仍未做真实分摊
 
-### 9.2 事件驱动，而不是直接渲染模型原文
+### 9.2 事件流 + 预览流并存
 
 优点：
 
-- 前端语义更稳定
-- 事件可持久化、重放和调试
-- 更容易接入外部设备或其他渠道
+- 用户能提前看到模型正在组织什么动作
+- 正式落库事实仍然由工具执行后决定
+- 刷新页面时还能通过 `llm.preview.snapshot` 恢复当前预览
 
 代价：
 
-- 提示词与工具 schema 必须长期同步
-- 输出约束更严格
+- 前端状态机会更复杂
+- 需要同时维护“暂态预览”和“正式事件”两套展示逻辑
 
-### 9.3 分层记忆，而不是原文无限拼接
+### 9.3 服务端只描述设备意图，前端执行本地硬件
 
 优点：
 
-- 长程连续性更稳
-- 提示窗口成本可控
-- 可为调试页提供可解释记忆视图
+- 服务端不需要直接触达用户局域网设备
+- 本地设备能力能安全地作为 `toolContext` 注入剧情
+- 无设备时也可以以 simulated / pending 形式退化运行
 
 代价：
 
-- 需要额外摘要与压缩逻辑
-- 记忆质量依赖摘要策略
+- 真正的设备执行与正式剧情事件不是同一个事务
+- 设备状态同步依赖前端是否及时上报
 
-## 10. 当前边界
+### 9.4 TTS 采用“按内容缓存 + 批量补全”
 
-- 只有 Web 前端和 SSE 通道
-- 没有用户鉴权与权限控制
-- `wait` 更像界面节奏事件，不是独立未来任务
-- 正式链路统一使用 `ensemble_turn` 提示词
-- 自动推进依赖前端活跃页面
+优点：
+
+- 单条点击朗读与全文演出模式复用同一缓存
+- 重新打开会话后无需重复合成已存在音频
+- 全文播放前可以显式检查缺口
+
+代价：
+
+- 需要额外维护缓存键、音频时长和批量任务状态
+- TTS 配置与角色映射错误时，问题会在播放阶段暴露
